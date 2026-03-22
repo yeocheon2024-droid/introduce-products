@@ -447,10 +447,12 @@
             transition: var(--transition);
             background: var(--bg);
         }
-        .file-upload-area:hover {
+        .file-upload-area:hover,
+        .file-upload-area.dragover {
             border-color: var(--accent);
             color: var(--accent);
             background: var(--accent-light);
+            transform: scale(1.01);
         }
         .file-upload-area input { display: none; }
         .file-upload-area .upload-icon {
@@ -873,20 +875,13 @@
 
     <div class="card">
         <h3>견적서 업로드</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-            <div class="file-upload-area" onclick="document.getElementById('quoteExcel').click()">
-                <div class="upload-icon">+</div>
-                <p style="font-weight:500;">엑셀 견적서</p>
-                <p style="font-size:0.78rem;margin-top:4px;">.xlsx, .xls, .csv</p>
-                <input type="file" id="quoteExcel" accept=".xlsx,.xls,.csv" onchange="handleQuoteExcel(event)">
-            </div>
-            <div class="file-upload-area" onclick="document.getElementById('quoteImage').click()">
-                <div class="upload-icon">+</div>
-                <p style="font-weight:500;">이미지 견적서</p>
-                <p style="font-size:0.78rem;margin-top:4px;">.jpg, .png, .webp</p>
-                <input type="file" id="quoteImage" accept="image/*" onchange="handleQuoteImage(event)">
-            </div>
+        <div class="file-upload-area" id="quoteDrop" onclick="document.getElementById('quoteFile').click()">
+            <div class="upload-icon">+</div>
+            <p style="font-weight:500;">파일을 드래그하거나 클릭하여 선택</p>
+            <p style="font-size:0.78rem;margin-top:4px;">엑셀(.xlsx .xls .csv) 또는 이미지(.jpg .png .webp)</p>
+            <input type="file" id="quoteFile" accept=".xlsx,.xls,.csv,image/*" onchange="handleQuoteFile(event)">
         </div>
+        <div id="quoteFileName" style="display:none;margin-top:12px;padding:10px 16px;background:var(--bg-warm);border-radius:var(--radius-sm);font-size:0.85rem;color:var(--text);"></div>
         <div id="quoteImagePreview" style="display:none;margin-top:16px;text-align:center;">
             <img id="quoteImgTag" style="max-width:100%;max-height:300px;border-radius:var(--radius);border:1px solid var(--border);">
         </div>
@@ -1707,55 +1702,82 @@ function generateProductCode(vendorCode, categoryAbbr) {
     return prefix + String(maxNum + 1).padStart(3, '0');
 }
 
-// 엑셀 견적서 처리
-function handleQuoteExcel(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = function(ev) {
-        const data = new Uint8Array(ev.target.result);
-        const wb = XLSX.read(data, { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false });
-        if (json.length < 2) { alert('데이터가 없습니다.'); return; }
+// 드래그앤드롭 초기화
+function initDragDrop() {
+    var dropZone = document.getElementById('quoteDrop');
+    if (!dropZone) return;
 
-        const apiKey = document.getElementById('apiKey').value.trim() || loadApiKey();
-        if (!apiKey) { alert('API 키를 먼저 입력해주세요.'); return; }
+    ['dragenter','dragover'].forEach(function(evt) {
+        dropZone.addEventListener(evt, function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.add('dragover');
+        });
+    });
+    ['dragleave','drop'].forEach(function(evt) {
+        dropZone.addEventListener(evt, function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('dragover');
+        });
+    });
+    dropZone.addEventListener('drop', function(e) {
+        var file = e.dataTransfer.files[0];
+        if (file) processQuoteFile(file);
+    });
+}
 
-        const vendorCode = document.getElementById('quoteVendor').value;
-        if (!vendorCode) { alert('매입처를 선택해주세요.'); return; }
-
-        // 엑셀 데이터를 텍스트로 변환하여 AI에게 전달
-        const csvText = json.map(row => row.join('\t')).join('\n');
-        analyzeWithAI(apiKey, vendorCode, csvText, null);
-    };
-    reader.readAsArrayBuffer(file);
+// 파일 input 핸들러
+function handleQuoteFile(e) {
+    var file = e.target.files[0];
+    if (file) processQuoteFile(file);
     e.target.value = '';
 }
 
-// 이미지 견적서 처리
-function handleQuoteImage(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const apiKey = document.getElementById('apiKey').value.trim() || loadApiKey();
+// 통합 파일 처리
+function processQuoteFile(file) {
+    var apiKey = document.getElementById('apiKey').value.trim() || loadApiKey();
     if (!apiKey) { alert('API 키를 먼저 입력해주세요.'); return; }
 
-    const vendorCode = document.getElementById('quoteVendor').value;
+    var vendorCode = document.getElementById('quoteVendor').value;
     if (!vendorCode) { alert('매입처를 선택해주세요.'); return; }
 
-    const reader = new FileReader();
-    reader.onload = function(ev) {
-        const base64 = ev.target.result;
-        document.getElementById('quoteImgTag').src = base64;
-        document.getElementById('quoteImagePreview').style.display = 'block';
+    // 파일명 표시
+    var nameEl = document.getElementById('quoteFileName');
+    nameEl.textContent = '선택된 파일: ' + file.name;
+    nameEl.style.display = 'block';
 
-        const base64Data = base64.split(',')[1];
-        const mediaType = file.type || 'image/jpeg';
-        analyzeWithAI(apiKey, vendorCode, null, { base64: base64Data, mediaType });
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    var isImage = file.type.startsWith('image/');
+
+    if (isImage) {
+        // 이미지 견적서
+        var reader = new FileReader();
+        reader.onload = function(ev) {
+            var base64 = ev.target.result;
+            document.getElementById('quoteImgTag').src = base64;
+            document.getElementById('quoteImagePreview').style.display = 'block';
+
+            var base64Data = base64.split(',')[1];
+            var mediaType = file.type || 'image/jpeg';
+            analyzeWithAI(apiKey, vendorCode, null, { base64: base64Data, mediaType: mediaType });
+        };
+        reader.readAsDataURL(file);
+    } else {
+        // 엑셀 견적서
+        document.getElementById('quoteImagePreview').style.display = 'none';
+        var reader = new FileReader();
+        reader.onload = function(ev) {
+            var data = new Uint8Array(ev.target.result);
+            var wb = XLSX.read(data, { type: 'array' });
+            var ws = wb.Sheets[wb.SheetNames[0]];
+            var json = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false });
+            if (json.length < 2) { alert('데이터가 없습니다.'); return; }
+
+            var csvText = json.map(function(row) { return row.join('\t'); }).join('\n');
+            analyzeWithAI(apiKey, vendorCode, csvText, null);
+        };
+        reader.readAsArrayBuffer(file);
+    }
 }
 
 // AI 분석 호출
@@ -2363,6 +2385,7 @@ function toggleSidebar() {
 
 // 초기화
 initSupabase();
+initDragDrop();
 renderDashboard();
 </script>
 
