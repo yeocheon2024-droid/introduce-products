@@ -1087,6 +1087,8 @@
 
 <script>
 // Supabase 클라이언트 (전역)
+var SUPABASE_URL = 'https://zsxmmhgrmysqauuojmir.supabase.co';
+var SUPABASE_KEY = 'sb_publishable_syHvHMlRnAOV8-7lv5H_3g_xc3XDmGu';
 var db = null;
 var syncTimer = null;
 
@@ -2112,14 +2114,15 @@ function downloadExcel(filename, headers, rows) {
 // Supabase 연동
 // ============================================================
 function initSupabase() {
-    const url = localStorage.getItem('supabase_url') || '';
-    const key = localStorage.getItem('supabase_key') || '';
-    if (url && key) {
+    // 코드에 내장된 키로 자동 연결
+    var url = SUPABASE_URL;
+    var key = SUPABASE_KEY;
+    if (url && key && window.supabase) {
         db = window.supabase.createClient(url, key);
     }
     // 설정 화면에 값 채우기
-    const urlInput = document.getElementById('supabaseUrl');
-    const keyInput = document.getElementById('supabaseKey');
+    var urlInput = document.getElementById('supabaseUrl');
+    var keyInput = document.getElementById('supabaseKey');
     if (urlInput) urlInput.value = url;
     if (keyInput) keyInput.value = key;
 }
