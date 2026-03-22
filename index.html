@@ -855,17 +855,9 @@
     <div class="card">
         <h3>API 설정</h3>
         <div class="form-row">
-            <div class="form-group" style="flex:0 0 140px;">
-                <label>AI 엔진</label>
-                <select id="aiEngine" onchange="onAiEngineChange()">
-                    <option value="openrouter">OpenRouter (무료)</option>
-                    <option value="gemini">Gemini</option>
-                    <option value="claude">Claude</option>
-                </select>
-            </div>
             <div class="form-group" style="flex:2">
-                <label id="apiKeyLabel">Gemini API Key</label>
-                <input type="password" id="apiKey" placeholder="AI..." style="width:100%">
+                <label>Claude API Key</label>
+                <input type="password" id="apiKey" placeholder="sk-ant-..." style="width:100%">
             </div>
             <div class="form-group" style="flex:1">
                 <label>매입처 선택 *</label>
@@ -1654,40 +1646,18 @@ function esc(text) {
 let quoteItems = [];
 let quoteImageBase64 = null;
 
-function onAiEngineChange() {
-    var engine = document.getElementById('aiEngine').value;
-    var label = document.getElementById('apiKeyLabel');
-    var input = document.getElementById('apiKey');
-    if (engine === 'openrouter') {
-        label.textContent = 'OpenRouter API Key';
-        input.placeholder = 'sk-or-...';
-    } else if (engine === 'gemini') {
-        label.textContent = 'Gemini API Key';
-        input.placeholder = 'AI...';
-    } else {
-        label.textContent = 'Claude API Key';
-        input.placeholder = 'sk-ant-...';
-    }
-    // 엔진별 키 불러오기
-    var savedKey = localStorage.getItem('erp_api_key_' + engine) || '';
-    input.value = savedKey;
-}
-
 function saveApiKey() {
-    var engine = document.getElementById('aiEngine').value;
     var key = document.getElementById('apiKey').value.trim();
     if (key) {
-        localStorage.setItem('erp_api_key_' + engine, key);
-        localStorage.setItem('erp_ai_engine', engine);
-        alert('API 키가 저장되었습니다. (' + (engine === 'gemini' ? 'Gemini' : 'Claude') + ')');
+        localStorage.setItem('erp_api_key', key);
+        alert('API 키가 저장되었습니다.');
     }
 }
 
 function loadApiKey() {
-    var engine = localStorage.getItem('erp_ai_engine') || 'gemini';
-    document.getElementById('aiEngine').value = engine;
-    onAiEngineChange();
-    return localStorage.getItem('erp_api_key_' + engine) || '';
+    var key = localStorage.getItem('erp_api_key') || '';
+    document.getElementById('apiKey').value = key;
+    return key;
 }
 
 function populateQuoteVendor() {
@@ -1786,8 +1756,6 @@ async function analyzeWithAI(apiKey, vendorCode, textData, imageData) {
     document.getElementById('quoteLoading').style.display = 'block';
     document.getElementById('quoteResult').style.display = 'none';
 
-    var engine = document.getElementById('aiEngine').value;
-
     var categoryList = [];
     for (var mc in CATEGORY_TREE) {
         var major = CATEGORY_TREE[mc];
@@ -1813,13 +1781,7 @@ async function analyzeWithAI(apiKey, vendorCode, textData, imageData) {
     try {
         var responseText = '';
 
-        if (engine === 'openrouter') {
-            responseText = await callOpenRouter(apiKey, promptText, userMsg, imageData);
-        } else if (engine === 'gemini') {
-            responseText = await callGemini(apiKey, promptText, userMsg, imageData);
-        } else {
-            responseText = await callClaude(apiKey, promptText, userMsg, imageData);
-        }
+        responseText = await callClaude(apiKey, promptText, userMsg, imageData);
 
         // JSON 추출
         var jsonMatch = responseText.match(/\[[\s\S]*\]/);
@@ -1835,94 +1797,6 @@ async function analyzeWithAI(apiKey, vendorCode, textData, imageData) {
     }
 }
 
-// OpenRouter API 호출 (무료)
-async function callOpenRouter(apiKey, systemPrompt, userMsg, imageData) {
-    var content = [];
-    if (imageData) {
-        content.push({ type: 'image_url', image_url: { url: 'data:' + imageData.mediaType + ';base64,' + imageData.base64 } });
-    }
-    content.push({ type: 'text', text: userMsg });
-
-    // 60초 타임아웃
-    var controller = new AbortController();
-    var timeout = setTimeout(function() { controller.abort(); }, 60000);
-
-    // 무료 모델 순서대로 시도
-    var models = [
-        'meta-llama/llama-4-maverick:free',
-        'meta-llama/llama-4-scout:free',
-        'nvidia/llama-3.1-nemotron-ultra-253b:free',
-        'deepseek/deepseek-chat-v3-0324:free',
-        'qwen/qwen3-235b-a22b:free'
-    ];
-
-    var lastError = '';
-    for (var i = 0; i < models.length; i++) {
-        try {
-            var resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + apiKey
-                },
-                body: JSON.stringify({
-                    model: models[i],
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: content }
-                    ],
-                    max_tokens: 8192
-                }),
-                signal: controller.signal
-            });
-
-            if (!resp.ok) {
-                var errData = await resp.json().catch(function() { return {}; });
-                lastError = (errData.error && errData.error.message) || resp.status;
-                continue; // 다음 모델 시도
-            }
-
-            clearTimeout(timeout);
-            var result = await resp.json();
-            if (result.choices && result.choices[0]) {
-                return result.choices[0].message.content;
-            }
-            lastError = 'Empty response';
-        } catch (e) {
-            if (e.name === 'AbortError') throw new Error('요청 시간이 초과되었습니다 (60초). 다시 시도해주세요.');
-            lastError = e.message;
-        }
-    }
-    clearTimeout(timeout);
-    throw new Error('모든 무료 모델 실패: ' + lastError);
-}
-
-// Gemini API 호출
-async function callGemini(apiKey, systemPrompt, userMsg, imageData) {
-    var parts = [];
-
-    if (imageData) {
-        parts.push({ inlineData: { mimeType: imageData.mediaType, data: imageData.base64 } });
-    }
-    parts.push({ text: systemPrompt + '\n\n' + userMsg });
-
-    var resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=' + apiKey, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            contents: [{ parts: parts }],
-            generationConfig: { temperature: 0.1, maxOutputTokens: 8192 }
-        })
-    });
-
-    if (!resp.ok) {
-        var errData = await resp.json().catch(function() { return {}; });
-        throw new Error((errData.error && errData.error.message) || 'Gemini API 오류 (' + resp.status + ')');
-    }
-
-    var result = await resp.json();
-    return result.candidates[0].content.parts[0].text;
-}
 
 // Claude API 호출
 async function callClaude(apiKey, systemPrompt, userMsg, imageData) {
