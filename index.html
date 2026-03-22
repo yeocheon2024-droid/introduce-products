@@ -858,7 +858,8 @@
             <div class="form-group" style="flex:0 0 140px;">
                 <label>AI 엔진</label>
                 <select id="aiEngine" onchange="onAiEngineChange()">
-                    <option value="gemini">Gemini (무료)</option>
+                    <option value="openrouter">OpenRouter (무료)</option>
+                    <option value="gemini">Gemini</option>
                     <option value="claude">Claude</option>
                 </select>
             </div>
@@ -1657,7 +1658,10 @@ function onAiEngineChange() {
     var engine = document.getElementById('aiEngine').value;
     var label = document.getElementById('apiKeyLabel');
     var input = document.getElementById('apiKey');
-    if (engine === 'gemini') {
+    if (engine === 'openrouter') {
+        label.textContent = 'OpenRouter API Key';
+        input.placeholder = 'sk-or-...';
+    } else if (engine === 'gemini') {
         label.textContent = 'Gemini API Key';
         input.placeholder = 'AI...';
     } else {
@@ -1809,7 +1813,9 @@ async function analyzeWithAI(apiKey, vendorCode, textData, imageData) {
     try {
         var responseText = '';
 
-        if (engine === 'gemini') {
+        if (engine === 'openrouter') {
+            responseText = await callOpenRouter(apiKey, promptText, userMsg, imageData);
+        } else if (engine === 'gemini') {
             responseText = await callGemini(apiKey, promptText, userMsg, imageData);
         } else {
             responseText = await callClaude(apiKey, promptText, userMsg, imageData);
@@ -1827,6 +1833,39 @@ async function analyzeWithAI(apiKey, vendorCode, textData, imageData) {
     } finally {
         document.getElementById('quoteLoading').style.display = 'none';
     }
+}
+
+// OpenRouter API 호출 (무료)
+async function callOpenRouter(apiKey, systemPrompt, userMsg, imageData) {
+    var content = [];
+    if (imageData) {
+        content.push({ type: 'image_url', image_url: { url: 'data:' + imageData.mediaType + ';base64,' + imageData.base64 } });
+    }
+    content.push({ type: 'text', text: userMsg });
+
+    var resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + apiKey
+        },
+        body: JSON.stringify({
+            model: 'google/gemini-2.0-flash-exp:free',
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: content }
+            ],
+            max_tokens: 8192
+        })
+    });
+
+    if (!resp.ok) {
+        var errData = await resp.json().catch(function() { return {}; });
+        throw new Error((errData.error && errData.error.message) || 'OpenRouter API 오류 (' + resp.status + ')');
+    }
+
+    var result = await resp.json();
+    return result.choices[0].message.content;
 }
 
 // Gemini API 호출
