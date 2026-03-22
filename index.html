@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>내 제품 쇼케이스</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        /* 헤더 */
+        header {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+        }
+
+        header h1 {
+            font-size: 2rem;
+            margin-bottom: 8px;
+        }
+
+        header p {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+
+        /* 제품 추가 버튼 */
+        .add-btn {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            font-size: 2rem;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            transition: transform 0.2s, box-shadow 0.2s;
+            z-index: 100;
+        }
+
+        .add-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        /* 제품 그리드 */
+        .product-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 24px;
+            padding: 30px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 80px 20px;
+            color: #999;
+        }
+
+        .empty-state .icon {
+            font-size: 4rem;
+            margin-bottom: 16px;
+        }
+
+        .empty-state p {
+            font-size: 1.1rem;
+        }
+
+        /* 제품 카드 */
+        .product-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .product-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.12);
+        }
+
+        .product-card .image-container {
+            width: 100%;
+            height: 220px;
+            background: #eee;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .product-card .image-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .product-card .no-image {
+            color: #bbb;
+            font-size: 3rem;
+        }
+
+        .product-card .card-body {
+            padding: 16px;
+        }
+
+        .product-card .card-body h3 {
+            font-size: 1.1rem;
+            margin-bottom: 6px;
+            color: #333;
+        }
+
+        .product-card .card-body .price {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+
+        .product-card .card-body .description {
+            font-size: 0.9rem;
+            color: #777;
+            line-height: 1.5;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .product-card .card-actions {
+            padding: 0 16px 16px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .product-card .card-actions button {
+            flex: 1;
+            padding: 8px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: background 0.2s;
+        }
+
+        .btn-edit {
+            background: #e8ecff;
+            color: #667eea;
+        }
+
+        .btn-edit:hover {
+            background: #d0d7ff;
+        }
+
+        .btn-delete {
+            background: #ffe8e8;
+            color: #e74c3c;
+        }
+
+        .btn-delete:hover {
+            background: #ffd0d0;
+        }
+
+        /* 모달 */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 200;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+
+        .modal h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .modal .form-group {
+            margin-bottom: 16px;
+        }
+
+        .modal label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+            color: #555;
+            font-size: 0.9rem;
+        }
+
+        .modal input,
+        .modal textarea {
+            width: 100%;
+            padding: 10px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.2s;
+            font-family: inherit;
+        }
+
+        .modal input:focus,
+        .modal textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .modal textarea {
+            height: 100px;
+            resize: vertical;
+        }
+
+        .image-preview {
+            width: 100%;
+            max-height: 200px;
+            object-fit: contain;
+            border-radius: 8px;
+            margin-top: 8px;
+            display: none;
+        }
+
+        .modal .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .modal .btn-group button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        .btn-cancel {
+            background: #f0f0f0;
+            color: #666;
+        }
+
+        .btn-cancel:hover {
+            background: #e0e0e0;
+        }
+
+        .btn-save {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+
+        .btn-save:hover {
+            opacity: 0.9;
+        }
+
+        /* 상세보기 모달 */
+        .detail-modal .detail-image {
+            width: 100%;
+            max-height: 350px;
+            object-fit: contain;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            background: #f5f5f5;
+        }
+
+        .detail-modal .detail-name {
+            font-size: 1.4rem;
+            margin-bottom: 8px;
+        }
+
+        .detail-modal .detail-price {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 12px;
+        }
+
+        .detail-modal .detail-desc {
+            color: #666;
+            line-height: 1.7;
+            white-space: pre-wrap;
+        }
+
+        /* 반응형 */
+        @media (max-width: 600px) {
+            header h1 {
+                font-size: 1.5rem;
+            }
+
+            .product-grid {
+                padding: 16px;
+                gap: 16px;
+                grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>My Product Showcase</h1>
+        <p>내 제품을 등록하고 전시하세요</p>
+    </header>
+
+    <main class="product-grid" id="productGrid">
+        <div class="empty-state" id="emptyState">
+            <div class="icon">+</div>
+            <p>아직 등록된 제품이 없습니다.<br>오른쪽 아래 + 버튼을 눌러 제품을 추가하세요.</p>
+        </div>
+    </main>
+
+    <button class="add-btn" id="addBtn" title="제품 추가">+</button>
+
+    <!-- 제품 등록/수정 모달 -->
+    <div class="modal-overlay" id="formModal">
+        <div class="modal">
+            <h2 id="modalTitle">제품 등록</h2>
+            <div class="form-group">
+                <label for="productName">제품명 *</label>
+                <input type="text" id="productName" placeholder="제품 이름을 입력하세요">
+            </div>
+            <div class="form-group">
+                <label for="productPrice">가격</label>
+                <input type="text" id="productPrice" placeholder="예: 29,900원">
+            </div>
+            <div class="form-group">
+                <label for="productDesc">설명</label>
+                <textarea id="productDesc" placeholder="제품에 대한 설명을 입력하세요"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="productImage">이미지</label>
+                <input type="file" id="productImage" accept="image/*">
+                <img class="image-preview" id="imagePreview">
+            </div>
+            <div class="btn-group">
+                <button class="btn-cancel" id="cancelBtn">취소</button>
+                <button class="btn-save" id="saveBtn">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 제품 상세보기 모달 -->
+    <div class="modal-overlay" id="detailModal">
+        <div class="modal detail-modal">
+            <img class="detail-image" id="detailImage" src="" alt="">
+            <h2 class="detail-name" id="detailName"></h2>
+            <div class="detail-price" id="detailPrice"></div>
+            <div class="detail-desc" id="detailDesc"></div>
+            <div class="btn-group">
+                <button class="btn-cancel" id="closeDetailBtn">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 데이터 관리
+        let products = JSON.parse(localStorage.getItem('products') || '[]');
+        let editingId = null;
+
+        const productGrid = document.getElementById('productGrid');
+        const emptyState = document.getElementById('emptyState');
+        const formModal = document.getElementById('formModal');
+        const detailModal = document.getElementById('detailModal');
+        const addBtn = document.getElementById('addBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const saveBtn = document.getElementById('saveBtn');
+        const closeDetailBtn = document.getElementById('closeDetailBtn');
+        const productImage = document.getElementById('productImage');
+        const imagePreview = document.getElementById('imagePreview');
+
+        // 제품 목록 렌더링
+        function renderProducts() {
+            // 기존 카드 제거 (empty state 제외)
+            document.querySelectorAll('.product-card').forEach(el => el.remove());
+
+            if (products.length === 0) {
+                emptyState.style.display = 'block';
+                return;
+            }
+
+            emptyState.style.display = 'none';
+
+            products.forEach(product => {
+                const card = document.createElement('div');
+                card.className = 'product-card';
+                card.innerHTML = `
+                    <div class="image-container" onclick="viewProduct(${product.id})">
+                        ${product.image
+                            ? `<img src="${product.image}" alt="${product.name}">`
+                            : `<span class="no-image">&#128247;</span>`
+                        }
+                    </div>
+                    <div class="card-body" onclick="viewProduct(${product.id})">
+                        <h3>${escapeHtml(product.name)}</h3>
+                        ${product.price ? `<div class="price">${escapeHtml(product.price)}</div>` : ''}
+                        ${product.description ? `<div class="description">${escapeHtml(product.description)}</div>` : ''}
+                    </div>
+                    <div class="card-actions">
+                        <button class="btn-edit" onclick="editProduct(${product.id})">수정</button>
+                        <button class="btn-delete" onclick="deleteProduct(${product.id})">삭제</button>
+                    </div>
+                `;
+                productGrid.appendChild(card);
+            });
+        }
+
+        // HTML 이스케이프
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 모달 열기 (추가)
+        addBtn.addEventListener('click', () => {
+            editingId = null;
+            document.getElementById('modalTitle').textContent = '제품 등록';
+            document.getElementById('productName').value = '';
+            document.getElementById('productPrice').value = '';
+            document.getElementById('productDesc').value = '';
+            productImage.value = '';
+            imagePreview.style.display = 'none';
+            imagePreview.src = '';
+            formModal.classList.add('active');
+        });
+
+        // 모달 닫기
+        cancelBtn.addEventListener('click', () => {
+            formModal.classList.remove('active');
+        });
+
+        formModal.addEventListener('click', (e) => {
+            if (e.target === formModal) formModal.classList.remove('active');
+        });
+
+        detailModal.addEventListener('click', (e) => {
+            if (e.target === detailModal) detailModal.classList.remove('active');
+        });
+
+        closeDetailBtn.addEventListener('click', () => {
+            detailModal.classList.remove('active');
+        });
+
+        // 이미지 미리보기
+        productImage.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    imagePreview.src = ev.target.result;
+                    imagePreview.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // 저장
+        saveBtn.addEventListener('click', () => {
+            const name = document.getElementById('productName').value.trim();
+            if (!name) {
+                alert('제품명을 입력해주세요.');
+                return;
+            }
+
+            const price = document.getElementById('productPrice').value.trim();
+            const description = document.getElementById('productDesc').value.trim();
+            const image = imagePreview.src && imagePreview.style.display !== 'none' ? imagePreview.src : '';
+
+            if (editingId !== null) {
+                // 수정
+                const idx = products.findIndex(p => p.id === editingId);
+                if (idx !== -1) {
+                    products[idx].name = name;
+                    products[idx].price = price;
+                    products[idx].description = description;
+                    if (image) products[idx].image = image;
+                }
+            } else {
+                // 추가
+                products.push({
+                    id: Date.now(),
+                    name,
+                    price,
+                    description,
+                    image
+                });
+            }
+
+            saveProducts();
+            renderProducts();
+            formModal.classList.remove('active');
+        });
+
+        // 수정
+        function editProduct(id) {
+            const product = products.find(p => p.id === id);
+            if (!product) return;
+
+            editingId = id;
+            document.getElementById('modalTitle').textContent = '제품 수정';
+            document.getElementById('productName').value = product.name;
+            document.getElementById('productPrice').value = product.price || '';
+            document.getElementById('productDesc').value = product.description || '';
+            productImage.value = '';
+
+            if (product.image) {
+                imagePreview.src = product.image;
+                imagePreview.style.display = 'block';
+            } else {
+                imagePreview.style.display = 'none';
+                imagePreview.src = '';
+            }
+
+            formModal.classList.add('active');
+        }
+
+        // 삭제
+        function deleteProduct(id) {
+            if (!confirm('이 제품을 삭제하시겠습니까?')) return;
+            products = products.filter(p => p.id !== id);
+            saveProducts();
+            renderProducts();
+        }
+
+        // 상세보기
+        function viewProduct(id) {
+            const product = products.find(p => p.id === id);
+            if (!product) return;
+
+            const detailImage = document.getElementById('detailImage');
+            if (product.image) {
+                detailImage.src = product.image;
+                detailImage.style.display = 'block';
+            } else {
+                detailImage.style.display = 'none';
+            }
+
+            document.getElementById('detailName').textContent = product.name;
+            document.getElementById('detailPrice').textContent = product.price || '';
+            document.getElementById('detailDesc').textContent = product.description || '';
+            detailModal.classList.add('active');
+        }
+
+        // 로컬 스토리지 저장
+        function saveProducts() {
+            localStorage.setItem('products', JSON.stringify(products));
+        }
+
+        // 초기 렌더링
+        renderProducts();
+    </script>
+</body>
+</html>
