@@ -1835,7 +1835,7 @@ async function analyzeWithAI(apiKey, vendorCode, textData, imageData) {
 }
 
 
-// Claude API 호출
+// Claude API 호출 (잘리면 이어서 요청)
 async function callClaude(apiKey, systemPrompt, userMsg, imageData) {
     var messages = [];
     if (imageData) {
@@ -1850,29 +1850,48 @@ async function callClaude(apiKey, systemPrompt, userMsg, imageData) {
         messages.push({ role: 'user', content: userMsg });
     }
 
-    var resp = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 16384,
-            system: systemPrompt,
-            messages: messages
-        })
-    });
+    var fullText = '';
+    var maxRetries = 3;
 
-    if (!resp.ok) {
-        var errData = await resp.json().catch(function() { return {}; });
-        throw new Error((errData.error && errData.error.message) || 'Claude API 오류 (' + resp.status + ')');
+    for (var attempt = 0; attempt < maxRetries; attempt++) {
+        var resp = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01',
+                'anthropic-dangerous-direct-browser-access': 'true'
+            },
+            body: JSON.stringify({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 16384,
+                system: systemPrompt,
+                messages: messages
+            })
+        });
+
+        if (!resp.ok) {
+            var errData = await resp.json().catch(function() { return {}; });
+            throw new Error((errData.error && errData.error.message) || 'Claude API 오류 (' + resp.status + ')');
+        }
+
+        var result = await resp.json();
+        var text = result.content[0].text;
+        fullText += text;
+
+        // 응답이 완료되었으면 종료
+        if (result.stop_reason === 'end_turn') break;
+
+        // 잘렸으면 (max_tokens) 이어서 요청
+        if (result.stop_reason === 'max_tokens') {
+            messages.push({ role: 'assistant', content: text });
+            messages.push({ role: 'user', content: '이어서 계속 출력하세요. JSON 배열을 완성해주세요.' });
+        } else {
+            break;
+        }
     }
 
-    var result = await resp.json();
-    return result.content[0].text;
+    return fullText;
 }
 
 // 분석 결과 처리 (중복 체크 + 단가 비교)
