@@ -1085,6 +1085,10 @@
 </div>
 
 <script>
+// Supabase 클라이언트 (전역)
+var db = null;
+var syncTimer = null;
+
 // ============================================================
 // 데이터 초기화
 // ============================================================
@@ -1122,34 +1126,6 @@ const PAGE_SIZE = 50;
 // ============================================================
 // 탭 전환
 // ============================================================
-function switchTab(tabId) {
-    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.sidebar-nav button').forEach(b => b.classList.remove('active'));
-    document.getElementById('tab-' + tabId).classList.add('active');
-
-    // 사이드바 버튼 활성화
-    if (event && event.target && event.target.closest('.sidebar-nav')) {
-        event.target.closest('button').classList.add('active');
-    }
-
-    // 페이지 제목 업데이트
-    const titleEl = document.getElementById('pageTitle');
-    if (titleEl) titleEl.textContent = PAGE_TITLES[tabId] || tabId;
-
-    // 모바일에서 사이드바 닫기
-    document.getElementById('sidebar').classList.remove('open');
-    document.getElementById('sidebarOverlay').classList.remove('active');
-
-    if (tabId === 'dashboard') renderDashboard();
-    if (tabId === 'products') renderProductList();
-    if (tabId === 'vendors') renderVendors();
-    if (tabId === 'categories') renderCategoryTree();
-    if (tabId === 'margins') renderMargins();
-    if (tabId === 'quote') { loadApiKey(); populateQuoteVendor(); }
-    if (tabId === 'export') { populateExportVendor(); }
-    if (tabId === 'settings') { initSupabase(); }
-}
-
 const PAGE_TITLES = {
     dashboard: '대시보드',
     products: '품목 관리',
@@ -1161,6 +1137,42 @@ const PAGE_TITLES = {
     export: 'ERP 내보내기',
     settings: 'Supabase 설정'
 };
+
+function switchTab(tabId) {
+    // 탭 콘텐츠 전환
+    document.querySelectorAll('.tab-content').forEach(function(t) { t.classList.remove('active'); });
+    var tabEl = document.getElementById('tab-' + tabId);
+    if (tabEl) tabEl.classList.add('active');
+
+    // 사이드바 전체 버튼 비활성화 후 해당 버튼 활성화
+    document.querySelectorAll('.sidebar-nav button, .sidebar-bottom button').forEach(function(b) {
+        b.classList.remove('active');
+    });
+    var allBtns = document.querySelectorAll('.sidebar-nav button, .sidebar-bottom button');
+    allBtns.forEach(function(b) {
+        if (b.getAttribute('onclick') && b.getAttribute('onclick').indexOf("'" + tabId + "'") !== -1) {
+            b.classList.add('active');
+        }
+    });
+
+    // 페이지 제목 업데이트
+    var titleEl = document.getElementById('pageTitle');
+    if (titleEl) titleEl.textContent = PAGE_TITLES[tabId] || tabId;
+
+    // 모바일에서 사이드바 닫기
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebarOverlay').classList.remove('active');
+
+    // 탭별 초기화
+    if (tabId === 'dashboard') renderDashboard();
+    if (tabId === 'products') renderProductList();
+    if (tabId === 'vendors') renderVendors();
+    if (tabId === 'categories') renderCategoryTree();
+    if (tabId === 'margins') renderMargins();
+    if (tabId === 'quote') { loadApiKey(); populateQuoteVendor(); }
+    if (tabId === 'export') { populateExportVendor(); }
+    if (tabId === 'settings') { initSupabase(); }
+}
 
 // ============================================================
 // 대시보드
@@ -1584,6 +1596,10 @@ function saveAll() {
     localStorage.setItem('erp_products', JSON.stringify(products));
     localStorage.setItem('erp_vendors', JSON.stringify(vendors));
     localStorage.setItem('erp_margins', JSON.stringify(margins));
+    // Supabase 자동 동기화
+    if (db) {
+        autoSyncToSupabase();
+    }
 }
 
 function exportAllData() {
@@ -2081,13 +2097,11 @@ function downloadExcel(filename, headers, rows) {
 // ============================================================
 // Supabase 연동
 // ============================================================
-let supabase = null;
-
 function initSupabase() {
     const url = localStorage.getItem('supabase_url') || '';
     const key = localStorage.getItem('supabase_key') || '';
     if (url && key) {
-        supabase = window.supabase.createClient(url, key);
+        db = window.supabase.createClient(url, key);
     }
     // 설정 화면에 값 채우기
     const urlInput = document.getElementById('supabaseUrl');
@@ -2117,7 +2131,7 @@ async function connectSupabase() {
         // 성공 - 저장
         localStorage.setItem('supabase_url', url);
         localStorage.setItem('supabase_key', key);
-        supabase = testClient;
+        db = testClient;
 
         statusEl.innerHTML = '<span style="color:var(--success);font-weight:600;">연결 성공!</span>';
     } catch (err) {
@@ -2136,7 +2150,7 @@ function syncLog(msg) {
 
 // 로컬 → Supabase 업로드
 async function uploadToSupabase() {
-    if (!supabase) { alert('먼저 Supabase 연결 설정을 해주세요.'); return; }
+    if (!db) { alert('먼저 Supabase 연결 설정을 해주세요.'); return; }
     if (!confirm(`로컬 데이터를 Supabase에 업로드합니다.\n품목 ${products.length}개, 매입처 ${vendors.length}개\n\n기존 Supabase 데이터는 유지되고, 중복 코드는 업데이트됩니다.\n계속하시겠습니까?`)) return;
 
     document.getElementById('syncLogContent').textContent = '';
@@ -2146,7 +2160,7 @@ async function uploadToSupabase() {
         // 1) 매입처 업로드
         syncLog(`매입처 ${vendors.length}개 업로드 중...`);
         for (const v of vendors) {
-            const { error } = await supabase.from('vendors')
+            const { error } = await db.from('vendors')
                 .upsert({ code: v.code, name: v.name, type: v.type }, { onConflict: 'code' });
             if (error) syncLog(`  매입처 [${v.code}] 오류: ${error.message}`);
         }
@@ -2174,7 +2188,7 @@ async function uploadToSupabase() {
                 registered_at: p.registeredAt || new Date().toISOString().split('T')[0]
             }));
 
-            const { error } = await supabase.from('products')
+            const { error } = await db.from('products')
                 .upsert(batch, { onConflict: 'code' });
             if (error) syncLog(`  품목 배치 ${i}~${i+batch.length} 오류: ${error.message}`);
             else syncLog(`  품목 ${i+1}~${i+batch.length} 완료`);
@@ -2187,7 +2201,7 @@ async function uploadToSupabase() {
             const marginData = marginEntries.map(([key, rate]) => ({
                 category_key: key, rate: Number(rate) || 0
             }));
-            const { error } = await supabase.from('margins')
+            const { error } = await db.from('margins')
                 .upsert(marginData, { onConflict: 'category_key' });
             if (error) syncLog(`  마진율 오류: ${error.message}`);
         }
@@ -2203,7 +2217,7 @@ async function uploadToSupabase() {
 
 // Supabase → 로컬 다운로드
 async function downloadFromSupabase() {
-    if (!supabase) { alert('먼저 Supabase 연결 설정을 해주세요.'); return; }
+    if (!db) { alert('먼저 Supabase 연결 설정을 해주세요.'); return; }
     if (!confirm('Supabase 데이터를 다운로드합니다.\n현재 브라우저 데이터가 교체됩니다.\n계속하시겠습니까?')) return;
 
     document.getElementById('syncLogContent').textContent = '';
@@ -2212,7 +2226,7 @@ async function downloadFromSupabase() {
     try {
         // 1) 매입처 다운로드
         syncLog('매입처 다운로드 중...');
-        const { data: vendorData, error: vendorErr } = await supabase
+        const { data: vendorData, error: vendorErr } = await db
             .from('vendors').select('*').order('code');
         if (vendorErr) throw vendorErr;
 
@@ -2223,7 +2237,7 @@ async function downloadFromSupabase() {
 
         // 2) 품목 다운로드
         syncLog('품목 다운로드 중...');
-        const { data: productData, error: productErr } = await supabase
+        const { data: productData, error: productErr } = await db
             .from('products').select('*').order('code');
         if (productErr) throw productErr;
 
@@ -2248,7 +2262,7 @@ async function downloadFromSupabase() {
 
         // 3) 마진율 다운로드
         syncLog('마진율 다운로드 중...');
-        const { data: marginData, error: marginErr } = await supabase
+        const { data: marginData, error: marginErr } = await db
             .from('margins').select('*');
         if (marginErr) throw marginErr;
 
@@ -2268,17 +2282,6 @@ async function downloadFromSupabase() {
     }
 }
 
-// 자동 동기화: 데이터 저장 시 Supabase에도 반영
-const originalSaveAll = saveAll;
-saveAll = function() {
-    originalSaveAll();
-    // Supabase 연결 시 백그라운드 동기화
-    if (supabase) {
-        autoSyncToSupabase();
-    }
-};
-
-let syncTimer = null;
 function autoSyncToSupabase() {
     // 연속 저장 시 마지막 것만 동기화 (디바운스 2초)
     clearTimeout(syncTimer);
@@ -2305,7 +2308,7 @@ function autoSyncToSupabase() {
 
             // 50개씩 배치 upsert
             for (let i = 0; i < batch.length; i += 50) {
-                await supabase.from('products')
+                await db.from('products')
                     .upsert(batch.slice(i, i + 50), { onConflict: 'code' });
             }
 
@@ -2313,7 +2316,7 @@ function autoSyncToSupabase() {
             const vendorBatch = vendors.map(v => ({
                 code: v.code, name: v.name, type: v.type
             }));
-            await supabase.from('vendors')
+            await db.from('vendors')
                 .upsert(vendorBatch, { onConflict: 'code' });
 
             // 마진율
@@ -2321,7 +2324,7 @@ function autoSyncToSupabase() {
                 category_key: key, rate: Number(rate) || 0
             }));
             if (marginBatch.length > 0) {
-                await supabase.from('margins')
+                await db.from('margins')
                     .upsert(marginBatch, { onConflict: 'category_key' });
             }
 
