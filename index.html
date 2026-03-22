@@ -855,9 +855,16 @@
     <div class="card">
         <h3>API 설정</h3>
         <div class="form-row">
+            <div class="form-group" style="flex:0 0 140px;">
+                <label>AI 엔진</label>
+                <select id="aiEngine" onchange="onAiEngineChange()">
+                    <option value="gemini">Gemini (무료)</option>
+                    <option value="claude">Claude</option>
+                </select>
+            </div>
             <div class="form-group" style="flex:2">
-                <label>Claude API Key</label>
-                <input type="password" id="apiKey" placeholder="sk-ant-..." style="width:100%">
+                <label id="apiKeyLabel">Gemini API Key</label>
+                <input type="password" id="apiKey" placeholder="AI..." style="width:100%">
             </div>
             <div class="form-group" style="flex:1">
                 <label>매입처 선택 *</label>
@@ -1646,18 +1653,37 @@ function esc(text) {
 let quoteItems = [];
 let quoteImageBase64 = null;
 
+function onAiEngineChange() {
+    var engine = document.getElementById('aiEngine').value;
+    var label = document.getElementById('apiKeyLabel');
+    var input = document.getElementById('apiKey');
+    if (engine === 'gemini') {
+        label.textContent = 'Gemini API Key';
+        input.placeholder = 'AI...';
+    } else {
+        label.textContent = 'Claude API Key';
+        input.placeholder = 'sk-ant-...';
+    }
+    // 엔진별 키 불러오기
+    var savedKey = localStorage.getItem('erp_api_key_' + engine) || '';
+    input.value = savedKey;
+}
+
 function saveApiKey() {
-    const key = document.getElementById('apiKey').value.trim();
+    var engine = document.getElementById('aiEngine').value;
+    var key = document.getElementById('apiKey').value.trim();
     if (key) {
-        localStorage.setItem('erp_api_key', key);
-        alert('API 키가 저장되었습니다.');
+        localStorage.setItem('erp_api_key_' + engine, key);
+        localStorage.setItem('erp_ai_engine', engine);
+        alert('API 키가 저장되었습니다. (' + (engine === 'gemini' ? 'Gemini' : 'Claude') + ')');
     }
 }
 
 function loadApiKey() {
-    const key = localStorage.getItem('erp_api_key') || '';
-    document.getElementById('apiKey').value = key;
-    return key;
+    var engine = localStorage.getItem('erp_ai_engine') || 'gemini';
+    document.getElementById('aiEngine').value = engine;
+    onAiEngineChange();
+    return localStorage.getItem('erp_api_key_' + engine) || '';
 }
 
 function populateQuoteVendor() {
@@ -1713,7 +1739,7 @@ function handleQuoteExcel(e) {
         if (json.length < 2) { alert('데이터가 없습니다.'); return; }
 
         const apiKey = document.getElementById('apiKey').value.trim() || loadApiKey();
-        if (!apiKey) { alert('Claude API 키를 먼저 입력해주세요.'); return; }
+        if (!apiKey) { alert('API 키를 먼저 입력해주세요.'); return; }
 
         const vendorCode = document.getElementById('quoteVendor').value;
         if (!vendorCode) { alert('매입처를 선택해주세요.'); return; }
@@ -1732,7 +1758,7 @@ function handleQuoteImage(e) {
     if (!file) return;
 
     const apiKey = document.getElementById('apiKey').value.trim() || loadApiKey();
-    if (!apiKey) { alert('Claude API 키를 먼저 입력해주세요.'); return; }
+    if (!apiKey) { alert('API 키를 먼저 입력해주세요.'); return; }
 
     const vendorCode = document.getElementById('quoteVendor').value;
     if (!vendorCode) { alert('매입처를 선택해주세요.'); return; }
@@ -1756,78 +1782,44 @@ async function analyzeWithAI(apiKey, vendorCode, textData, imageData) {
     document.getElementById('quoteLoading').style.display = 'block';
     document.getElementById('quoteResult').style.display = 'none';
 
-    const categoryList = [];
-    for (const [mc, major] of Object.entries(CATEGORY_TREE)) {
-        for (const [sc, subName] of Object.entries(major.sub)) {
-            categoryList.push(`${mc}-${sc}: ${major.name}>${subName} (${getAbbrFromMinorName(subName)})`);
+    var engine = document.getElementById('aiEngine').value;
+
+    var categoryList = [];
+    for (var mc in CATEGORY_TREE) {
+        var major = CATEGORY_TREE[mc];
+        for (var sc in major.sub) {
+            categoryList.push(mc + '-' + sc + ': ' + major.name + '>' + major.sub[sc] + ' (' + getAbbrFromMinorName(major.sub[sc]) + ')');
         }
     }
 
-    const systemPrompt = `당신은 식품 견적서를 분석하는 전문가입니다. 견적서에서 품목 정보를 추출하여 JSON 배열로 반환하세요.
+    var promptText = '당신은 식품 견적서를 분석하는 전문가입니다. 견적서에서 품목 정보를 추출하여 JSON 배열로 반환하세요.\n\n' +
+        '각 품목에 대해 다음 정보를 추출:\n' +
+        '- name: 품목명\n- spec: 규격 (용량, 크기, 수량 등)\n- unit: 단위 (kg, 개, 박스, ea 등)\n' +
+        '- supplyPrice: 공급가 (숫자만)\n- vat: 부가세 (숫자만, 없으면 0)\n- totalPrice: 합계 (공급가+부가세)\n' +
+        '- tax: "과세" 또는 "면세" (부가세가 있으면 과세, 없으면 면세)\n' +
+        '- categoryCode: 아래 분류 중 가장 적합한 코드 (예: "04-03")\n- categoryAbbr: 해당 분류 약어 (예: "SOS")\n\n' +
+        '분류 목록:\n' + categoryList.join('\n') + '\n\n' +
+        '반드시 JSON 배열만 반환하세요. 다른 텍스트는 포함하지 마세요.\n' +
+        '예시: [{"name":"진간장","spec":"1.8L","unit":"병","supplyPrice":5000,"vat":500,"totalPrice":5500,"tax":"과세","categoryCode":"04-03","categoryAbbr":"SOS"}]';
 
-각 품목에 대해 다음 정보를 추출:
-- name: 품목명
-- spec: 규격 (용량, 크기, 수량 등)
-- unit: 단위 (kg, 개, 박스, ea 등)
-- supplyPrice: 공급가 (숫자만)
-- vat: 부가세 (숫자만, 없으면 0)
-- totalPrice: 합계 (공급가+부가세)
-- tax: "과세" 또는 "면세" (부가세가 있으면 과세, 없으면 면세)
-- categoryCode: 아래 분류 중 가장 적합한 코드 (예: "04-03")
-- categoryAbbr: 해당 분류 약어 (예: "SOS")
-
-분류 목록:
-${categoryList.join('\n')}
-
-반드시 JSON 배열만 반환하세요. 다른 텍스트는 포함하지 마세요.
-예시: [{"name":"진간장","spec":"1.8L","unit":"병","supplyPrice":5000,"vat":500,"totalPrice":5500,"tax":"과세","categoryCode":"04-03","categoryAbbr":"SOS"}]`;
-
-    const messages = [];
-    if (textData) {
-        messages.push({
-            role: 'user',
-            content: `다음 견적서 데이터를 분석해주세요:\n\n${textData}`
-        });
-    } else if (imageData) {
-        messages.push({
-            role: 'user',
-            content: [
-                { type: 'image', source: { type: 'base64', media_type: imageData.mediaType, data: imageData.base64 } },
-                { type: 'text', text: '이 견적서 이미지를 분석해주세요. 모든 품목의 정보를 추출해주세요.' }
-            ]
-        });
-    }
+    var userMsg = textData
+        ? '다음 견적서 데이터를 분석해주세요:\n\n' + textData
+        : '이 견적서 이미지를 분석해주세요. 모든 품목의 정보를 추출해주세요.';
 
     try {
-        const resp = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': apiKey,
-                'anthropic-version': '2023-06-01',
-                'anthropic-dangerous-direct-browser-access': 'true'
-            },
-            body: JSON.stringify({
-                model: 'claude-sonnet-4-20250514',
-                max_tokens: 4096,
-                system: systemPrompt,
-                messages
-            })
-        });
+        var responseText = '';
 
-        if (!resp.ok) {
-            const errData = await resp.json().catch(() => ({}));
-            throw new Error(errData.error?.message || `API 오류 (${resp.status})`);
+        if (engine === 'gemini') {
+            responseText = await callGemini(apiKey, promptText, userMsg, imageData);
+        } else {
+            responseText = await callClaude(apiKey, promptText, userMsg, imageData);
         }
 
-        const result = await resp.json();
-        const text = result.content[0].text;
-
         // JSON 추출
-        const jsonMatch = text.match(/\[[\s\S]*\]/);
+        var jsonMatch = responseText.match(/\[[\s\S]*\]/);
         if (!jsonMatch) throw new Error('AI 응답에서 JSON을 찾을 수 없습니다.');
 
-        const items = JSON.parse(jsonMatch[0]);
+        var items = JSON.parse(jsonMatch[0]);
         processQuoteItems(items, vendorCode);
 
     } catch (err) {
@@ -1835,6 +1827,73 @@ ${categoryList.join('\n')}
     } finally {
         document.getElementById('quoteLoading').style.display = 'none';
     }
+}
+
+// Gemini API 호출
+async function callGemini(apiKey, systemPrompt, userMsg, imageData) {
+    var parts = [];
+
+    if (imageData) {
+        parts.push({ inlineData: { mimeType: imageData.mediaType, data: imageData.base64 } });
+    }
+    parts.push({ text: systemPrompt + '\n\n' + userMsg });
+
+    var resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + apiKey, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            contents: [{ parts: parts }],
+            generationConfig: { temperature: 0.1, maxOutputTokens: 8192 }
+        })
+    });
+
+    if (!resp.ok) {
+        var errData = await resp.json().catch(function() { return {}; });
+        throw new Error((errData.error && errData.error.message) || 'Gemini API 오류 (' + resp.status + ')');
+    }
+
+    var result = await resp.json();
+    return result.candidates[0].content.parts[0].text;
+}
+
+// Claude API 호출
+async function callClaude(apiKey, systemPrompt, userMsg, imageData) {
+    var messages = [];
+    if (imageData) {
+        messages.push({
+            role: 'user',
+            content: [
+                { type: 'image', source: { type: 'base64', media_type: imageData.mediaType, data: imageData.base64 } },
+                { type: 'text', text: userMsg }
+            ]
+        });
+    } else {
+        messages.push({ role: 'user', content: userMsg });
+    }
+
+    var resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 4096,
+            system: systemPrompt,
+            messages: messages
+        })
+    });
+
+    if (!resp.ok) {
+        var errData = await resp.json().catch(function() { return {}; });
+        throw new Error((errData.error && errData.error.message) || 'Claude API 오류 (' + resp.status + ')');
+    }
+
+    var result = await resp.json();
+    return result.content[0].text;
 }
 
 // 분석 결과 처리 (중복 체크 + 단가 비교)
