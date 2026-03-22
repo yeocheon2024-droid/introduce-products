@@ -1843,29 +1843,58 @@ async function callOpenRouter(apiKey, systemPrompt, userMsg, imageData) {
     }
     content.push({ type: 'text', text: userMsg });
 
-    var resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + apiKey
-        },
-        body: JSON.stringify({
-            model: 'openrouter/free',
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: content }
-            ],
-            max_tokens: 8192
-        })
-    });
+    // 60초 타임아웃
+    var controller = new AbortController();
+    var timeout = setTimeout(function() { controller.abort(); }, 60000);
 
-    if (!resp.ok) {
-        var errData = await resp.json().catch(function() { return {}; });
-        throw new Error((errData.error && errData.error.message) || 'OpenRouter API 오류 (' + resp.status + ')');
+    // 무료 모델 순서대로 시도
+    var models = [
+        'meta-llama/llama-4-maverick:free',
+        'meta-llama/llama-4-scout:free',
+        'nvidia/llama-3.1-nemotron-ultra-253b:free',
+        'deepseek/deepseek-chat-v3-0324:free',
+        'qwen/qwen3-235b-a22b:free'
+    ];
+
+    var lastError = '';
+    for (var i = 0; i < models.length; i++) {
+        try {
+            var resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + apiKey
+                },
+                body: JSON.stringify({
+                    model: models[i],
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: content }
+                    ],
+                    max_tokens: 8192
+                }),
+                signal: controller.signal
+            });
+
+            if (!resp.ok) {
+                var errData = await resp.json().catch(function() { return {}; });
+                lastError = (errData.error && errData.error.message) || resp.status;
+                continue; // 다음 모델 시도
+            }
+
+            clearTimeout(timeout);
+            var result = await resp.json();
+            if (result.choices && result.choices[0]) {
+                return result.choices[0].message.content;
+            }
+            lastError = 'Empty response';
+        } catch (e) {
+            if (e.name === 'AbortError') throw new Error('요청 시간이 초과되었습니다 (60초). 다시 시도해주세요.');
+            lastError = e.message;
+        }
     }
-
-    var result = await resp.json();
-    return result.choices[0].message.content;
+    clearTimeout(timeout);
+    throw new Error('모든 무료 모델 실패: ' + lastError);
 }
 
 // Gemini API 호출
