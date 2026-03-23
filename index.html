@@ -3423,7 +3423,8 @@ async function loadNoImageProducts() {
     try {
         const { data } = await db.storage.from(IMAGE_BUCKET).list('', { limit: 1000 });
         const uploaded = new Set((data || []).map(f => f.name.replace(/\.(png|jpg|jpeg|webp)$/i, '')));
-        const noImg = products.filter(p => !uploaded.has(p.code));
+        // Supabase Storage에 없어도 imageUrl 필드가 있으면 이미지 있는 것으로 처리
+        const noImg = products.filter(p => !uploaded.has(p.code) && !p.imageUrl);
 
         if (noImg.length === 0) {
             el.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem;">모든 품목에 이미지가 있습니다. ✅</p>';
@@ -3497,36 +3498,29 @@ async function selectNaverImage(code, encodedUrl) {
     if (!confirm('이 이미지를 ' + code + ' 품목에 저장할까요?')) return;
 
     const status = document.getElementById('naverImageStatus');
-    status.textContent = '이미지 다운로드 및 업로드 중...';
+    status.textContent = '저장 중...';
     document.getElementById('naverImageResults').style.opacity = '0.5';
 
     try {
-        // 여러 프록시 순차 시도
-        const proxies = [
-            'https://corsproxy.io/?' + imageUrl,
-            'https://wsrv.nl/?url=' + encodeURIComponent(imageUrl) + '&output=png',
-            'https://api.allorigins.win/raw?url=' + encodeURIComponent(imageUrl),
-        ];
-        let blob = null, lastErr = '';
-        for (const proxyUrl of proxies) {
-            try {
-                const r = await fetch(proxyUrl);
-                if (r.ok) { blob = await r.blob(); if (blob.size > 100) break; }
-                else lastErr = 'HTTP ' + r.status;
-            } catch(e) { lastErr = e.message; }
+        // CORS 프록시 없이 URL 자체를 품목 데이터에 저장
+        const idx = products.findIndex(p => p.code === code);
+        if (idx < 0) throw new Error('품목을 찾을 수 없습니다.');
+        products[idx].imageUrl = imageUrl;
+        saveProducts();
+
+        // Supabase에도 반영
+        if (db) {
+            const { error } = await db.from('products').update({ imageUrl: imageUrl }).eq('code', code);
+            if (error) console.warn('Supabase 저장 오류:', error.message);
         }
-        if (!blob || blob.size <= 100) throw new Error('모든 프록시 실패: ' + lastErr);
 
-        const { error } = await db.storage.from(IMAGE_BUCKET).upload(code + '.png', blob, { upsert: true, contentType: 'image/png' });
-        if (error) throw error;
-
-        status.textContent = '✅ 업로드 완료!';
+        status.textContent = '✅ 저장 완료!';
         document.getElementById('naverImageResults').style.opacity = '1';
         setTimeout(() => {
             closeModal('naverImageModal');
             loadNoImageProducts();
-            loadUploadedImages();
-        }, 1000);
+            renderProductList();
+        }, 800);
     } catch(e) {
         document.getElementById('naverImageResults').style.opacity = '1';
         status.textContent = '❌ 오류: ' + e.message;
@@ -3545,7 +3539,8 @@ function getProductImageUrl(code) {
 }
 
 function getProductThumbHTML(code) {
-    const url = getProductImageUrl(code);
+    const p = products.find(pr => pr.code === code);
+    const url = (p && p.imageUrl) ? p.imageUrl : getProductImageUrl(code);
     return '<img src="' + url + '" class="product-thumb" onerror="this.outerHTML=\'<div class=\\\'product-thumb-placeholder\\\'>&#128230;</div>\'">';
 }
 
@@ -3802,7 +3797,12 @@ function searchUploadedImages() {
         renderUploadedImages(uploadedImageCache);
         return;
     }
-    const filtered = uploadedImageCache.filter(f => f.name.toLowerCase().includes(q));
+    const filtered = uploadedImageCache.filter(f => {
+        if (f.name.toLowerCase().includes(q)) return true;
+        const code = f.name.replace(/\.[^.]+$/, '');
+        const p = products.find(pr => pr.code === code);
+        return p && (p.name || '').toLowerCase().includes(q);
+    });
     renderUploadedImages(filtered);
 }
 
