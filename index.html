@@ -3211,7 +3211,10 @@ function toggleShowAll() {
     currentPage = 1;
     document.getElementById('showAllBtn').textContent = showAll ? '페이지별 보기' : '전체 보기';
     const tableWrap = document.querySelector('#tab-products .table-wrap');
-    if (tableWrap) tableWrap.style.maxHeight = showAll ? 'none' : '600px';
+    if (tableWrap) {
+        tableWrap.style.maxHeight = showAll ? 'none' : '600px';
+        tableWrap.style.overflowY = showAll ? 'visible' : 'auto';
+    }
     renderProductList();
 }
 
