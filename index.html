@@ -233,7 +233,7 @@
         .table-wrap { overflow-x: auto; border-radius: var(--radius-sm); }
         table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
         th, td {
-            padding: 12px 16px;
+            padding: 8px 10px;
             text-align: left;
             border-bottom: 1px solid var(--border-light);
             white-space: nowrap;
@@ -1022,10 +1022,9 @@
             <table>
                 <thead>
                     <tr>
-                        <th style="width:30px;"><input type="checkbox" id="selectAllCheck" onclick="toggleSelectAll(this.checked)" title="전체 선택"></th>
-                        <th style="width:50px;">이미지</th><th>품목코드</th><th>품목명</th><th>규격</th><th>대분류</th><th>중분류</th>
-                        <th>과세</th><th>매입처</th><th class="text-right">매입단가(VAT포함)</th>
-                        <th class="text-right">공급가액</th><th class="text-right">부가세</th>
+                        <th style="width:24px;padding:8px 4px;"><input type="checkbox" id="selectAllCheck" onclick="toggleSelectAll(this.checked)" title="전체 선택"></th>
+                        <th style="width:40px;">이미지</th><th>품목코드</th><th>품목명</th><th>규격</th><th>대분류</th><th>중분류</th>
+                        <th>과세</th><th>매입처</th><th class="text-right">매입단가</th>
                         <th class="text-right">판매단가</th><th class="text-center">관리</th>
                     </tr>
                 </thead>
@@ -1734,7 +1733,7 @@ function renderProductList() {
             const vat = (sell && !isTaxFree) ? sell - supply : 0;
             const isChecked = selectedProductCodes.has(p.code);
             return `<tr>
-            <td><input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleProductSelect('${esc(p.code)}', this.checked)"></td>
+            <td style="padding:8px 4px;"><input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleProductSelect('${esc(p.code)}', this.checked)"></td>
             <td>${getProductThumbHTML(p.code)}</td>
             <td style="font-weight:600;color:var(--accent);">${esc(p.code)}</td>
             <td>${esc(p.name)}</td>
@@ -1744,8 +1743,6 @@ function renderProductList() {
             <td><span class="badge ${p.tax === '면세' ? 'badge-notax' : 'badge-tax'}">${esc(p.tax || '과세')}</span></td>
             <td><span class="badge ${p.vendorType === 'self' ? 'badge-self' : 'badge-external'}">${esc(p.vendorName || '')}</span></td>
             <td class="text-right" style="font-weight:500;">${p.cost ? Number(p.cost).toLocaleString() : '-'}</td>
-            <td class="text-right" style="color:var(--text-secondary);">${supply ? supply.toLocaleString() : '-'}</td>
-            <td class="text-right" style="color:var(--text-secondary);">${vat ? vat.toLocaleString() : '-'}</td>
             <td class="text-right" style="font-weight:600;">${sell ? sell.toLocaleString() : '-'}</td>
             <td class="text-center">
                 <button class="btn btn-outline btn-sm" onclick="editProduct('${esc(p.code)}')">수정</button>
