@@ -1275,7 +1275,7 @@
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;">
             <input type="text" id="imageSearchInput" placeholder="품목코드로 검색..." oninput="searchUploadedImages()" style="flex:1;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;font-family:inherit;">
             <button class="btn btn-outline" onclick="loadUploadedImages()">새로고침</button>
-            <button class="btn btn-outline" onclick="downloadAllImages()">전체 다운로드</button>
+            <button class="btn btn-outline" onclick="downloadAllImages()" id="uploadedZipBtn">&#128230; ZIP 다운로드</button>
         </div>
         <div class="image-grid" id="uploadedImageGrid">
             <p style="color:var(--text-muted);font-size:0.82rem;grid-column:1/-1;text-align:center;padding:20px;">탭을 열면 자동으로 불러옵니다.</p>
@@ -3939,18 +3939,45 @@ async function downloadImage(url, filename) {
 }
 
 async function downloadAllImages() {
-    const list = uploadedImageCache.filter(f => {
-        const q = (document.getElementById('imageSearchInput').value || '').trim().toLowerCase();
-        return !q || f.name.toLowerCase().includes(q);
-    });
+    const q = (document.getElementById('imageSearchInput').value || '').trim().toLowerCase();
+    const list = uploadedImageCache.filter(f => !q || f.name.toLowerCase().includes(q));
     if (list.length === 0) { alert('다운로드할 이미지가 없습니다.'); return; }
-    if (!confirm(list.length + '개 이미지를 다운로드합니다. 브라우저에서 팝업을 허용해야 합니다.')) return;
-    for (let i = 0; i < list.length; i++) {
-        const code = list[i].name.replace(/\.[^.]+$/, '');
+
+    const btn = document.getElementById('uploadedZipBtn');
+    btn.disabled = true;
+    btn.textContent = '압축 중... 0/' + list.length;
+
+    const zip = new JSZip();
+    let done = 0;
+
+    for (const f of list) {
+        const code = f.name.replace(/\.[^.]+$/, '');
         const url = getProductImageUrl(code);
-        await downloadImage(url, list[i].name);
-        await new Promise(r => setTimeout(r, 400));
+        try {
+            const res = await fetch(url);
+            if (res.ok) {
+                const arrayBuffer = await res.arrayBuffer();
+                zip.file(f.name, arrayBuffer);
+            }
+        } catch(e) { /* 실패 이미지 건너뜀 */ }
+        done++;
+        btn.textContent = '압축 중... ' + done + '/' + list.length;
+        await new Promise(r => setTimeout(r, 50));
     }
+
+    try {
+        const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(zipBlob);
+        a.download = '업로드이미지_' + new Date().toISOString().slice(0,10) + '.zip';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    } catch(e) {
+        alert('ZIP 생성 실패: ' + e.message);
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '&#128230; ZIP 다운로드';
 }
 
 function initCategoryFilters() {
