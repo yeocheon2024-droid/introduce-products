@@ -888,9 +888,23 @@
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+        /* ===== 인쇄 ===== */
+        @media print {
+            body > *:not(#printOverlay) { display: none !important; }
+            #printOverlay { display: block !important; position: static !important; background: white !important; padding: 0 !important; }
+            #printOverlay .print-close-btn { display: none !important; }
+            input[type=number] { border: none !important; background: transparent !important; }
+        }
     </style>
 </head>
 <body>
+
+<!-- 인쇄용 오버레이 -->
+<div id="printOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:white;z-index:99999;overflow:auto;padding:20px;box-sizing:border-box;">
+    <button class="print-close-btn" onclick="closePrintOverlay()" style="position:fixed;top:10px;right:10px;padding:8px 16px;background:#e53e3e;color:white;border:none;border-radius:6px;font-size:0.9rem;cursor:pointer;z-index:100000;">✕ 닫기</button>
+    <div id="printOverlayContent" style="font-family:'Malgun Gothic',sans-serif;font-size:13px;color:#111;"></div>
+</div>
 
 <!-- 모바일 토글 -->
 <button class="mobile-toggle" onclick="toggleSidebar()">&#9776;</button>
@@ -2267,15 +2281,19 @@ function openPurchaseOrderModal() {
     renderPOTable();
 }
 
+function openPrintOverlay(html) {
+    document.getElementById('printOverlayContent').innerHTML = html;
+    document.getElementById('printOverlay').style.display = 'block';
+    setTimeout(function() { window.print(); }, 300);
+}
+
+function closePrintOverlay() {
+    document.getElementById('printOverlay').style.display = 'none';
+    document.getElementById('printOverlayContent').innerHTML = '';
+}
+
 function printPurchaseOrder() {
-    const printContents = document.getElementById('poPrintArea').innerHTML;
-    const w = window.open('', '_blank');
-    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>발주서</title>
-    <style>body{font-family:'Malgun Gothic',sans-serif;margin:20px;}input[type=number]{border:none;background:transparent;font-size:inherit;width:30px;text-align:center;}@media print{input{border:none;background:transparent;}}</style>
-    </head><body>${printContents}</body></html>`);
-    w.document.close();
-    w.focus();
-    setTimeout(() => { w.print(); w.close(); }, 300);
+    openPrintOverlay(document.getElementById('poPrintArea').innerHTML);
 }
 
 function downloadPOExcel() {
@@ -2292,17 +2310,7 @@ function downloadPOExcel() {
 }
 
 function printQuote() {
-    const printContents = document.getElementById('quotePrintArea').innerHTML;
-    const w = window.open('', '_blank');
-    w.document.write(`<html><head><title>견적서</title><style>
-        * { box-sizing: border-box; }
-        body { font-family: 'Malgun Gothic', sans-serif; padding: 20px; font-size: 13px; color: #111; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #999; padding: 5px 8px; }
-        th { background: #f0f0f0; }
-    </style></head><body>${printContents}</body></html>`);
-    w.document.close();
-    w.print();
+    openPrintOverlay(document.getElementById('quotePrintArea').innerHTML);
 }
 
 function downloadQuoteExcel() {
