@@ -1494,6 +1494,7 @@
                 <input id="poManager" placeholder="담당자" style="padding:5px 10px;border:1px solid #ccc;border-radius:6px;font-size:0.85rem;width:100px;" oninput="updatePOHeader()">
                 <input id="poContact" placeholder="연락처" style="padding:5px 10px;border:1px solid #ccc;border-radius:6px;font-size:0.85rem;width:130px;" oninput="updatePOHeader()">
                 <input id="poDeliveryDate" type="date" style="padding:5px 10px;border:1px solid #ccc;border-radius:6px;font-size:0.85rem;" oninput="updatePOHeader()">
+                <input id="poVendorCode" placeholder="매입처코드" style="padding:5px 10px;border:1px solid #ccc;border-radius:6px;font-size:0.85rem;width:110px;" oninput="updatePOHeader()">
             </div>
             <div style="margin-left:auto;display:flex;gap:8px;">
                 <button class="btn btn-primary" onclick="printPurchaseOrder()">🖨 인쇄</button>
@@ -1526,6 +1527,10 @@
                     <td style="background:#eef2fa;border:1px solid #b0bcd8;padding:7px 14px;font-weight:700;">연락처</td>
                     <td style="border:1px solid #b0bcd8;padding:7px 14px;" id="poContactCell"></td>
                 </tr>
+                <tr>
+                    <td style="background:#eef2fa;border:1px solid #b0bcd8;padding:7px 14px;font-weight:700;">매입처코드</td>
+                    <td colspan="3" style="border:1px solid #b0bcd8;padding:7px 14px;" id="poVendorCodeCell"></td>
+                </tr>
             </table>
             <!-- 품목 테이블 -->
             <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
@@ -1537,7 +1542,6 @@
                         <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:80px;">규격</th>
                         <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:40px;">단위</th>
                         <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:45px;">수량</th>
-                        <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:90px;">단가(VAT포함)</th>
                         <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:90px;">공급가액</th>
                         <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:50px;">VAT</th>
                         <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:80px;">VAT금액</th>
@@ -2159,6 +2163,12 @@ function openQuoteModal() {
 let poQty = {}; // { code: qty } 수량 저장
 let poCost = {}; // { code: cost } 단가 오버라이드
 
+const PO_VENDOR_CODES = {
+    'WI': '000655',
+    'HN': '000539',
+    'WD': '000541',
+};
+
 function buildPORows() {
     return products.filter(p => selectedProductCodes.has(p.code)).map(p => {
         const cost = poCost[p.code] !== undefined
@@ -2193,7 +2203,6 @@ function renderPOTable() {
             '<td style="' + B + 'text-align:center;">' + esc(r.p.spec || '') + '</td>' +
             '<td style="' + B + 'text-align:center;">' + esc(r.p.unit || '') + '</td>' +
             '<td style="' + B + 'text-align:center;"><input type="number" min="1" value="' + r.qty + '" style="width:45px;text-align:center;border:1px solid #ccc;border-radius:3px;padding:2px;" onchange="poQty[\'' + r.p.code + '\']=Number(this.value);renderPOTable()"></td>' +
-            '<td style="' + B + 'text-align:right;"><input type="number" min="0" value="' + r.cost + '" style="width:85px;text-align:right;border:1px solid #ccc;border-radius:3px;padding:2px;" onchange="poCost[\'' + r.p.code + '\']=Number(this.value);renderPOTable()"></td>' +
             '<td style="' + B + 'text-align:right;">' + (r.totalSupply > 0 ? r.totalSupply.toLocaleString() : '-') + '</td>' +
             '<td style="' + B + 'text-align:center;">' + (r.p.tax === '면세' ? '면세' : '포함') + '</td>' +
             '<td style="' + B + 'text-align:right;">' + (r.totalVat > 0 ? r.totalVat.toLocaleString() : '-') + '</td>' +
@@ -2202,7 +2211,7 @@ function renderPOTable() {
     }).join('');
 
     tfoot.innerHTML = `<tr style="background:#eef2fa;font-weight:700;">
-        <td colspan="7" style="${S}text-align:right;">공급가액 합계</td>
+        <td colspan="6" style="${S}text-align:right;">공급가액 합계</td>
         <td style="${S}text-align:right;">${totalSupply.toLocaleString()}</td>
         <td style="${S}text-align:center;">-</td>
         <td style="${S}text-align:right;">${totalVat.toLocaleString()}</td>
@@ -2221,6 +2230,7 @@ function updatePOHeader() {
     document.getElementById('poCompanyCell').textContent = document.getElementById('poCompany').value || '';
     document.getElementById('poManagerCell').textContent = document.getElementById('poManager').value || '';
     document.getElementById('poContactCell').textContent = document.getElementById('poContact').value || '';
+    document.getElementById('poVendorCodeCell').textContent = document.getElementById('poVendorCode').value || '';
 }
 
 function openPurchaseOrderModal() {
@@ -2234,6 +2244,16 @@ function openPurchaseOrderModal() {
     document.getElementById('poCompany').value = '';
     document.getElementById('poManager').value = '';
     document.getElementById('poContact').value = '';
+
+    // 선택 품목에서 매입처 자동 감지 → 코드 자동 입력
+    const selProds = products.filter(p => selectedProductCodes.has(p.code));
+    const vendorCodes = [...new Set(selProds.map(p => p.vendorCode).filter(Boolean))];
+    const autoCode = vendorCodes.length === 1 ? (PO_VENDOR_CODES[vendorCodes[0]] || '') : '';
+    document.getElementById('poVendorCode').value = autoCode;
+    if (vendorCodes.length === 1) {
+        const v = vendors.find(vd => vd.code === vendorCodes[0]);
+        if (v) document.getElementById('poVendor').value = v.name;
+    }
     openModal('purchaseOrderModal');
     updatePOHeader();
     renderPOTable();
@@ -2254,12 +2274,12 @@ function downloadPOExcel() {
     const rows = buildPORows();
     if (rows.length === 0) { alert('선택된 품목이 없습니다.'); return; }
     const today = new Date().toISOString().split('T')[0];
-    const headers = ['No', '품목코드', '품명', '규격', '단위', '수량', '단가(VAT포함)', '공급가액', 'VAT구분', 'VAT금액', '비고'];
+    const headers = ['No', '품목코드', '품명', '규격', '단위', '수량', '공급가액', 'VAT구분', 'VAT금액', '비고'];
     const data = rows.map((r, i) => [
         i + 1, r.p.code, r.p.name, r.p.spec || '', r.p.unit || '',
-        r.qty, r.cost, r.totalSupply, r.p.tax === '면세' ? '면세' : '포함', r.totalVat, ''
+        r.qty, r.totalSupply, r.p.tax === '면세' ? '면세' : '포함', r.totalVat, ''
     ]);
-    data.push(['', '', '', '', '', '', '공급가액 합계', rows.reduce((s,r)=>s+r.totalSupply,0), '', rows.reduce((s,r)=>s+r.totalVat,0), '']);
+    data.push(['', '', '', '', '', '공급가액 합계', rows.reduce((s,r)=>s+r.totalSupply,0), '', rows.reduce((s,r)=>s+r.totalVat,0), '']);
     downloadExcel('발주서_' + today, headers, data);
 }
 
