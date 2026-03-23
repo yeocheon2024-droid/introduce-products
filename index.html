@@ -3225,7 +3225,7 @@ function exportForBaljugo() {
         p.code, p.name, p.registeredAt || '', p.spec || '',
         p.majorCode || '', p.majorName || '', p.minorCode || '', p.minorName || '',
         '05', 'EA', '05', 'EA',
-        '', p.tax === '면세' ? '1' : '0', '0', '', '',
+        '', p.tax === '면세' ? '1' : '0', p.tax === '면세' ? '0' : '1', '', '',
         '', '', '', '0', '', '',
         '', p.vendorCode || '', p.vendorName || '', p.cost || '', '',
         '', '2', '', '', '', '', '',
