@@ -3315,7 +3315,8 @@ async function downloadFromSupabase() {
             vendorType: p.vendor_type || 'self',
             cost: p.cost || 0,
             sell: p.sell || 0,
-            registeredAt: p.registered_at || ''
+            registeredAt: p.registered_at || '',
+            imageUrl: p.image_url || ''
         }));
         syncLog(`품목 ${products.length}개 다운로드 완료`);
 
@@ -3506,11 +3507,11 @@ async function selectNaverImage(code, encodedUrl) {
         const idx = products.findIndex(p => p.code === code);
         if (idx < 0) throw new Error('품목을 찾을 수 없습니다.');
         products[idx].imageUrl = imageUrl;
-        saveProducts();
+        localStorage.setItem('erp_products', JSON.stringify(products));
 
         // Supabase에도 반영
         if (db) {
-            const { error } = await db.from('products').update({ imageUrl: imageUrl }).eq('code', code);
+            const { error } = await db.from('products').update({ image_url: imageUrl }).eq('code', code);
             if (error) console.warn('Supabase 저장 오류:', error.message);
         }
 
