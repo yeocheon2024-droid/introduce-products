@@ -1910,21 +1910,18 @@ function renderQuoteTable() {
     const totalSell = rows.reduce((s, r) => s + r.sell, 0);
     const totalSupply = rows.reduce((s, r) => s + r.supply, 0);
     const totalVat = rows.reduce((s, r) => s + r.vat, 0);
+    const S = 'border:1px solid #999;padding:5px 7px;';
 
-    tbody.innerHTML = '';
-    rows.forEach((r, i) => {
-        const tr = document.createElement('tr');
-        const td = (content, style) => { const el = document.createElement('td'); el.style.cssText = 'border:1px solid #999;padding:5px 7px;' + (style || ''); el.innerHTML = content; return el; };
-        tr.appendChild(td(i + 1, 'text-align:center;'));
-        tr.appendChild(td(esc(r.p.name), ''));
-        tr.appendChild(td(esc(r.p.spec || ''), 'text-align:center;'));
-        tr.appendChild(td(esc(r.p.unit || ''), 'text-align:center;'));
-        tr.appendChild(td(esc(r.p.tax || '과세'), 'text-align:center;'));
-        tr.appendChild(td(r.supply ? r.supply.toLocaleString() : '-', 'text-align:right;'));
-        tr.appendChild(td(r.vat ? r.vat.toLocaleString() : '-', 'text-align:right;'));
-        tr.appendChild(td(r.sell ? r.sell.toLocaleString() : '-', 'text-align:right;font-weight:700;'));
-        tbody.appendChild(tr);
-    });
+    tbody.innerHTML = rows.map((r, i) => `<tr>
+        <td style="${S}text-align:center;">${i + 1}</td>
+        <td style="${S}">${esc(r.p.name)}</td>
+        <td style="${S}text-align:center;">${esc(r.p.spec || '')}</td>
+        <td style="${S}text-align:center;">${esc(r.p.unit || '')}</td>
+        <td style="${S}text-align:center;">${esc(r.p.tax || '과세')}</td>
+        <td style="${S}text-align:right;">${r.supply ? r.supply.toLocaleString() : '-'}</td>
+        <td style="${S}text-align:right;">${r.vat ? r.vat.toLocaleString() : '-'}</td>
+        <td style="${S}text-align:right;font-weight:700;">${r.sell ? r.sell.toLocaleString() : '-'}</td>
+    </tr>`).join('');
 
     tfoot.innerHTML = `<tr style="background:#f5f5f5;font-weight:700;">
         <td colspan="5" style="border:1px solid #999;padding:6px 8px;text-align:center;">합 계</td>
