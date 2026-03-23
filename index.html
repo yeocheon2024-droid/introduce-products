@@ -2055,19 +2055,22 @@ function renderPOTable() {
     const totalVat = rows.reduce((s, r) => s + r.totalVat, 0);
     const S = 'border:1px solid #b0bcd8;padding:5px 6px;';
 
-    tbody.innerHTML = rows.map((r, i) => `<tr>
-        <td style="${S}text-align:center;">${i + 1}</td>
-        <td style="${S}text-align:center;font-size:0.75rem;">${esc(r.p.code)}</td>
-        <td style="${S}">${esc(r.p.name)}</td>
-        <td style="${S}text-align:center;">${esc(r.p.spec || '')}</td>
-        <td style="${S}text-align:center;">${esc(r.p.unit || '')}</td>
-        <td style="${S}text-align:center;"><input type="number" min="1" value="${r.qty}" style="width:45px;text-align:center;border:1px solid #ccc;border-radius:3px;padding:2px;" onchange="poQty['${esc(r.p.code)}']=this.value;renderPOTable()"></td>
-        <td style="${S}text-align:right;">${r.cost ? r.cost.toLocaleString() : '-'}</td>
-        <td style="${S}text-align:right;">${r.totalSupply ? r.totalSupply.toLocaleString() : '-'}</td>
-        <td style="${S}text-align:center;">${r.p.tax === '면세' ? '면세' : '포함'}</td>
-        <td style="${S}text-align:right;">${r.totalVat ? r.totalVat.toLocaleString() : '-'}</td>
-        <td style="${S}"></td>
-    </tr>`).join('');
+    tbody.innerHTML = rows.map((r, i) => {
+        const B = 'border:1px solid #b0bcd8;padding:5px 6px;';
+        return '<tr>' +
+            '<td style="' + B + 'text-align:center;">' + (i + 1) + '</td>' +
+            '<td style="' + B + 'text-align:center;font-size:0.75rem;">' + esc(r.p.code) + '</td>' +
+            '<td style="' + B + '">' + esc(r.p.name) + '</td>' +
+            '<td style="' + B + 'text-align:center;">' + esc(r.p.spec || '') + '</td>' +
+            '<td style="' + B + 'text-align:center;">' + esc(r.p.unit || '') + '</td>' +
+            '<td style="' + B + 'text-align:center;"><input type="number" min="1" value="' + r.qty + '" style="width:45px;text-align:center;border:1px solid #ccc;border-radius:3px;padding:2px;" onchange="poQty[\'' + r.p.code + '\']=Number(this.value);renderPOTable()"></td>' +
+            '<td style="' + B + 'text-align:right;">' + (r.cost > 0 ? r.cost.toLocaleString() : '<span style="color:#aaa;">미설정</span>') + '</td>' +
+            '<td style="' + B + 'text-align:right;">' + (r.totalSupply > 0 ? r.totalSupply.toLocaleString() : '-') + '</td>' +
+            '<td style="' + B + 'text-align:center;">' + (r.p.tax === '면세' ? '면세' : '포함') + '</td>' +
+            '<td style="' + B + 'text-align:right;">' + (r.totalVat > 0 ? r.totalVat.toLocaleString() : '-') + '</td>' +
+            '<td style="' + B + '"></td>' +
+            '</tr>';
+    }).join('');
 
     tfoot.innerHTML = `<tr style="background:#eef2fa;font-weight:700;">
         <td colspan="7" style="${S}text-align:right;">공급가액 합계</td>
