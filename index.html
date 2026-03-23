@@ -1003,7 +1003,7 @@
 <!-- 품목 관리 -->
 <div class="tab-content" id="tab-products">
     <div class="search-bar">
-        <input type="text" id="productSearch" placeholder="품목코드, 품목명, 분류로 검색..." oninput="renderProductList()">
+        <input type="text" id="productSearch" placeholder="품목코드, 품목명, 분류로 검색..." oninput="debounceSearch()">
         <select id="productFilter" onchange="renderProductList()">
             <option value="all">전체</option>
             <option value="self">자체매입</option>
@@ -1701,6 +1701,11 @@ var SUPABASE_URL = 'https://zsxmmhgrmysqauuojmir.supabase.co';
 var SUPABASE_KEY = 'sb_publishable_syHvHMlRnAOV8-7lv5H_3g_xc3XDmGu';
 var db = null;
 var syncTimer = null;
+var _searchTimer = null;
+function debounceSearch() {
+    clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(function() { currentPage = 1; renderProductList(); }, 250);
+}
 
 // ============================================================
 // 데이터 초기화
@@ -3673,7 +3678,7 @@ function getProductImageUrl(code) {
 function getProductThumbHTML(code) {
     const p = products.find(pr => pr.code === code);
     const url = (p && p.imageUrl) ? p.imageUrl : getProductImageUrl(code);
-    return '<img src="' + url + '" class="product-thumb" onerror="this.outerHTML=\'<div class=\\\'product-thumb-placeholder\\\'>&#128230;</div>\'">';
+    return '<img src="' + url + '" class="product-thumb" loading="lazy" onerror="this.outerHTML=\'<div class=\\\'product-thumb-placeholder\\\'>&#128230;</div>\'">';
 }
 
 // 품목 모달에서 이미지 미리보기
@@ -3851,7 +3856,7 @@ function renderNaverSavedImages() {
     section.style.display = '';
     el.innerHTML = naverProducts.map(p => {
         return '<div class="image-grid-item">' +
-            '<img src="' + esc(p.imageUrl) + '" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22/>\'">' +
+            '<img src="' + esc(p.imageUrl) + '" loading="lazy" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22/>\'">' +
             '<div class="image-label" title="' + esc(p.code) + '">' + esc(p.code) + '</div>' +
             '<div class="image-status" style="color:var(--success);font-size:0.68rem;">' + esc(p.name) + '</div>' +
             '<div style="display:flex;gap:4px;margin-top:4px;">' +
@@ -3945,7 +3950,7 @@ function renderUploadedImages(list) {
         const url = getProductImageUrl(code);
         const matched = products.find(p => p.code === code);
         return '<div class="image-grid-item">' +
-            '<img src="' + url + '?t=' + Date.now() + '" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22/>\'">' +
+            '<img src="' + url + '" loading="lazy" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22/>\'">' +
             '<div class="image-label" title="' + esc(code) + '">' + esc(code) + '</div>' +
             '<div class="image-status" style="color:' + (matched ? 'var(--success)' : 'var(--text-muted)') + ';font-size:0.68rem;">' +
             (matched ? esc(matched.name) : '매칭 없음') + '</div>' +
