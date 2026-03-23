@@ -1258,6 +1258,11 @@
         <button class="btn btn-primary" onclick="loadNoImageProducts()" style="margin-bottom:14px;">이미지 없는 품목 불러오기</button>
         <div id="noImageProductList"></div>
     </div>
+    <div class="card" id="naverSavedSection" style="display:none;">
+        <h3>🔗 네이버 이미지 저장 목록</h3>
+        <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:12px;">네이버 쇼핑에서 가져온 이미지입니다. (URL 방식 저장)</p>
+        <div class="image-grid" id="naverSavedGrid"></div>
+    </div>
     <div class="card">
         <h3>업로드된 이미지 목록</h3>
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;">
@@ -3705,8 +3710,38 @@ async function loadUploadedImages() {
         uploadedImageCache = (data || []).filter(f => !f.name.startsWith('.'));
 
         renderUploadedImages(uploadedImageCache);
+        renderNaverSavedImages();
     } catch (err) {
         grid.innerHTML = '<p style="color:var(--danger);font-size:0.82rem;grid-column:1/-1;text-align:center;padding:20px;">목록 불러오기 실패: ' + esc(err.message) + '</p>';
+    }
+}
+
+function renderNaverSavedImages() {
+    const naverProducts = products.filter(p => p.imageUrl);
+    let el = document.getElementById('naverSavedGrid');
+    let section = document.getElementById('naverSavedSection');
+    if (!section) return;
+    if (naverProducts.length === 0) { section.style.display = 'none'; return; }
+    section.style.display = '';
+    el.innerHTML = naverProducts.map(p => {
+        return '<div class="image-grid-item">' +
+            '<img src="' + esc(p.imageUrl) + '" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22/>\'">' +
+            '<div class="image-label" title="' + esc(p.code) + '">' + esc(p.code) + '</div>' +
+            '<div class="image-status" style="color:var(--success);font-size:0.68rem;">' + esc(p.name) + '</div>' +
+            '<button onclick="removeNaverImage(\'' + esc(p.code) + '\')" style="margin-top:4px;width:100%;padding:3px 0;font-size:0.68rem;border:1px solid var(--danger);border-radius:4px;background:var(--bg-card);cursor:pointer;color:var(--danger);">삭제</button>' +
+            '</div>';
+    }).join('');
+}
+
+function removeNaverImage(code) {
+    if (!confirm(code + ' 이미지를 삭제할까요?')) return;
+    const idx = products.findIndex(p => p.code === code);
+    if (idx >= 0) {
+        delete products[idx].imageUrl;
+        localStorage.setItem('erp_products', JSON.stringify(products));
+        if (db) db.from('products').update({ image_url: null }).eq('code', code);
+        renderNaverSavedImages();
+        renderProductList();
     }
 }
 
