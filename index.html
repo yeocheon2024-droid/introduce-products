@@ -3525,6 +3525,7 @@ async function selectNaverImage(code, encodedUrl) {
         setTimeout(() => {
             closeModal('naverImageModal');
             loadNoImageProducts();
+            loadUploadedImages();
         }, 1000);
     } catch(e) {
         document.getElementById('naverImageResults').style.opacity = '1';
