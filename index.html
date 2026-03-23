@@ -3728,9 +3728,30 @@ function renderNaverSavedImages() {
             '<img src="' + esc(p.imageUrl) + '" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22/>\'">' +
             '<div class="image-label" title="' + esc(p.code) + '">' + esc(p.code) + '</div>' +
             '<div class="image-status" style="color:var(--success);font-size:0.68rem;">' + esc(p.name) + '</div>' +
-            '<button onclick="removeNaverImage(\'' + esc(p.code) + '\')" style="margin-top:4px;width:100%;padding:3px 0;font-size:0.68rem;border:1px solid var(--danger);border-radius:4px;background:var(--bg-card);cursor:pointer;color:var(--danger);">삭제</button>' +
+            '<div style="display:flex;gap:4px;margin-top:4px;">' +
+            '<button onclick="downloadNaverImage(\'' + esc(p.code) + '\',\'' + encodeURIComponent(p.imageUrl) + '\')" style="flex:1;padding:3px 0;font-size:0.68rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);cursor:pointer;color:var(--text-secondary);">다운로드</button>' +
+            '<button onclick="removeNaverImage(\'' + esc(p.code) + '\')" style="flex:1;padding:3px 0;font-size:0.68rem;border:1px solid var(--danger);border-radius:4px;background:var(--bg-card);cursor:pointer;color:var(--danger);">삭제</button>' +
+            '</div>' +
             '</div>';
     }).join('');
+}
+
+async function downloadNaverImage(code, encodedUrl) {
+    const imageUrl = decodeURIComponent(encodedUrl);
+    try {
+        const proxyUrl = 'https://wsrv.nl/?url=' + encodeURIComponent(imageUrl) + '&output=png';
+        const res = await fetch(proxyUrl);
+        if (!res.ok) throw new Error();
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = code + '.png';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    } catch(e) {
+        // 프록시 실패 시 새 탭으로 열기
+        window.open(imageUrl, '_blank');
+    }
 }
 
 function removeNaverImage(code) {
