@@ -1358,42 +1358,60 @@
 <!-- 품목 추가/수정 모달 -->
 <!-- 견적서 모달 -->
 <div class="modal-overlay" id="quoteModal" onclick="if(event.target===this)closeModal('quoteModal')">
-    <div class="modal" style="max-width:800px;width:96%;">
-        <h2>견적서</h2>
-        <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap;">
-            <div style="flex:1;min-width:200px;">
-                <label style="font-size:0.82rem;color:var(--text-secondary);display:block;margin-bottom:4px;">받는 곳</label>
-                <input type="text" id="quoteRecipient" placeholder="거래처명 (선택)" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;font-family:inherit;">
+    <div class="modal" style="max-width:860px;width:96%;">
+        <div style="display:flex;gap:10px;margin-bottom:14px;align-items:center;flex-wrap:wrap;">
+            <div style="flex:1;min-width:160px;">
+                <label style="font-size:0.78rem;color:var(--text-secondary);display:block;margin-bottom:3px;">받는 곳 (거래처명)</label>
+                <input type="text" id="quoteRecipient" placeholder="예) 오빠두" oninput="updateQuoteRecipient()" style="width:100%;padding:7px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;font-family:inherit;">
             </div>
-            <div style="display:flex;gap:8px;align-items:flex-end;">
-                <button class="btn btn-primary" onclick="printQuote()">인쇄</button>
-                <button class="btn btn-outline" onclick="downloadQuoteExcel()">엑셀 다운로드</button>
+            <div style="flex:1;min-width:160px;">
+                <label style="font-size:0.78rem;color:var(--text-secondary);display:block;margin-bottom:3px;">공급자 상호</label>
+                <input type="text" id="quoteSupplier" placeholder="예) 우리식품" oninput="updateQuoteRecipient()" style="width:100%;padding:7px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;font-family:inherit;">
+            </div>
+            <div style="display:flex;gap:8px;align-items:flex-end;padding-top:18px;">
+                <button class="btn btn-primary" onclick="printQuote()">🖨 인쇄</button>
+                <button class="btn btn-outline" onclick="downloadQuoteExcel()">엑셀</button>
                 <button class="btn btn-outline" onclick="closeModal('quoteModal')">닫기</button>
             </div>
         </div>
-        <div id="quotePrintArea">
-            <div id="quoteHeader" style="margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--accent);">
-                <div style="font-size:1.2rem;font-weight:700;color:var(--accent);">견 적 서</div>
-                <div id="quoteRecipientDisplay" style="font-size:0.88rem;color:var(--text-secondary);margin-top:4px;"></div>
-                <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;" id="quoteDateDisplay"></div>
+        <div id="quotePrintArea" style="border:1px solid #ccc;padding:24px;background:#fff;font-family:'Malgun Gothic',sans-serif;color:#111;">
+            <!-- 견적서 제목 -->
+            <div style="text-align:center;font-size:1.6rem;font-weight:700;letter-spacing:0.3em;margin-bottom:16px;border-bottom:3px double #333;padding-bottom:12px;">견 &nbsp; 적 &nbsp; 서</div>
+            <!-- 수신/발신 정보 -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+                <div style="border:1px solid #999;padding:10px 14px;">
+                    <div id="quoteRecipientBox" style="font-size:1.05rem;font-weight:700;border-bottom:1px solid #ccc;padding-bottom:6px;margin-bottom:8px;">거래처명 &nbsp; 귀중</div>
+                    <div id="quoteDateDisplay" style="font-size:0.82rem;color:#555;"></div>
+                </div>
+                <div style="border:1px solid #999;padding:10px 14px;font-size:0.82rem;">
+                    <div style="font-weight:700;font-size:0.9rem;border-bottom:1px solid #ccc;padding-bottom:4px;margin-bottom:6px;">공 급 자</div>
+                    <div>상&nbsp;&nbsp;&nbsp;호 : <span id="quoteSupplierDisplay" style="font-weight:600;">-</span></div>
+                    <div style="margin-top:3px;">날&nbsp;&nbsp;&nbsp;짜 : <span id="quoteDateDisplay2" style="color:#333;"></span></div>
+                </div>
             </div>
-            <div class="table-wrap">
-                <table id="quoteTable">
-                    <thead>
-                        <tr>
-                            <th style="width:30px;">No</th>
-                            <th>품목명</th>
-                            <th>규격</th>
-                            <th>단위</th>
-                            <th>과세</th>
-                            <th class="text-right">공급가액</th>
-                            <th class="text-right">부가세</th>
-                            <th class="text-right">납품단가</th>
-                        </tr>
-                    </thead>
-                    <tbody id="quoteTableBody"></tbody>
-                </table>
+            <!-- 합계금액 -->
+            <div style="border:1px solid #999;padding:8px 14px;margin-bottom:12px;display:flex;align-items:center;gap:16px;">
+                <span style="font-weight:700;font-size:0.9rem;">합 계 금 액</span>
+                <span style="font-size:0.82rem;flex:1;" id="quoteTotalKorean"></span>
+                <span style="font-weight:700;font-size:1rem;" id="quoteTotalNum"></span>
             </div>
+            <!-- 품목 테이블 -->
+            <table id="quoteTable" style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                <thead>
+                    <tr style="background:#f0f0f0;">
+                        <th style="border:1px solid #999;padding:6px 8px;text-align:center;width:32px;">번호</th>
+                        <th style="border:1px solid #999;padding:6px 8px;text-align:center;">품 목 명</th>
+                        <th style="border:1px solid #999;padding:6px 8px;text-align:center;width:80px;">규격</th>
+                        <th style="border:1px solid #999;padding:6px 8px;text-align:center;width:45px;">단위</th>
+                        <th style="border:1px solid #999;padding:6px 8px;text-align:center;width:50px;">과세</th>
+                        <th style="border:1px solid #999;padding:6px 8px;text-align:right;width:90px;">공급가액</th>
+                        <th style="border:1px solid #999;padding:6px 8px;text-align:right;width:70px;">부가세</th>
+                        <th style="border:1px solid #999;padding:6px 8px;text-align:right;width:90px;">납품단가</th>
+                    </tr>
+                </thead>
+                <tbody id="quoteTableBody"></tbody>
+                <tfoot id="quoteTotalRow"></tfoot>
+            </table>
         </div>
     </div>
 </div>
@@ -1727,6 +1745,7 @@ function renderProductList() {
     if (currentPage < totalPages) html += `<button onclick="currentPage++;renderProductList()">다음</button>`;
     pagDiv.innerHTML = html;
     if (pagDivM) pagDivM.innerHTML = html;
+    updateQuoteBtn();
 }
 
 function openAddProductModal() {
@@ -1853,64 +1872,108 @@ function updateQuoteBtn() {
     }
 }
 
-function openQuoteModal() {
-    if (selectedProductCodes.size === 0) { alert('품목을 선택해주세요.'); return; }
-    const items = products.filter(p => selectedProductCodes.has(p.code));
-    const tbody = document.getElementById('quoteTableBody');
-    tbody.innerHTML = items.map((p, i) => {
+function numToKorean(n) {
+    if (!n) return '영원정';
+    const units = ['', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구'];
+    const pos = ['', '십', '백', '천'];
+    const big = ['', '만', '억', '조'];
+    let result = '';
+    const s = String(n);
+    const groups = [];
+    for (let i = s.length; i > 0; i -= 4) groups.unshift(s.slice(Math.max(0, i - 4), i));
+    groups.forEach((g, gi) => {
+        let part = '';
+        for (let j = 0; j < g.length; j++) {
+            const d = parseInt(g[j]);
+            if (d === 0) continue;
+            part += (d === 1 && j < g.length - 1 ? '' : units[d]) + pos[g.length - 1 - j];
+        }
+        if (part) result += part + big[groups.length - 1 - gi];
+    });
+    return result + '원정';
+}
+
+function buildQuoteRows() {
+    return products.filter(p => selectedProductCodes.has(p.code)).map(p => {
         const sell = Number(p.sell) || 0;
         const isTaxFree = p.tax === '면세';
         const supply = sell ? (isTaxFree ? sell : Math.round(sell / 1.1)) : 0;
         const vat = (sell && !isTaxFree) ? sell - supply : 0;
-        return `<tr>
-            <td style="text-align:center;">${i + 1}</td>
-            <td>${esc(p.name)}</td>
-            <td style="color:var(--text-secondary);">${esc(p.spec || '')}</td>
-            <td style="text-align:center;">${esc(p.unit || '')}</td>
-            <td style="text-align:center;"><span class="badge ${p.tax === '면세' ? 'badge-notax' : 'badge-tax'}">${esc(p.tax || '과세')}</span></td>
-            <td class="text-right">${supply ? supply.toLocaleString() : '-'}</td>
-            <td class="text-right">${vat ? vat.toLocaleString() : '-'}</td>
-            <td class="text-right" style="font-weight:600;">${sell ? sell.toLocaleString() : '-'}</td>
-        </tr>`;
-    }).join('');
-    document.getElementById('quoteDateDisplay').textContent = '작성일: ' + new Date().toLocaleDateString('ko-KR');
+        return { p, sell, supply, vat };
+    });
+}
+
+function renderQuoteTable() {
+    const rows = buildQuoteRows();
+    const tbody = document.getElementById('quoteTableBody');
+    const tfoot = document.getElementById('quoteTotalRow');
+    const totalSell = rows.reduce((s, r) => s + r.sell, 0);
+    const totalSupply = rows.reduce((s, r) => s + r.supply, 0);
+    const totalVat = rows.reduce((s, r) => s + r.vat, 0);
+
+    tbody.innerHTML = rows.map((r, i) => `<tr>
+        <td style="border:1px solid #999;padding:5px 7px;text-align:center;">${i + 1}</td>
+        <td style="border:1px solid #999;padding:5px 7px;">${esc(r.p.name)}</td>
+        <td style="border:1px solid #999;padding:5px 7px;text-align:center;">${esc(r.p.spec || '')}</td>
+        <td style="border:1px solid #999;padding:5px 7px;text-align:center;">${esc(r.p.unit || '')}</td>
+        <td style="border:1px solid #999;padding:5px 7px;text-align:center;">${esc(r.p.tax || '과세')}</td>
+        <td style="border:1px solid #999;padding:5px 7px;text-align:right;">${r.supply ? r.supply.toLocaleString() : '-'}</td>
+        <td style="border:1px solid #999;padding:5px 7px;text-align:right;">${r.vat ? r.vat.toLocaleString() : '-'}</td>
+        <td style="border:1px solid #999;padding:5px 7px;text-align:right;font-weight:700;">${r.sell ? r.sell.toLocaleString() : '-'}</td>
+    </tr>`).join('');
+
+    tfoot.innerHTML = `<tr style="background:#f5f5f5;font-weight:700;">
+        <td colspan="5" style="border:1px solid #999;padding:6px 8px;text-align:center;">합 계</td>
+        <td style="border:1px solid #999;padding:6px 8px;text-align:right;">${totalSupply.toLocaleString()}</td>
+        <td style="border:1px solid #999;padding:6px 8px;text-align:right;">${totalVat.toLocaleString()}</td>
+        <td style="border:1px solid #999;padding:6px 8px;text-align:right;">${totalSell.toLocaleString()}</td>
+    </tr>`;
+
+    document.getElementById('quoteTotalKorean').textContent = numToKorean(totalSell);
+    document.getElementById('quoteTotalNum').textContent = '₩ ' + totalSell.toLocaleString();
+}
+
+function updateQuoteRecipient() {
+    const r = (document.getElementById('quoteRecipient').value || '').trim();
+    const s = (document.getElementById('quoteSupplier').value || '').trim();
+    document.getElementById('quoteRecipientBox').textContent = (r || '거래처명') + '  귀중';
+    document.getElementById('quoteSupplierDisplay').textContent = s || '-';
+}
+
+function openQuoteModal() {
+    if (selectedProductCodes.size === 0) { alert('품목을 선택해주세요.'); return; }
+    const today = new Date().toLocaleDateString('ko-KR');
+    document.getElementById('quoteDateDisplay').textContent = '작성일 : ' + today;
+    document.getElementById('quoteDateDisplay2').textContent = today;
     document.getElementById('quoteRecipient').value = '';
-    document.getElementById('quoteRecipientDisplay').textContent = '';
-    document.getElementById('quoteRecipient').oninput = function() {
-        document.getElementById('quoteRecipientDisplay').textContent = this.value ? this.value + ' 귀중' : '';
-    };
+    document.getElementById('quoteSupplier').value = '';
+    updateQuoteRecipient();
+    renderQuoteTable();
     openModal('quoteModal');
 }
 
 function printQuote() {
-    const recipient = document.getElementById('quoteRecipient').value;
     const printContents = document.getElementById('quotePrintArea').innerHTML;
     const w = window.open('', '_blank');
     w.document.write(`<html><head><title>견적서</title><style>
-        body { font-family: 'Inter', sans-serif; padding: 30px; font-size: 13px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-        th, td { border: 1px solid #ddd; padding: 7px 10px; }
-        th { background: #f5f5f5; font-weight: 600; }
-        .text-right { text-align: right; }
-        h2 { color: #C8956C; }
+        * { box-sizing: border-box; }
+        body { font-family: 'Malgun Gothic', sans-serif; padding: 20px; font-size: 13px; color: #111; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #999; padding: 5px 8px; }
+        th { background: #f0f0f0; }
     </style></head><body>${printContents}</body></html>`);
     w.document.close();
     w.print();
 }
 
 function downloadQuoteExcel() {
-    const items = products.filter(p => selectedProductCodes.has(p.code));
-    const recipient = document.getElementById('quoteRecipient').value;
+    const rows = buildQuoteRows();
+    if (rows.length === 0) { alert('선택된 품목이 없습니다.'); return; }
+    const recipient = (document.getElementById('quoteRecipient').value || '').trim();
     const headers = ['No', '품목명', '규격', '단위', '과세구분', '공급가액', '부가세', '납품단가(VAT포함)'];
-    const rows = items.map((p, i) => {
-        const sell = Number(p.sell) || 0;
-        const isTaxFree = p.tax === '면세';
-        const supply = sell ? (isTaxFree ? sell : Math.round(sell / 1.1)) : 0;
-        const vat = (sell && !isTaxFree) ? sell - supply : 0;
-        return [i + 1, p.name, p.spec || '', p.unit || '', p.tax || '과세', supply || '', vat || '', sell || ''];
-    });
+    const data = rows.map((r, i) => [i + 1, r.p.name, r.p.spec || '', r.p.unit || '', r.p.tax || '과세', r.supply || 0, r.vat || 0, r.sell || 0]);
     const filename = recipient ? `견적서_${recipient}` : '견적서';
-    downloadExcel(filename, headers, rows);
+    downloadExcel(filename, headers, data);
 }
 
 function calcSellingPrice() {
