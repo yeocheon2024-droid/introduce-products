@@ -3501,7 +3501,8 @@ async function selectNaverImage(code, encodedUrl) {
     document.getElementById('naverImageResults').style.opacity = '0.5';
 
     try {
-        const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(imageUrl);
+        // wsrv.nl: 이미지 전용 프록시, CORS 지원
+        const proxyUrl = 'https://wsrv.nl/?url=' + encodeURIComponent(imageUrl) + '&output=png';
         const imgRes = await fetch(proxyUrl);
         if (!imgRes.ok) throw new Error('이미지 다운로드 실패 (' + imgRes.status + ')');
         const blob = await imgRes.blob();
