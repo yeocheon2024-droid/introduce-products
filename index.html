@@ -1545,6 +1545,7 @@
                         <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:90px;">공급가액</th>
                         <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:50px;">VAT</th>
                         <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:80px;">VAT금액</th>
+                        <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:90px;">합계(VAT포함)</th>
                         <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:70px;">비고</th>
                     </tr>
                 </thead>
@@ -2206,15 +2207,17 @@ function renderPOTable() {
             '<td style="' + B + 'text-align:right;">' + (r.totalSupply > 0 ? r.totalSupply.toLocaleString() : '-') + '</td>' +
             '<td style="' + B + 'text-align:center;">' + (r.p.tax === '면세' ? '면세' : '포함') + '</td>' +
             '<td style="' + B + 'text-align:right;">' + (r.totalVat > 0 ? r.totalVat.toLocaleString() : '-') + '</td>' +
+            '<td style="' + B + 'text-align:right;font-weight:600;">' + (r.totalCost > 0 ? r.totalCost.toLocaleString() : '-') + '</td>' +
             '<td style="' + B + '"></td>' +
             '</tr>';
     }).join('');
 
     tfoot.innerHTML = `<tr style="background:#eef2fa;font-weight:700;">
-        <td colspan="6" style="${S}text-align:right;">공급가액 합계</td>
+        <td colspan="6" style="${S}text-align:right;">합계</td>
         <td style="${S}text-align:right;">${totalSupply.toLocaleString()}</td>
         <td style="${S}text-align:center;">-</td>
         <td style="${S}text-align:right;">${totalVat.toLocaleString()}</td>
+        <td style="${S}text-align:right;">${totalCost.toLocaleString()}</td>
         <td style="${S}"></td>
     </tr>`;
 
@@ -2274,12 +2277,12 @@ function downloadPOExcel() {
     const rows = buildPORows();
     if (rows.length === 0) { alert('선택된 품목이 없습니다.'); return; }
     const today = new Date().toISOString().split('T')[0];
-    const headers = ['No', '품목코드', '품명', '규격', '단위', '수량', '공급가액', 'VAT구분', 'VAT금액', '비고'];
+    const headers = ['No', '품목코드', '품명', '규격', '단위', '수량', '공급가액', 'VAT구분', 'VAT금액', '합계(VAT포함)', '비고'];
     const data = rows.map((r, i) => [
         i + 1, r.p.code, r.p.name, r.p.spec || '', r.p.unit || '',
-        r.qty, r.totalSupply, r.p.tax === '면세' ? '면세' : '포함', r.totalVat, ''
+        r.qty, r.totalSupply, r.p.tax === '면세' ? '면세' : '포함', r.totalVat, r.totalCost, ''
     ]);
-    data.push(['', '', '', '', '', '공급가액 합계', rows.reduce((s,r)=>s+r.totalSupply,0), '', rows.reduce((s,r)=>s+r.totalVat,0), '']);
+    data.push(['', '', '', '', '', '합계', rows.reduce((s,r)=>s+r.totalSupply,0), '', rows.reduce((s,r)=>s+r.totalVat,0), rows.reduce((s,r)=>s+r.totalCost,0), '']);
     downloadExcel('발주서_' + today, headers, data);
 }
 
