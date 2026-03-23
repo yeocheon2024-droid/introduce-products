@@ -3944,9 +3944,21 @@ function renderUploadedImages(list) {
             '<div class="image-label" title="' + esc(code) + '">' + esc(code) + '</div>' +
             '<div class="image-status" style="color:' + (matched ? 'var(--success)' : 'var(--text-muted)') + ';font-size:0.68rem;">' +
             (matched ? esc(matched.name) : '매칭 없음') + '</div>' +
-            '<button onclick="downloadImage(\'' + url + '\',\'' + esc(f.name) + '\')" style="margin-top:4px;width:100%;padding:3px 0;font-size:0.68rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);cursor:pointer;color:var(--text-secondary);">다운로드</button>' +
+            '<div style="display:flex;gap:4px;margin-top:4px;">' +
+            '<button onclick="downloadImage(\'' + url + '\',\'' + esc(f.name) + '\')" style="flex:1;padding:3px 0;font-size:0.68rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);cursor:pointer;color:var(--text-secondary);">다운로드</button>' +
+            '<button onclick="deleteUploadedImage(\'' + esc(f.name) + '\')" style="flex:1;padding:3px 0;font-size:0.68rem;border:1px solid var(--danger);border-radius:4px;background:var(--bg-card);cursor:pointer;color:var(--danger);">삭제</button>' +
+            '</div>' +
             '</div>';
     }).join('');
+}
+
+async function deleteUploadedImage(filename) {
+    if (!confirm(filename + ' 을 삭제할까요?')) return;
+    if (!db) { alert('Supabase 연결이 필요합니다.'); return; }
+    const { error } = await db.storage.from(IMAGE_BUCKET).remove([filename]);
+    if (error) { alert('삭제 실패: ' + error.message); return; }
+    uploadedImageCache = uploadedImageCache.filter(f => f.name !== filename);
+    renderUploadedImages(uploadedImageCache);
 }
 
 async function downloadImage(url, filename) {
