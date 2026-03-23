@@ -1013,6 +1013,7 @@
         </select>
         <button class="btn btn-outline" id="showAllBtn" onclick="toggleShowAll()">전체 보기</button>
         <button class="btn btn-outline" id="quoteBtn" onclick="openQuoteModal()" style="display:none;">견적서 (<span id="quoteBtnCount">0</span>)</button>
+        <button class="btn btn-outline" id="poBtn" onclick="openPurchaseOrderModal()" style="display:none;">발주서 (<span id="poBtnCount">0</span>)</button>
         <button class="btn btn-primary" onclick="openAddProductModal()">+ 품목 추가</button>
     </div>
     <!-- PC: 테이블뷰 -->
@@ -1356,6 +1357,78 @@
 </div>
 
 <!-- 품목 추가/수정 모달 -->
+<!-- 발주서 모달 -->
+<div class="modal-overlay" id="purchaseOrderModal" onclick="if(event.target===this)closeModal('purchaseOrderModal')">
+    <div class="modal" style="max-width:960px;width:96%;">
+        <div style="display:flex;gap:10px;margin-bottom:14px;align-items:center;flex-wrap:wrap;">
+            <span style="font-weight:700;font-size:1.05rem;">발주서</span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                <input id="poVendor" placeholder="발주처 (예) 원일푸드" style="padding:5px 10px;border:1px solid #ccc;border-radius:6px;font-size:0.85rem;width:140px;" oninput="updatePOHeader()">
+                <input id="poCompany" placeholder="발주회사 (예) 지구농산" style="padding:5px 10px;border:1px solid #ccc;border-radius:6px;font-size:0.85rem;width:140px;" oninput="updatePOHeader()">
+                <input id="poManager" placeholder="담당자" style="padding:5px 10px;border:1px solid #ccc;border-radius:6px;font-size:0.85rem;width:100px;" oninput="updatePOHeader()">
+                <input id="poContact" placeholder="연락처" style="padding:5px 10px;border:1px solid #ccc;border-radius:6px;font-size:0.85rem;width:130px;" oninput="updatePOHeader()">
+                <input id="poDeliveryDate" type="date" style="padding:5px 10px;border:1px solid #ccc;border-radius:6px;font-size:0.85rem;" oninput="updatePOHeader()">
+            </div>
+            <div style="margin-left:auto;display:flex;gap:8px;">
+                <button class="btn btn-primary" onclick="printPurchaseOrder()">🖨 인쇄</button>
+                <button class="btn btn-outline" onclick="downloadPOExcel()">엑셀</button>
+                <button class="btn btn-outline" onclick="closeModal('purchaseOrderModal')">닫기</button>
+            </div>
+        </div>
+        <!-- 인쇄 영역 -->
+        <div id="poPrintArea" style="border:1px solid #ccc;padding:24px;background:#fff;font-family:'Malgun Gothic',sans-serif;">
+            <!-- 제목 -->
+            <div style="text-align:center;font-size:1.8rem;font-weight:700;letter-spacing:0.3em;margin-bottom:18px;">발 주 서</div>
+            <div style="border-top:3px double #1a3a6b;border-bottom:1px solid #1a3a6b;margin-bottom:14px;"></div>
+            <!-- 헤더 정보 -->
+            <table style="width:100%;border-collapse:collapse;font-size:0.82rem;margin-bottom:14px;">
+                <tr>
+                    <td style="background:#eef2fa;border:1px solid #b0bcd8;padding:7px 14px;font-weight:700;width:80px;">발주일자</td>
+                    <td style="border:1px solid #b0bcd8;padding:7px 14px;width:160px;" id="poOrderDateCell"></td>
+                    <td style="background:#eef2fa;border:1px solid #b0bcd8;padding:7px 14px;font-weight:700;width:80px;">납품요청일</td>
+                    <td style="border:1px solid #b0bcd8;padding:7px 14px;" id="poDeliveryDateCell"></td>
+                </tr>
+                <tr>
+                    <td style="background:#eef2fa;border:1px solid #b0bcd8;padding:7px 14px;font-weight:700;">발주처</td>
+                    <td style="border:1px solid #b0bcd8;padding:7px 14px;" id="poVendorCell"></td>
+                    <td style="background:#eef2fa;border:1px solid #b0bcd8;padding:7px 14px;font-weight:700;">발주회사</td>
+                    <td style="border:1px solid #b0bcd8;padding:7px 14px;" id="poCompanyCell"></td>
+                </tr>
+                <tr>
+                    <td style="background:#eef2fa;border:1px solid #b0bcd8;padding:7px 14px;font-weight:700;">담당자</td>
+                    <td style="border:1px solid #b0bcd8;padding:7px 14px;" id="poManagerCell"></td>
+                    <td style="background:#eef2fa;border:1px solid #b0bcd8;padding:7px 14px;font-weight:700;">연락처</td>
+                    <td style="border:1px solid #b0bcd8;padding:7px 14px;" id="poContactCell"></td>
+                </tr>
+            </table>
+            <!-- 품목 테이블 -->
+            <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+                <thead>
+                    <tr style="background:#1a3a6b;color:#fff;">
+                        <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:32px;">No.</th>
+                        <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:90px;">품목코드</th>
+                        <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;">품명</th>
+                        <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:80px;">규격</th>
+                        <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:40px;">단위</th>
+                        <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:45px;">수량</th>
+                        <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:90px;">단가(VAT포함)</th>
+                        <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:90px;">공급가액</th>
+                        <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:50px;">VAT</th>
+                        <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:80px;">VAT금액</th>
+                        <th style="border:1px solid #1a3a6b;padding:7px 5px;text-align:center;width:70px;">비고</th>
+                    </tr>
+                </thead>
+                <tbody id="poTableBody"></tbody>
+                <tfoot id="poTotalRow"></tfoot>
+            </table>
+            <!-- 총 발주금액 -->
+            <div id="poGrandTotal" style="background:#1a3a6b;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:0.95rem;margin-top:0;">
+                <span>총 발주금액 (VAT포함)</span>
+                <span id="poGrandTotalNum"></span>
+            </div>
+        </div>
+    </div>
+</div>
 <!-- 견적서 모달 -->
 <div class="modal-overlay" id="quoteModal" onclick="if(event.target===this)closeModal('quoteModal')">
     <div class="modal" style="max-width:860px;width:96%;">
@@ -1864,12 +1937,13 @@ function toggleSelectAll(checked) {
 }
 
 function updateQuoteBtn() {
+    const n = selectedProductCodes.size;
     const btn = document.getElementById('quoteBtn');
     const cnt = document.getElementById('quoteBtnCount');
-    if (btn && cnt) {
-        cnt.textContent = selectedProductCodes.size;
-        btn.style.display = selectedProductCodes.size > 0 ? '' : 'none';
-    }
+    if (btn && cnt) { cnt.textContent = n; btn.style.display = n > 0 ? '' : 'none'; }
+    const poBtn = document.getElementById('poBtn');
+    const poCnt = document.getElementById('poBtnCount');
+    if (poBtn && poCnt) { poCnt.textContent = n; poBtn.style.display = n > 0 ? '' : 'none'; }
 }
 
 function numToKorean(n) {
@@ -1951,6 +2025,110 @@ function openQuoteModal() {
     updateQuoteRecipient();
     openModal('quoteModal');
     renderQuoteTable();
+}
+
+// ============================================================
+// 발주서
+// ============================================================
+let poQty = {}; // { code: qty } 수량 저장
+
+function buildPORows() {
+    return products.filter(p => selectedProductCodes.has(p.code)).map(p => {
+        const cost = Number(p.cost) || 0;
+        const qty = Number(poQty[p.code]) || 1;
+        const isTaxFree = p.tax === '면세';
+        const unitSupply = cost ? (isTaxFree ? cost : Math.round(cost / 1.1)) : 0;
+        const unitVat = (!isTaxFree && cost) ? cost - unitSupply : 0;
+        return { p, qty, cost, unitSupply, unitVat,
+            totalCost: cost * qty,
+            totalSupply: unitSupply * qty,
+            totalVat: unitVat * qty };
+    });
+}
+
+function renderPOTable() {
+    const rows = buildPORows();
+    const tbody = document.getElementById('poTableBody');
+    const tfoot = document.getElementById('poTotalRow');
+    const totalCost = rows.reduce((s, r) => s + r.totalCost, 0);
+    const totalSupply = rows.reduce((s, r) => s + r.totalSupply, 0);
+    const totalVat = rows.reduce((s, r) => s + r.totalVat, 0);
+    const S = 'border:1px solid #b0bcd8;padding:5px 6px;';
+
+    tbody.innerHTML = rows.map((r, i) => `<tr>
+        <td style="${S}text-align:center;">${i + 1}</td>
+        <td style="${S}text-align:center;font-size:0.75rem;">${esc(r.p.code)}</td>
+        <td style="${S}">${esc(r.p.name)}</td>
+        <td style="${S}text-align:center;">${esc(r.p.spec || '')}</td>
+        <td style="${S}text-align:center;">${esc(r.p.unit || '')}</td>
+        <td style="${S}text-align:center;"><input type="number" min="1" value="${r.qty}" style="width:45px;text-align:center;border:1px solid #ccc;border-radius:3px;padding:2px;" onchange="poQty['${esc(r.p.code)}']=this.value;renderPOTable()"></td>
+        <td style="${S}text-align:right;">${r.cost ? r.cost.toLocaleString() : '-'}</td>
+        <td style="${S}text-align:right;">${r.totalSupply ? r.totalSupply.toLocaleString() : '-'}</td>
+        <td style="${S}text-align:center;">${r.p.tax === '면세' ? '면세' : '포함'}</td>
+        <td style="${S}text-align:right;">${r.totalVat ? r.totalVat.toLocaleString() : '-'}</td>
+        <td style="${S}"></td>
+    </tr>`).join('');
+
+    tfoot.innerHTML = `<tr style="background:#eef2fa;font-weight:700;">
+        <td colspan="7" style="${S}text-align:right;">공급가액 합계</td>
+        <td style="${S}text-align:right;">${totalSupply.toLocaleString()}</td>
+        <td style="${S}text-align:center;">-</td>
+        <td style="${S}text-align:right;">${totalVat.toLocaleString()}</td>
+        <td style="${S}"></td>
+    </tr>`;
+
+    document.getElementById('poGrandTotalNum').textContent = totalCost.toLocaleString() + ' 원';
+}
+
+function updatePOHeader() {
+    const today = new Date().toLocaleDateString('ko-KR');
+    document.getElementById('poOrderDateCell').textContent = today;
+    const dd = document.getElementById('poDeliveryDate').value;
+    document.getElementById('poDeliveryDateCell').textContent = dd ? new Date(dd).toLocaleDateString('ko-KR') : '';
+    document.getElementById('poVendorCell').textContent = document.getElementById('poVendor').value || '';
+    document.getElementById('poCompanyCell').textContent = document.getElementById('poCompany').value || '';
+    document.getElementById('poManagerCell').textContent = document.getElementById('poManager').value || '';
+    document.getElementById('poContactCell').textContent = document.getElementById('poContact').value || '';
+}
+
+function openPurchaseOrderModal() {
+    if (selectedProductCodes.size === 0) { alert('품목을 선택해주세요.'); return; }
+    // 수량 초기화 (이미 있는 것 유지)
+    selectedProductCodes.forEach(code => { if (!poQty[code]) poQty[code] = 1; });
+    // 납품요청일 기본값: 내일
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+    document.getElementById('poDeliveryDate').value = tomorrow.toISOString().split('T')[0];
+    document.getElementById('poVendor').value = '';
+    document.getElementById('poCompany').value = '';
+    document.getElementById('poManager').value = '';
+    document.getElementById('poContact').value = '';
+    openModal('purchaseOrderModal');
+    updatePOHeader();
+    renderPOTable();
+}
+
+function printPurchaseOrder() {
+    const printContents = document.getElementById('poPrintArea').innerHTML;
+    const w = window.open('', '_blank');
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>발주서</title>
+    <style>body{font-family:'Malgun Gothic',sans-serif;margin:20px;}input[type=number]{border:none;background:transparent;font-size:inherit;width:30px;text-align:center;}@media print{input{border:none;background:transparent;}}</style>
+    </head><body>${printContents}</body></html>`);
+    w.document.close();
+    w.focus();
+    setTimeout(() => { w.print(); w.close(); }, 300);
+}
+
+function downloadPOExcel() {
+    const rows = buildPORows();
+    if (rows.length === 0) { alert('선택된 품목이 없습니다.'); return; }
+    const today = new Date().toISOString().split('T')[0];
+    const headers = ['No', '품목코드', '품명', '규격', '단위', '수량', '단가(VAT포함)', '공급가액', 'VAT구분', 'VAT금액', '비고'];
+    const data = rows.map((r, i) => [
+        i + 1, r.p.code, r.p.name, r.p.spec || '', r.p.unit || '',
+        r.qty, r.cost, r.totalSupply, r.p.tax === '면세' ? '면세' : '포함', r.totalVat, ''
+    ]);
+    data.push(['', '', '', '', '', '', '공급가액 합계', rows.reduce((s,r)=>s+r.totalSupply,0), '', rows.reduce((s,r)=>s+r.totalVat,0), '']);
+    downloadExcel('발주서_' + today, headers, data);
 }
 
 function printQuote() {
