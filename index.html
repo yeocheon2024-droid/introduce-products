@@ -3501,9 +3501,9 @@ async function selectNaverImage(code, encodedUrl) {
     document.getElementById('naverImageResults').style.opacity = '0.5';
 
     try {
-        const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(imageUrl);
+        const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(imageUrl);
         const imgRes = await fetch(proxyUrl);
-        if (!imgRes.ok) throw new Error('이미지 다운로드 실패');
+        if (!imgRes.ok) throw new Error('이미지 다운로드 실패 (' + imgRes.status + ')');
         const blob = await imgRes.blob();
 
         const { error } = await db.storage.from(IMAGE_BUCKET).upload(code + '.png', blob, { upsert: true, contentType: 'image/png' });
