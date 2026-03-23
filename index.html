@@ -2421,6 +2421,7 @@ function processQuoteItems(items, vendorCode) {
         }
         const normName = normalizeName(name);
         const normSpec = normalizeSpec(item.spec || '');
+        const hasComma = (name || '').includes(',');
 
         // 같은 매입처 품목만 후보로 필터링
         const vendorProducts = products.filter(p => p.vendorCode === vendorCode);
@@ -2444,7 +2445,7 @@ function processQuoteItems(items, vendorCode) {
 
             // 견적서 이름이 기존 품목명으로 시작 + 규격 일치
             // 떡국떡(평화) starts with 떡국떡
-            if (normName.startsWith(pNorm) && pNorm.length >= 3 && pSpec === normSpec) return 88;
+            if (normName.startsWith(pNorm) && pNorm.length >= 3 && pSpec === normSpec && !hasComma) return 88;
 
             // 기존 품목명이 견적서 이름으로 시작 (규격 무관, 이름이 충분히 긴 경우)
             // 합동-된장 14kg starts with 합동된장
@@ -2452,7 +2453,7 @@ function processQuoteItems(items, vendorCode) {
 
             // 견적서 이름이 기존 품목명으로 시작 (규격 무관)
             // 볼진공(볼살.백암식품.미국산) starts with 볼진공
-            if (normName.startsWith(pNorm) && pNorm.length >= 3) return 78;
+            if (normName.startsWith(pNorm) && pNorm.length >= 3 && !hasComma) return 78;
 
             // 이름 완전 일치 (규격 다름)
             if (pNorm === normName) return 70;
