@@ -13,6 +13,7 @@
 - **라이브러리**: SheetJS (엑셀 파싱/생성), Supabase JS Client v2
 - **Supabase 프로젝트**: zsxmmhgrmysqauuojmir.supabase.co
 - **GitHub**: https://github.com/yeocheon2024-droid/introduce-products.git (public)
+- **배포 URL**: https://yeocheon2024-droid.github.io/introduce-products/
 
 ---
 
