@@ -1409,8 +1409,8 @@
                         <th style="border:1px solid #999;padding:6px 8px;text-align:right;width:90px;">납품단가</th>
                     </tr>
                 </thead>
-                <tbody id="quoteTableBody"></tbody>
-                <tfoot id="quoteTotalRow"></tfoot>
+                <tbody id="productQuoteTableBody"></tbody>
+                <tfoot id="productQuoteTotalRow"></tfoot>
             </table>
         </div>
     </div>
@@ -1905,8 +1905,8 @@ function buildQuoteRows() {
 
 function renderQuoteTable() {
     const rows = buildQuoteRows();
-    const tbody = document.getElementById('quoteTableBody');
-    const tfoot = document.getElementById('quoteTotalRow');
+    const tbody = document.getElementById('productQuoteTableBody');
+    const tfoot = document.getElementById('productQuoteTotalRow');
     const totalSell = rows.reduce((s, r) => s + r.sell, 0);
     const totalSupply = rows.reduce((s, r) => s + r.supply, 0);
     const totalVat = rows.reduce((s, r) => s + r.vat, 0);
