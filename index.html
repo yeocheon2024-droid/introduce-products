@@ -1005,6 +1005,7 @@
             <option value="self">자체매입</option>
             <option value="external">외부매입</option>
         </select>
+        <button class="btn btn-outline" id="showAllBtn" onclick="toggleShowAll()">전체 보기</button>
         <button class="btn btn-primary" onclick="openAddProductModal()">+ 품목 추가</button>
     </div>
     <!-- PC: 테이블뷰 -->
@@ -1243,6 +1244,7 @@
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;">
             <input type="text" id="imageSearchInput" placeholder="품목코드로 검색..." oninput="searchUploadedImages()" style="flex:1;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;font-family:inherit;">
             <button class="btn btn-outline" onclick="loadUploadedImages()">새로고침</button>
+            <button class="btn btn-outline" onclick="downloadAllImages()">전체 다운로드</button>
         </div>
         <div class="image-grid" id="uploadedImageGrid">
             <p style="color:var(--text-muted);font-size:0.82rem;grid-column:1/-1;text-align:center;padding:20px;">탭을 열면 자동으로 불러옵니다.</p>
@@ -1469,6 +1471,7 @@ let margins = loadData('erp_margins', {});
 let pendingUpload = null;
 let editingProductCode = null;
 let currentPage = 1;
+let showAll = false;
 const PAGE_SIZE = 50;
 
 // ============================================================
@@ -1573,7 +1576,7 @@ function renderProductList() {
     const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
     if (currentPage > totalPages) currentPage = totalPages;
     const start = (currentPage - 1) * PAGE_SIZE;
-    const pageData = filtered.slice(start, start + PAGE_SIZE);
+    const pageData = showAll ? filtered : filtered.slice(start, start + PAGE_SIZE);
 
     const tbody = document.getElementById('productTableBody');
     tbody.innerHTML = pageData.length === 0
@@ -1651,7 +1654,7 @@ function renderProductList() {
     // 페이지네이션
     const pagDiv = document.getElementById('productPagination');
     const pagDivM = document.getElementById('productPaginationMobile');
-    if (totalPages <= 1) { pagDiv.innerHTML = ''; if (pagDivM) pagDivM.innerHTML = ''; return; }
+    if (showAll || totalPages <= 1) { pagDiv.innerHTML = ''; if (pagDivM) pagDivM.innerHTML = ''; return; }
     let html = '';
     if (currentPage > 1) html += `<button onclick="currentPage--;renderProductList()">이전</button>`;
     for (let i = 1; i <= totalPages; i++) {
@@ -3170,8 +3173,46 @@ function renderUploadedImages(list) {
             '<img src="' + url + '?t=' + Date.now() + '" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22/>\'">' +
             '<div class="image-label" title="' + esc(code) + '">' + esc(code) + '</div>' +
             '<div class="image-status" style="color:' + (matched ? 'var(--success)' : 'var(--text-muted)') + ';font-size:0.68rem;">' +
-            (matched ? esc(matched.name) : '매칭 없음') + '</div></div>';
+            (matched ? esc(matched.name) : '매칭 없음') + '</div>' +
+            '<button onclick="downloadImage(\'' + url + '\',\'' + esc(f.name) + '\')" style="margin-top:4px;width:100%;padding:3px 0;font-size:0.68rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);cursor:pointer;color:var(--text-secondary);">다운로드</button>' +
+            '</div>';
     }).join('');
+}
+
+async function downloadImage(url, filename) {
+    try {
+        const res = await fetch(url);
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    } catch(e) { alert('다운로드 실패: ' + e.message); }
+}
+
+async function downloadAllImages() {
+    const list = uploadedImageCache.filter(f => {
+        const q = (document.getElementById('imageSearchInput').value || '').trim().toLowerCase();
+        return !q || f.name.toLowerCase().includes(q);
+    });
+    if (list.length === 0) { alert('다운로드할 이미지가 없습니다.'); return; }
+    if (!confirm(list.length + '개 이미지를 다운로드합니다. 브라우저에서 팝업을 허용해야 합니다.')) return;
+    for (let i = 0; i < list.length; i++) {
+        const code = list[i].name.replace(/\.[^.]+$/, '');
+        const url = getProductImageUrl(code);
+        await downloadImage(url, list[i].name);
+        await new Promise(r => setTimeout(r, 400));
+    }
+}
+
+function toggleShowAll() {
+    showAll = !showAll;
+    currentPage = 1;
+    document.getElementById('showAllBtn').textContent = showAll ? '페이지별 보기' : '전체 보기';
+    const tableWrap = document.querySelector('#tab-products .table-wrap');
+    if (tableWrap) tableWrap.style.maxHeight = showAll ? 'none' : '600px';
+    renderProductList();
 }
 
 function searchUploadedImages() {
