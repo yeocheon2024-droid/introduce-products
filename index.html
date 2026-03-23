@@ -389,10 +389,10 @@
         }
 
         /* ===== PC/MOBILE TOGGLE ===== */
-        .mobile-only { display: none; }
+        .mobile-only { display: none !important; }
         .pc-only { display: block; }
         @media (max-width: 900px) {
-            .mobile-only { display: block; }
+            .mobile-only { display: block !important; }
             .pc-only { display: none !important; }
         }
 
