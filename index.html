@@ -1005,6 +1005,12 @@
             <option value="self">자체매입</option>
             <option value="external">외부매입</option>
         </select>
+        <select id="majorFilter" onchange="onMajorFilterChange()">
+            <option value="">대분류 전체</option>
+        </select>
+        <select id="minorFilter" onchange="renderProductList()">
+            <option value="">중분류 전체</option>
+        </select>
         <button class="btn btn-outline" id="showAllBtn" onclick="toggleShowAll()">전체 보기</button>
         <button class="btn btn-primary" onclick="openAddProductModal()">+ 품목 추가</button>
     </div>
@@ -1517,7 +1523,7 @@ function switchTab(tabId) {
 
     // 탭별 초기화
     if (tabId === 'dashboard') renderDashboard();
-    if (tabId === 'products') renderProductList();
+    if (tabId === 'products') { initCategoryFilters(); renderProductList(); }
     if (tabId === 'vendors') renderVendors();
     if (tabId === 'categories') renderCategoryTree();
     if (tabId === 'margins') { renderMargins(); renderNoSellProducts(); }
@@ -1558,9 +1564,13 @@ function renderDashboard() {
 function getFilteredProducts() {
     const q = document.getElementById('productSearch').value.trim().toLowerCase();
     const filter = document.getElementById('productFilter').value;
+    const majorFilter = document.getElementById('majorFilter').value;
+    const minorFilter = document.getElementById('minorFilter').value;
     return products.filter(p => {
         if (filter === 'self' && p.vendorType !== 'self') return false;
         if (filter === 'external' && p.vendorType !== 'external') return false;
+        if (majorFilter && p.majorCode !== majorFilter) return false;
+        if (minorFilter && p.minorCode !== minorFilter) return false;
         if (q) {
             return (p.code || '').toLowerCase().includes(q) ||
                    (p.name || '').toLowerCase().includes(q) ||
@@ -3208,6 +3218,28 @@ async function downloadAllImages() {
         await downloadImage(url, list[i].name);
         await new Promise(r => setTimeout(r, 400));
     }
+}
+
+function initCategoryFilters() {
+    const majorSel = document.getElementById('majorFilter');
+    majorSel.innerHTML = '<option value="">대분류 전체</option>';
+    for (const mc in CATEGORY_TREE) {
+        majorSel.innerHTML += `<option value="${mc}">${CATEGORY_TREE[mc].name}</option>`;
+    }
+}
+
+function onMajorFilterChange() {
+    const majorCode = document.getElementById('majorFilter').value;
+    const minorSel = document.getElementById('minorFilter');
+    minorSel.innerHTML = '<option value="">중분류 전체</option>';
+    if (majorCode && CATEGORY_TREE[majorCode]) {
+        const sub = CATEGORY_TREE[majorCode].sub;
+        for (const sc in sub) {
+            minorSel.innerHTML += `<option value="${sc}">${sub[sc]}</option>`;
+        }
+    }
+    currentPage = 1;
+    renderProductList();
 }
 
 function toggleShowAll() {
