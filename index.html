@@ -3977,13 +3977,25 @@ async function loadPCFile(event) {
 
     const arrayBuffer = await file.arrayBuffer();
     const wb = XLSX.read(arrayBuffer, { type: 'array' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
-    if (!rows || rows.length < 2) { alert('데이터가 없습니다.'); return; }
+    // 데이터가 있는 첫 번째 시트 찾기
+    var allRows = null;
+    for (var si = 0; si < wb.SheetNames.length; si++) {
+        var ws = wb.Sheets[wb.SheetNames[si]];
+        var r = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        if (r && r.length > 1) { allRows = r; break; }
+    }
+    if (!allRows) { alert('데이터가 없습니다.'); return; }
 
-    pcHeaders = (rows[0] || []).map(function(h, i) { return h ? String(h) : '컬럼' + (i+1); });
-    pcRows = rows.slice(1).filter(function(r) { return r && r.some(function(c) { return c !== undefined && c !== ''; }); });
+    // 헤더 행 자동 감지: 비어있지 않은 셀이 3개 이상인 첫 행
+    var headerRowIdx = 0;
+    for (var ri = 0; ri < Math.min(allRows.length, 10); ri++) {
+        var nonEmpty = (allRows[ri] || []).filter(function(c) { return c !== undefined && c !== '' && c !== null; }).length;
+        if (nonEmpty >= 3) { headerRowIdx = ri; break; }
+    }
+
+    pcHeaders = (allRows[headerRowIdx] || []).map(function(h, i) { return h ? String(h) : '컬럼' + (i+1); });
+    pcRows = allRows.slice(headerRowIdx + 1).filter(function(r) { return r && r.some(function(c) { return c !== undefined && c !== ''; }); });
 
     document.getElementById('pcRowCount').textContent = pcRows.length + '개 행';
 
