@@ -6,6 +6,7 @@
     <title>ERP 품목 관리 시스템</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="default-products.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -1262,7 +1263,10 @@
         <div id="noImageProductList"></div>
     </div>
     <div class="card" id="naverSavedSection" style="display:none;">
-        <h3>🔗 네이버 이미지 저장 목록</h3>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+            <h3 style="margin:0;">🔗 네이버 이미지 저장 목록</h3>
+            <button class="btn btn-outline" onclick="downloadNaverImagesZip()" id="naverZipBtn">&#128230; 전체 ZIP 다운로드</button>
+        </div>
         <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:12px;">네이버 쇼핑에서 가져온 이미지입니다. (URL 방식 저장)</p>
         <div class="image-grid" id="naverSavedGrid"></div>
     </div>
@@ -3846,6 +3850,47 @@ async function downloadNaverImage(code, encodedUrl) {
         // 프록시 실패 시 새 탭으로 열기
         window.open(imageUrl, '_blank');
     }
+}
+
+async function downloadNaverImagesZip() {
+    const naverProducts = products.filter(p => p.imageUrl);
+    if (naverProducts.length === 0) { alert('저장된 이미지가 없습니다.'); return; }
+
+    const btn = document.getElementById('naverZipBtn');
+    btn.disabled = true;
+    btn.textContent = '압축 중... 0/' + naverProducts.length;
+
+    const zip = new JSZip();
+    let done = 0;
+
+    for (const p of naverProducts) {
+        try {
+            const proxyUrl = 'https://wsrv.nl/?url=' + encodeURIComponent(p.imageUrl) + '&output=png';
+            const res = await fetch(proxyUrl);
+            if (res.ok) {
+                const blob = await res.blob();
+                const arrayBuffer = await blob.arrayBuffer();
+                zip.file(p.code + '.png', arrayBuffer);
+            }
+        } catch(e) { /* 실패한 이미지는 건너뜀 */ }
+        done++;
+        btn.textContent = '압축 중... ' + done + '/' + naverProducts.length;
+        await new Promise(r => setTimeout(r, 100));
+    }
+
+    try {
+        const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(zipBlob);
+        a.download = '네이버이미지_' + new Date().toISOString().slice(0,10) + '.zip';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    } catch(e) {
+        alert('ZIP 생성 실패: ' + e.message);
+    }
+
+    btn.disabled = false;
+    btn.textContent = '&#128230; 전체 ZIP 다운로드';
 }
 
 function removeNaverImage(code) {
