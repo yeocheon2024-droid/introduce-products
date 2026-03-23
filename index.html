@@ -3548,8 +3548,13 @@ async function loadNoImageProducts() {
     el.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem;">이미지 목록 불러오는 중...</p>';
 
     try {
-        const { data } = await db.storage.from(IMAGE_BUCKET).list('', { limit: 1000 });
-        const uploaded = new Set((data || []).map(f => f.name.replace(/\.(png|jpg|jpeg|webp)$/i, '')));
+        // 캐시가 있으면 재사용(삭제 직후 등), 없으면 Supabase에서 새로 조회
+        let fileList = uploadedImageCache;
+        if (fileList.length === 0) {
+            const { data } = await db.storage.from(IMAGE_BUCKET).list('', { limit: 1000 });
+            fileList = data || [];
+        }
+        const uploaded = new Set(fileList.map(f => f.name.replace(/\.(png|jpg|jpeg|webp)$/i, '')));
         // Supabase Storage에 없어도 imageUrl 필드가 있으면 이미지 있는 것으로 처리
         const noImg = products.filter(p => !uploaded.has(p.code) && !p.imageUrl);
 
