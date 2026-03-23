@@ -1012,6 +1012,7 @@
             <option value="">중분류 전체</option>
         </select>
         <button class="btn btn-outline" id="showAllBtn" onclick="toggleShowAll()">전체 보기</button>
+        <button class="btn btn-outline" id="quoteBtn" onclick="openQuoteModal()" style="display:none;">견적서 (<span id="quoteBtnCount">0</span>)</button>
         <button class="btn btn-primary" onclick="openAddProductModal()">+ 품목 추가</button>
     </div>
     <!-- PC: 테이블뷰 -->
@@ -1020,6 +1021,7 @@
             <table>
                 <thead>
                     <tr>
+                        <th style="width:30px;"><input type="checkbox" id="selectAllCheck" onclick="toggleSelectAll(this.checked)" title="전체 선택"></th>
                         <th style="width:50px;">이미지</th><th>품목코드</th><th>품목명</th><th>규격</th><th>대분류</th><th>중분류</th>
                         <th>과세</th><th>매입처</th><th class="text-right">매입단가(VAT포함)</th>
                         <th class="text-right">공급가액</th><th class="text-right">부가세</th>
@@ -1354,6 +1356,48 @@
 </div>
 
 <!-- 품목 추가/수정 모달 -->
+<!-- 견적서 모달 -->
+<div class="modal-overlay" id="quoteModal" onclick="if(event.target===this)closeModal('quoteModal')">
+    <div class="modal" style="max-width:800px;width:96%;">
+        <h2>견적서</h2>
+        <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap;">
+            <div style="flex:1;min-width:200px;">
+                <label style="font-size:0.82rem;color:var(--text-secondary);display:block;margin-bottom:4px;">받는 곳</label>
+                <input type="text" id="quoteRecipient" placeholder="거래처명 (선택)" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;font-family:inherit;">
+            </div>
+            <div style="display:flex;gap:8px;align-items:flex-end;">
+                <button class="btn btn-primary" onclick="printQuote()">인쇄</button>
+                <button class="btn btn-outline" onclick="downloadQuoteExcel()">엑셀 다운로드</button>
+                <button class="btn btn-outline" onclick="closeModal('quoteModal')">닫기</button>
+            </div>
+        </div>
+        <div id="quotePrintArea">
+            <div id="quoteHeader" style="margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--accent);">
+                <div style="font-size:1.2rem;font-weight:700;color:var(--accent);">견 적 서</div>
+                <div id="quoteRecipientDisplay" style="font-size:0.88rem;color:var(--text-secondary);margin-top:4px;"></div>
+                <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;" id="quoteDateDisplay"></div>
+            </div>
+            <div class="table-wrap">
+                <table id="quoteTable">
+                    <thead>
+                        <tr>
+                            <th style="width:30px;">No</th>
+                            <th>품목명</th>
+                            <th>규격</th>
+                            <th>단위</th>
+                            <th>과세</th>
+                            <th class="text-right">공급가액</th>
+                            <th class="text-right">부가세</th>
+                            <th class="text-right">납품단가</th>
+                        </tr>
+                    </thead>
+                    <tbody id="quoteTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal-overlay" id="productModal">
     <div class="modal">
         <h2 id="productModalTitle">품목 추가</h2>
@@ -1479,6 +1523,7 @@ let editingProductCode = null;
 let currentPage = 1;
 let showAll = false;
 const PAGE_SIZE = 50;
+let selectedProductCodes = new Set();
 
 // ============================================================
 // 탭 전환
@@ -1590,13 +1635,15 @@ function renderProductList() {
 
     const tbody = document.getElementById('productTableBody');
     tbody.innerHTML = pageData.length === 0
-        ? '<tr><td colspan="13" style="text-align:center;color:var(--text-muted);padding:40px;">품목이 없습니다.</td></tr>'
+        ? '<tr><td colspan="14" style="text-align:center;color:var(--text-muted);padding:40px;">품목이 없습니다.</td></tr>'
         : pageData.map(p => {
             const sell = Number(p.sell) || 0;
             const isTaxFree = p.tax === '면세';
             const supply = sell ? (isTaxFree ? sell : Math.round(sell / 1.1)) : 0;
             const vat = (sell && !isTaxFree) ? sell - supply : 0;
+            const isChecked = selectedProductCodes.has(p.code);
             return `<tr>
+            <td><input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleProductSelect('${esc(p.code)}', this.checked)"></td>
             <td>${getProductThumbHTML(p.code)}</td>
             <td style="font-weight:600;color:var(--accent);">${esc(p.code)}</td>
             <td>${esc(p.name)}</td>
@@ -1654,6 +1701,9 @@ function renderProductList() {
                         </div>
                     </div>
                     <div class="m-product-actions">
+                        <label style="display:flex;align-items:center;gap:5px;font-size:0.78rem;cursor:pointer;">
+                            <input type="checkbox" ${selectedProductCodes.has(p.code) ? 'checked' : ''} onchange="toggleProductSelect('${esc(p.code)}', this.checked)"> 견적서 선택
+                        </label>
                         <button class="btn btn-outline btn-sm" onclick="editProduct('${esc(p.code)}')">수정</button>
                         <button class="btn btn-danger btn-sm" onclick="deleteProduct('${esc(p.code)}')">삭제</button>
                     </div>
@@ -1780,6 +1830,88 @@ function deleteProduct(code) {
 }
 
 function roundUp100(n) { return Math.ceil(n / 100) * 100; }
+
+function toggleProductSelect(code, checked) {
+    if (checked) selectedProductCodes.add(code);
+    else selectedProductCodes.delete(code);
+    updateQuoteBtn();
+}
+
+function toggleSelectAll(checked) {
+    const filtered = getFilteredProducts();
+    const pageData = showAll ? filtered : filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+    pageData.forEach(p => checked ? selectedProductCodes.add(p.code) : selectedProductCodes.delete(p.code));
+    renderProductList();
+}
+
+function updateQuoteBtn() {
+    const btn = document.getElementById('quoteBtn');
+    const cnt = document.getElementById('quoteBtnCount');
+    if (btn && cnt) {
+        cnt.textContent = selectedProductCodes.size;
+        btn.style.display = selectedProductCodes.size > 0 ? '' : 'none';
+    }
+}
+
+function openQuoteModal() {
+    if (selectedProductCodes.size === 0) { alert('품목을 선택해주세요.'); return; }
+    const items = products.filter(p => selectedProductCodes.has(p.code));
+    const tbody = document.getElementById('quoteTableBody');
+    tbody.innerHTML = items.map((p, i) => {
+        const sell = Number(p.sell) || 0;
+        const isTaxFree = p.tax === '면세';
+        const supply = sell ? (isTaxFree ? sell : Math.round(sell / 1.1)) : 0;
+        const vat = (sell && !isTaxFree) ? sell - supply : 0;
+        return `<tr>
+            <td style="text-align:center;">${i + 1}</td>
+            <td>${esc(p.name)}</td>
+            <td style="color:var(--text-secondary);">${esc(p.spec || '')}</td>
+            <td style="text-align:center;">${esc(p.unit || '')}</td>
+            <td style="text-align:center;"><span class="badge ${p.tax === '면세' ? 'badge-notax' : 'badge-tax'}">${esc(p.tax || '과세')}</span></td>
+            <td class="text-right">${supply ? supply.toLocaleString() : '-'}</td>
+            <td class="text-right">${vat ? vat.toLocaleString() : '-'}</td>
+            <td class="text-right" style="font-weight:600;">${sell ? sell.toLocaleString() : '-'}</td>
+        </tr>`;
+    }).join('');
+    document.getElementById('quoteDateDisplay').textContent = '작성일: ' + new Date().toLocaleDateString('ko-KR');
+    document.getElementById('quoteRecipient').value = '';
+    document.getElementById('quoteRecipientDisplay').textContent = '';
+    document.getElementById('quoteRecipient').oninput = function() {
+        document.getElementById('quoteRecipientDisplay').textContent = this.value ? this.value + ' 귀중' : '';
+    };
+    openModal('quoteModal');
+}
+
+function printQuote() {
+    const recipient = document.getElementById('quoteRecipient').value;
+    const printContents = document.getElementById('quotePrintArea').innerHTML;
+    const w = window.open('', '_blank');
+    w.document.write(`<html><head><title>견적서</title><style>
+        body { font-family: 'Inter', sans-serif; padding: 30px; font-size: 13px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+        th, td { border: 1px solid #ddd; padding: 7px 10px; }
+        th { background: #f5f5f5; font-weight: 600; }
+        .text-right { text-align: right; }
+        h2 { color: #C8956C; }
+    </style></head><body>${printContents}</body></html>`);
+    w.document.close();
+    w.print();
+}
+
+function downloadQuoteExcel() {
+    const items = products.filter(p => selectedProductCodes.has(p.code));
+    const recipient = document.getElementById('quoteRecipient').value;
+    const headers = ['No', '품목명', '규격', '단위', '과세구분', '공급가액', '부가세', '납품단가(VAT포함)'];
+    const rows = items.map((p, i) => {
+        const sell = Number(p.sell) || 0;
+        const isTaxFree = p.tax === '면세';
+        const supply = sell ? (isTaxFree ? sell : Math.round(sell / 1.1)) : 0;
+        const vat = (sell && !isTaxFree) ? sell - supply : 0;
+        return [i + 1, p.name, p.spec || '', p.unit || '', p.tax || '과세', supply || '', vat || '', sell || ''];
+    });
+    const filename = recipient ? `견적서_${recipient}` : '견적서';
+    downloadExcel(filename, headers, rows);
+}
 
 function calcSellingPrice() {
     const cost = Number(document.getElementById('pmCost').value) || 0;
