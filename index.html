@@ -2031,10 +2031,13 @@ function openQuoteModal() {
 // 발주서
 // ============================================================
 let poQty = {}; // { code: qty } 수량 저장
+let poCost = {}; // { code: cost } 단가 오버라이드
 
 function buildPORows() {
     return products.filter(p => selectedProductCodes.has(p.code)).map(p => {
-        const cost = Number(p.cost) || 0;
+        const cost = poCost[p.code] !== undefined
+            ? Number(poCost[p.code])
+            : (Number(p.cost) > 0 ? Number(p.cost) : Number(p.sell) || 0);
         const qty = Number(poQty[p.code]) || 1;
         const isTaxFree = p.tax === '면세';
         const unitSupply = cost ? (isTaxFree ? cost : Math.round(cost / 1.1)) : 0;
@@ -2064,7 +2067,7 @@ function renderPOTable() {
             '<td style="' + B + 'text-align:center;">' + esc(r.p.spec || '') + '</td>' +
             '<td style="' + B + 'text-align:center;">' + esc(r.p.unit || '') + '</td>' +
             '<td style="' + B + 'text-align:center;"><input type="number" min="1" value="' + r.qty + '" style="width:45px;text-align:center;border:1px solid #ccc;border-radius:3px;padding:2px;" onchange="poQty[\'' + r.p.code + '\']=Number(this.value);renderPOTable()"></td>' +
-            '<td style="' + B + 'text-align:right;">' + (r.cost > 0 ? r.cost.toLocaleString() : '<span style="color:#aaa;">미설정</span>') + '</td>' +
+            '<td style="' + B + 'text-align:right;"><input type="number" min="0" value="' + r.cost + '" style="width:85px;text-align:right;border:1px solid #ccc;border-radius:3px;padding:2px;" onchange="poCost[\'' + r.p.code + '\']=Number(this.value);renderPOTable()"></td>' +
             '<td style="' + B + 'text-align:right;">' + (r.totalSupply > 0 ? r.totalSupply.toLocaleString() : '-') + '</td>' +
             '<td style="' + B + 'text-align:center;">' + (r.p.tax === '면세' ? '면세' : '포함') + '</td>' +
             '<td style="' + B + 'text-align:right;">' + (r.totalVat > 0 ? r.totalVat.toLocaleString() : '-') + '</td>' +
@@ -2097,7 +2100,7 @@ function updatePOHeader() {
 function openPurchaseOrderModal() {
     if (selectedProductCodes.size === 0) { alert('품목을 선택해주세요.'); return; }
     // 수량 초기화 (이미 있는 것 유지)
-    selectedProductCodes.forEach(code => { if (!poQty[code]) poQty[code] = 1; });
+    selectedProductCodes.forEach(code => { if (!poQty[code]) poQty[code] = 1; delete poCost[code]; });
     // 납품요청일 기본값: 내일
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
     document.getElementById('poDeliveryDate').value = tomorrow.toISOString().split('T')[0];
