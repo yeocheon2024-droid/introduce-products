@@ -4172,6 +4172,54 @@ async function startPriceCompare() {
     const validRows = pcRows.filter(function(r) { return r[nameColIdx] && String(r[nameColIdx]).trim(); });
     const total = validRows.length;
 
+    // AI 키워드 최적화
+    var searchKeywords = {};
+    const aiKey = localStorage.getItem('erp_api_key');
+    if (aiKey) {
+        document.getElementById('pcCurrentItem').textContent = 'AI가 검색 키워드 최적화 중...';
+        document.getElementById('pcProgressText').textContent = '0 / ' + total;
+        document.getElementById('pcProgressBar').style.width = '0%';
+        try {
+            var nameList = validRows.map(function(r) { return String(r[nameColIdx]).trim(); });
+            var specList = validRows.map(function(r) { return specColIdx >= 0 ? String(r[specColIdx] || '').trim() : ''; });
+            // 50개씩 배치로 AI 호출
+            var AI_BATCH = 50;
+            for (var ai = 0; ai < nameList.length; ai += AI_BATCH) {
+                if (pcAbort) break;
+                var batchNames = nameList.slice(ai, ai + AI_BATCH);
+                var batchSpecs = specList.slice(ai, ai + AI_BATCH);
+                var items = batchNames.map(function(n, idx) { return (ai+idx+1) + '. ' + n + (batchSpecs[idx] ? ' (' + batchSpecs[idx] + ')' : ''); });
+                var aiResp = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': aiKey,
+                        'anthropic-version': '2023-06-01',
+                        'anthropic-dangerous-direct-browser-access': 'true'
+                    },
+                    body: JSON.stringify({
+                        model: 'claude-sonnet-4-20250514',
+                        max_tokens: 4096,
+                        system: '당신은 네이버 쇼핑 검색 키워드 최적화 전문가입니다. 식품/식자재 품목명을 받으면 네이버 쇼핑에서 정확한 제품을 찾을 수 있는 최적의 검색 키워드를 생성해주세요.',
+                        messages: [{ role: 'user', content: '다음 식품/식자재 품목명 목록을 네이버 쇼핑 검색에 최적화된 키워드로 변환해주세요.\n\n규칙:\n- 브랜드명 + 제품명 + 용량/규격만 남기기\n- 불필요한 수식어(프리미엄, 특가, NEW 등) 제거\n- 괄호 안 부가정보 중 용량/규격만 유지\n- 각 줄에 "번호. 키워드" 형식으로만 응답\n- 번호는 입력과 동일하게\n\n' + items.join('\n') }]
+                    })
+                });
+                if (aiResp.ok) {
+                    var aiData = await aiResp.json();
+                    var aiText = aiData.content[0].text;
+                    var lines = aiText.split('\n');
+                    lines.forEach(function(line) {
+                        var m = line.match(/^(\d+)\.\s*(.+)$/);
+                        if (m) { searchKeywords[parseInt(m[1]) - 1] = m[2].trim(); }
+                    });
+                }
+                document.getElementById('pcCurrentItem').textContent = 'AI 키워드 최적화: ' + Math.min(ai + AI_BATCH, nameList.length) + '/' + nameList.length;
+            }
+        } catch(e) {
+            console.log('AI 키워드 최적화 실패, 원본 사용:', e);
+        }
+    }
+
     const BATCH_SIZE = 3;
     const BATCH_DELAY = 200;
 
@@ -4183,11 +4231,12 @@ async function startPriceCompare() {
             const name = String(row[nameColIdx]).trim();
             const price = priceColIdx >= 0 ? (parseInt(String(row[priceColIdx]).replace(/[^0-9]/g,'')) || 0) : 0;
             const spec = specColIdx >= 0 ? (String(row[specColIdx] || '').trim()) : '';
-            return pcSearchNaver(name, clientId, clientSecret).then(function(items) {
+            const searchQuery = searchKeywords[idx] || name;
+            return pcSearchNaver(searchQuery, clientId, clientSecret).then(function(items) {
                 const naverItem = items.length > 0 ? items[0] : null;
                 const coupangItem = items.find(function(it) { return it.mallName && it.mallName.includes('쿠팡'); }) || null;
                 return {
-                    name: name, spec: spec, price: price,
+                    name: name, spec: spec, price: price, searchQuery: searchQuery !== name ? searchQuery : '',
                     naverPrice: naverItem ? parseInt(naverItem.lprice) : null,
                     naverTitle: naverItem ? naverItem.title.replace(/<[^>]+>/g,'') : '',
                     naverLink: naverItem ? naverItem.link : null,
@@ -4286,7 +4335,7 @@ function renderPCResult() {
             : '';
 
         return '<tr style="border-bottom:1px solid var(--border-light);">'
-            + '<td style="padding:7px 10px;">' + esc(r.name) + '</td>'
+            + '<td style="padding:7px 10px;">' + esc(r.name) + (r.searchQuery ? '<br><span style="font-size:0.72rem;color:var(--accent);">→ ' + esc(r.searchQuery) + '</span>' : '') + '</td>'
             + '<td style="padding:7px 10px;color:var(--text-muted);">' + esc(r.spec) + '</td>'
             + '<td style="padding:7px 10px;text-align:right;">' + (r.price > 0 ? r.price.toLocaleString() + '원' : '-') + '</td>'
             + '<td style="padding:7px 10px;text-align:right;">' + (r.naverPrice !== null ? r.naverPrice.toLocaleString() + '원' : '<span style="color:var(--text-muted);">미발견</span>') + '</td>'
@@ -4303,14 +4352,14 @@ function renderPCResult() {
 
 function downloadPCExcel() {
     if (!pcResults.length) return;
-    var wsData = [['품목명','규격','현재단가','네이버최저가','네이버차이','네이버차이%','쿠팡최저가','쿠팡차이','쿠팡차이%','네이버링크','쿠팡링크']];
+    var wsData = [['품목명','AI검색어','규격','현재단가','네이버최저가','네이버차이','네이버차이%','쿠팡최저가','쿠팡차이','쿠팡차이%','네이버링크','쿠팡링크']];
     pcResults.forEach(function(r) {
         var nDiff = (r.price > 0 && r.naverPrice !== null) ? r.naverPrice - r.price : '';
         var nPct = (r.price > 0 && r.naverPrice !== null) ? ((r.naverPrice - r.price) / r.price * 100).toFixed(1) + '%' : '';
         var cDiff = (r.price > 0 && r.coupangPrice !== null) ? r.coupangPrice - r.price : '';
         var cPct = (r.price > 0 && r.coupangPrice !== null) ? ((r.coupangPrice - r.price) / r.price * 100).toFixed(1) + '%' : '';
         wsData.push([
-            r.name, r.spec, r.price || '', r.naverPrice || '', nDiff, nPct,
+            r.name, r.searchQuery || '', r.spec, r.price || '', r.naverPrice || '', nDiff, nPct,
             r.coupangPrice || '', cDiff, cPct, r.naverLink || '', r.coupangLink || ''
         ]);
     });
