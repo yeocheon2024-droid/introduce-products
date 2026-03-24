@@ -4172,42 +4172,49 @@ async function startPriceCompare() {
     const validRows = pcRows.filter(function(r) { return r[nameColIdx] && String(r[nameColIdx]).trim(); });
     const total = validRows.length;
 
-    for (var i = 0; i < total; i++) {
+    const BATCH_SIZE = 3;
+    const BATCH_DELAY = 200;
+
+    for (var i = 0; i < total; i += BATCH_SIZE) {
         if (pcAbort) break;
-        const row = validRows[i];
-        const name = String(row[nameColIdx]).trim();
-        const price = priceColIdx >= 0 ? (parseInt(String(row[priceColIdx]).replace(/[^0-9]/g,'')) || 0) : 0;
-        const spec = specColIdx >= 0 ? (String(row[specColIdx] || '').trim()) : '';
-
-        document.getElementById('pcProgressText').textContent = (i+1) + ' / ' + total;
-        document.getElementById('pcProgressBar').style.width = Math.round((i+1)/total*100) + '%';
-        document.getElementById('pcCurrentItem').textContent = '검색 중: ' + name;
-
-        try {
-            const items = await pcSearchNaver(name, clientId, clientSecret);
-            const naverItem = items.length > 0 ? items[0] : null;
-            const coupangItem = items.find(function(it) { return it.mallName && it.mallName.includes('쿠팡'); }) || null;
-
-            pcResults.push({
-                name: name,
-                spec: spec,
-                price: price,
-                naverPrice: naverItem ? parseInt(naverItem.lprice) : null,
-                naverTitle: naverItem ? naverItem.title.replace(/<[^>]+>/g,'') : '',
-                naverLink: naverItem ? naverItem.link : null,
-                naverMall: naverItem ? naverItem.mallName : '',
-                coupangPrice: coupangItem ? parseInt(coupangItem.lprice) : null,
-                coupangLink: coupangItem ? coupangItem.link : null,
+        const batch = validRows.slice(i, Math.min(i + BATCH_SIZE, total));
+        const promises = batch.map(function(row, bIdx) {
+            const idx = i + bIdx;
+            const name = String(row[nameColIdx]).trim();
+            const price = priceColIdx >= 0 ? (parseInt(String(row[priceColIdx]).replace(/[^0-9]/g,'')) || 0) : 0;
+            const spec = specColIdx >= 0 ? (String(row[specColIdx] || '').trim()) : '';
+            return pcSearchNaver(name, clientId, clientSecret).then(function(items) {
+                const naverItem = items.length > 0 ? items[0] : null;
+                const coupangItem = items.find(function(it) { return it.mallName && it.mallName.includes('쿠팡'); }) || null;
+                return {
+                    name: name, spec: spec, price: price,
+                    naverPrice: naverItem ? parseInt(naverItem.lprice) : null,
+                    naverTitle: naverItem ? naverItem.title.replace(/<[^>]+>/g,'') : '',
+                    naverLink: naverItem ? naverItem.link : null,
+                    naverMall: naverItem ? naverItem.mallName : '',
+                    coupangPrice: coupangItem ? parseInt(coupangItem.lprice) : null,
+                    coupangLink: coupangItem ? coupangItem.link : null,
+                };
+            }).catch(function(e) {
+                return {
+                    name: name, spec: spec, price: price,
+                    naverPrice: null, naverTitle: '', naverLink: null, naverMall: '',
+                    coupangPrice: null, coupangLink: null, error: e.message
+                };
             });
-        } catch(e) {
-            pcResults.push({
-                name: name, spec: spec, price: price,
-                naverPrice: null, naverTitle: '', naverLink: null, naverMall: '',
-                coupangPrice: null, coupangLink: null, error: e.message
-            });
+        });
+
+        const batchResults = await Promise.all(promises);
+        pcResults = pcResults.concat(batchResults);
+
+        var done = Math.min(i + BATCH_SIZE, total);
+        document.getElementById('pcProgressText').textContent = done + ' / ' + total;
+        document.getElementById('pcProgressBar').style.width = Math.round(done/total*100) + '%';
+        document.getElementById('pcCurrentItem').textContent = '검색 중: ' + String(batch[batch.length-1][nameColIdx]).trim();
+
+        if (i + BATCH_SIZE < total) {
+            await new Promise(function(r) { setTimeout(r, BATCH_DELAY); });
         }
-
-        await new Promise(function(r) { setTimeout(r, 500); });
     }
 
     document.getElementById('priceCompareProgress').style.display = 'none';
