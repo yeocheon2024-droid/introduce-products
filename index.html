@@ -3697,8 +3697,9 @@ const IMAGE_BUCKET = 'product-images';
 let pendingImageFile = null;
 let uploadedImageCache = [];
 
+var imageCacheBuster = Date.now();
 function getProductImageUrl(code) {
-    return SUPABASE_URL + '/storage/v1/object/public/' + IMAGE_BUCKET + '/' + code + '.png';
+    return SUPABASE_URL + '/storage/v1/object/public/' + IMAGE_BUCKET + '/' + code + '.png?v=' + imageCacheBuster;
 }
 
 function getProductThumbHTML(code) {
@@ -3848,6 +3849,8 @@ async function handleImageFiles(files) {
     }
 
     statusEl.textContent = '완료! 성공: ' + success + '개' + (fail > 0 ? ', 실패: ' + fail + '개' : '');
+    // 캐시 갱신
+    imageCacheBuster = Date.now();
     // 파일 입력 초기화
     document.getElementById('imageFileInput').value = '';
     // 목록 갱신
