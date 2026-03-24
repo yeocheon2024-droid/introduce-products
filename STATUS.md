@@ -1,106 +1,139 @@
-# ERP 품목 관리 시스템 - 현재 상황 (2026-03-23)
+# ERP 품목 관리 시스템 - 현재 상황 (2026-03-24)
 
-## 배포 정보
-- **GitHub**: https://github.com/yeocheon2024-droid/introduce-products
-- **배포 URL**: https://yeocheon2024-droid.github.io/introduce-products/
-- **배포 방식**: GitHub Pages (main 브랜치 자동 배포)
+## 사이트 구조 (3개 사이트, 1개 DB)
+
+```
+┌─────────────────┐
+│  ERP 사이트       │ GitHub Pages (읽기/쓰기)
+│  introduce-products │
+└────────┬────────┘
+         │ 동기화 (클라우드에 업로드)
+         ▼
+┌─────────────────┐
+│   Supabase DB    │ 공유 데이터베이스
+└──┬──────────┬───┘
+   │          │
+   ▼          ▼
+카탈로그      전단지 생성기
+사이트        사이트
+Cloudflare   Cloudflare
+(읽기전용)   (읽기전용)
+```
+
+| 사이트 | 용도 | 배포 | URL |
+|--------|------|------|-----|
+| ERP | 품목 관리 (내부용) | GitHub Pages | https://yeocheon2024-droid.github.io/introduce-products/ |
+| 카탈로그 | 품목 안내 (고객용) | Cloudflare Pages | https://product-catalog-4qg.pages.dev/ |
+| 전단지 | 전단지 생성 (내부용) | Cloudflare Pages | https://product-flyer.pages.dev/ |
+
+### GitHub 저장소
+- ERP: https://github.com/yeocheon2024-droid/introduce-products
+- 카탈로그: https://github.com/yeocheon2024-droid/product-catalog
+- 전단지: https://github.com/yeocheon2024-droid/product-flyer
 
 ---
 
-## 현재 구현 완료된 기능
+## ERP 사이트 기능
 
 | 탭 | 기능 | 상태 |
 |----|------|------|
 | 대시보드 | 통계, 최근 등록 품목 | ✅ |
-| 품목 관리 | CRUD, 검색/필터, 페이지네이션, 전체 보기, PC/모바일 반응형 | ✅ |
+| 품목 관리 | CRUD, 검색/필터, 페이지네이션, PC/모바일 반응형 | ✅ |
 | 매입처 | 등록/관리 | ✅ |
 | 분류 체계 | 대분류/중분류 관리 | ✅ |
 | 마진율 설정 | 카테고리별 마진율, 판매단가 미설정 품목, 일괄 적용 | ✅ |
-| 이미지 관리 | 일괄 업로드(드래그앤드롭), 개별/전체 ZIP 다운로드, 삭제 | ✅ |
-| 네이버 이미지 | 이미지 없는 품목 검색, 네이버 쇼핑 이미지 저장, ZIP 다운로드 | ✅ |
+| 이미지 관리 | 일괄 업로드, ZIP 다운로드, 삭제, 네이버 이미지 저장 | ✅ |
 | 엑셀 업로드 | .xlsx/.xls/.csv 파싱, 미리보기 후 일괄 등록 | ✅ |
-| 견적서 분석 | Claude AI 분석, 기존 품목 비교/매칭, 응답 잘림 자동 이어받기 | ✅ |
-| 발주서 | 품목 선택 후 발주서 생성, 수량 편집, 인쇄/엑셀 다운로드 | ✅ |
-| 가격 비교 | 엑셀 업로드 → 네이버쇼핑/쿠팡 최저가 비교, 결과 엑셀 다운로드 | ✅ |
-| ERP 내보내기 | 발주고 형식(39컬럼), 경영박사 형식(7컬럼) | ✅ |
-| Supabase 설정 | 자동 연결(키 내장), 양방향 동기화 | ✅ |
+| 견적서 분석 | Claude AI 분석, 기존 품목 비교/매칭 | ✅ |
+| 발주서 | 품목 선택, 수량 편집, 인쇄/엑셀 다운로드 | ✅ |
+| 가격 비교 | 네이버/쿠팡 최저가 비교, AI 키워드 최적화, 엑셀 다운로드 | ✅ |
+| ERP 내보내기 | 발주고(39컬럼), 경영박사(7컬럼) | ✅ |
+| Supabase 설정 | 양방향 동기화 (로컬에 없는 품목 Supabase에서 자동 삭제) | ✅ |
 
 ---
 
-## 주요 변경 이력
+## 카탈로그 사이트 (2026-03-24 신규)
 
-### 발주서 기능
-- 품목 관리 탭에서 품목 선택 후 발주서 버튼 클릭
-- **단가(VAT포함) 컬럼 삭제** (공급가액 + VAT금액 + 합계(VAT포함) 표시)
-- 수량 직접 입력 가능
-- 매입처코드 자동 감지 및 입력 필드 추가
-- 인쇄 / 엑셀 다운로드
+### 기술 스택
+- Next.js 14 (Static Export) + Tailwind CSS + Supabase
+- Cloudflare Pages 배포
+- 환경변수: next.config.js에 fallback 설정
 
-### 이미지 관리
-- **업로드된 이미지 목록**: 개별 다운로드 + 삭제 + ZIP 전체 다운로드
-- **네이버 이미지 저장 목록**: URL 방식 저장, ZIP 전체 다운로드, 개별 삭제
-- 이미지 삭제 후 "이미지 없는 품목 불러오기" 즉시 반영 (캐시 우선)
+### 기능
+- 빙그레 스타일 디자인 (깔끔한 흰색 배경, 골드/앰버 액센트)
+- 법인 로고 (투명배경) + Jua(주아) 폰트 회사명
+- 카테고리 필터 탭 (쌀 > 김치/반찬 > 계란 > 기름/분말 > 품목수순)
+- 품목 그리드 (모바일 2열 / PC 4열)
+- 무한스크롤 (30개씩 로드)
+- 가격 숨김 기본 (?price=on 으로 표시)
+- 품목 클릭 → 모달 상세 (좌 이미지 + 우 정보)
+- 이미지 없는 품목 → 로고 워터마크 표시
+- 회사소개 섹션 + 연락처
+- /m/?code=XXX 상세 페이지 (외부 링크/QR용)
 
-### 가격 비교 탭 (신규)
-- 엑셀 파일 업로드 → 품목명/가격/규격 컬럼 자동 감지
-- 네이버 쇼핑 API로 최저가 검색 (0.5초 딜레이)
-- 쿠팡: 네이버 결과 중 mallName 필터링
-- 결과 테이블: 현재단가 vs 최저가 차이 색상 표시, 배송비 확인 뱃지
-- 필터: 전체 / 네이버 더 저렴 / 네이버 더 비쌈 / 검색 없음
-- 엑셀 다운로드
-
-### 발주고 ERP 내보내기
-- **매입처코드 숫자 변환**: WI→000655, HN→000539, WD→000541
-- **매입단가 컬럼 비워둠**
-- **부가세 포함(1)**: 과세 품목은 1, 면세 품목은 0
-
-### 품목 관리 테이블
-- 공급가액/부가세 컬럼 제거 (가로 스크롤 개선)
-- 썸네일 이미지 lazy loading 적용
-
-### 성능 최적화
-- 검색 입력 디바운스 250ms (즉시 렌더링 → 타이핑 완료 후 렌더링)
-- 이미지 목록 `?t=Date.now()` 제거 (매번 새 요청 → 브라우저 캐시 활용)
-- 모든 이미지에 `loading="lazy"` 적용
-
-### 모바일 인쇄 수정
-- `window.open()` 방식 → 현재 페이지 오버레이 방식으로 교체
-- `@media print` CSS로 오버레이 영역만 출력
-- 발주서/견적서 모두 적용, 인쇄 후 닫기 버튼으로 복귀
-
-### 이미지 삭제 후 조회 문제
-- `loadNoImageProducts()` 가 Supabase 재조회 대신 로컬 캐시 우선 사용
-- 삭제 직후 "이미지 없는 품목" 목록에 즉시 반영됨
+### 회사 정보
+- 회사명: 지구농산 농업회사법인
+- 대표전화: 1566-1521
+- 팩스: 032-330-4428
+- 이메일: ljsgn5958@gmail.com
+- 주소: 79-25, Ilsin-dong, Bupyeong-gu, Incheon
+- 슬로건: 쌀 · 김치 · 계란 · 종합유통
 
 ---
 
-## 데이터 현황
-- **기본 등록 품목**: 189개 (`default-products.js`)
-- **이미지**: 57개 PNG (`02 이미지파일/` 폴더) → Supabase Storage 업로드 필요
-- **매입처**: JG(자체매입), WI(원일푸드), WD(왔다식품), HN(해농)
+## 전단지 생성기 사이트 (2026-03-24 신규)
+
+### 기능
+- Supabase에서 품목 로드 (판매단가 있는 품목만)
+- 품목 체크박스 선택 + 카테고리 필터 + 검색
+- A4 세로 (3x4=12개) / A5 가로 (3x2=6개) 레이아웃
+- 회사명/날짜/연락처 입력
+- 미리보기 + PDF 다운로드 (html2canvas + jsPDF)
 
 ---
 
-## 이미지 관련 메모
-- Supabase Storage URL: `{supabase_url}/storage/v1/object/public/product-images/{품목코드}.png`
-- 네이버 이미지: `products[].imageUrl` 필드에 URL 저장 (로컬 + Supabase `image_url` 컬럼)
-- **Supabase Storage 정책 필요**: DELETE + UPDATE policy for anon (현재 INSERT/SELECT만)
+## 2026-03-24 변경 이력
+
+### ERP 사이트
+- 가격비교 속도 최적화 (3건 병렬 + 0.2초 딜레이, 기존 대비 7배 빠름)
+- 가격비교 AI 키워드 최적화 (Claude API로 검색어 변환)
+- Supabase 업로드 시 로컬에 없는 품목 자동 삭제
+
+### 카탈로그 사이트 (신규 구축)
+- Next.js + Tailwind + Supabase + Cloudflare Pages
+- 빙그레 스타일 디자인 적용
+- 법인 로고 + Jua 폰트 + 골드/앰버 색상
+- 카테고리 순서: 쌀 > 김치/반찬 > 계란 > 기름/분말 > 품목수순
+- 가격 숨김/표시 토글 (?price=on)
+- QR 코드 생성 (투명배경 PNG)
+
+### 전단지 생성기 사이트 (신규 구축)
+- Next.js + Tailwind + Supabase + Cloudflare Pages
+- 품목 선택 → A4/A5 전단지 → PDF 다운로드
 
 ---
 
-## 기술 스택
-- Vanilla HTML/CSS/JS (프레임워크 없음), 단일 파일 (~4300줄)
+## 주요 기술 스택
+
+### ERP 사이트
+- Vanilla HTML/CSS/JS (단일 파일 ~4300줄)
 - Supabase (DB + Storage) + localStorage
-- Claude API (claude-sonnet-4-20250514) - 견적서 분석
-- SheetJS (엑셀), JSZip (ZIP 다운로드), Supabase JS Client v2
+- Claude API (견적서 분석), 네이버 API (가격비교/이미지)
+- SheetJS (엑셀), JSZip (ZIP)
+
+### 카탈로그/전단지 사이트
+- Next.js 14 (Static Export) + Tailwind CSS
+- Supabase JS Client v2 (읽기전용)
+- Cloudflare Pages 배포
+- wrangler.toml: nodejs_compat 플래그
 
 ---
 
-## 단가 구조
-- `cost` (매입단가): VAT 포함 금액
-- `sell` (판매단가): VAT 포함 최종 판매가
-- 과세 판매단가 = 매입단가 × (1 + 마진율/100) × 1.1
-- 면세 판매단가 = 매입단가 × (1 + 마진율/100)
+## Supabase 구성
+- 프로젝트: zsxmmhgrmysqauuojmir.supabase.co
+- 테이블: products, vendors, margins
+- Storage: product-images 버킷 (Public)
+- 3개 사이트가 동일 DB 공유
 
 ---
 
@@ -113,16 +146,13 @@
 
 ---
 
+## 네이버 API 설정
+- Client ID/Secret: localStorage에 저장
+- 이미지 관리 탭에서 입력
+- 일일 한도: 25,000건 (무료)
+
 ## Claude API 설정
 - 모델: claude-sonnet-4-20250514
-- max_tokens: 16384 (JSON 잘림 방지)
+- max_tokens: 16384
 - 응답 잘림 시 최대 3회 자동 이어받기
-- API 키: localStorage `erp_api_key` (보안상 코드 미포함)
-
----
-
-## 네이버 API 설정
-- Client ID: localStorage `naver_client_id`
-- Client Secret: localStorage `naver_client_secret`
-- 이미지 관리 탭에서 입력/저장
-- 일일 한도: 25,000건 (무료)
+- API 키: localStorage `erp_api_key`
