@@ -3392,7 +3392,25 @@ async function uploadToSupabase() {
             else syncLog(`  품목 ${i+1}~${i+batch.length} 완료`);
         }
 
-        // 3) 마진율 업로드
+        // 3) Supabase에만 있는 품목 삭제
+        syncLog('Supabase에만 있는 품목 정리 중...');
+        const { data: cloudProducts } = await db.from('products').select('code');
+        if (cloudProducts) {
+            const localCodes = new Set(products.map(function(p) { return p.code; }));
+            const toDelete = cloudProducts.filter(function(cp) { return !localCodes.has(cp.code); }).map(function(cp) { return cp.code; });
+            if (toDelete.length > 0) {
+                for (var di = 0; di < toDelete.length; di += 50) {
+                    var delBatch = toDelete.slice(di, di + 50);
+                    var { error: delErr } = await db.from('products').delete().in('code', delBatch);
+                    if (delErr) syncLog('  삭제 오류: ' + delErr.message);
+                }
+                syncLog('  Supabase에서 ' + toDelete.length + '개 품목 삭제 완료');
+            } else {
+                syncLog('  삭제할 품목 없음');
+            }
+        }
+
+        // 4) 마진율 업로드
         const marginEntries = Object.entries(margins);
         if (marginEntries.length > 0) {
             syncLog(`마진율 ${marginEntries.length}개 업로드 중...`);
