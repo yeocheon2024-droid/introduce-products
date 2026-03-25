@@ -3715,34 +3715,18 @@ const IMAGE_BUCKET = 'product-images';
 let pendingImageFile = null;
 let uploadedImageCache = [];
 
-// 네이버 API CORS 프록시 (작동하는 프록시 기억)
-var workingProxyIdx = -1;
+// 네이버 API - Cloudflare Worker 프록시
+var NAVER_PROXY = 'https://naver-proxy.ljsgn5958.workers.dev';
 async function fetchNaverAPI(apiUrl, clientId, clientSecret) {
-    const proxies = [
-        function(u) { return 'https://corsproxy.io/?' + encodeURIComponent(u); },
-        function(u) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); },
-        function(u) { return 'https://cors-anywhere.herokuapp.com/' + u; }
-    ];
-    // 이미 작동하는 프록시를 알면 바로 사용
-    if (workingProxyIdx >= 0) {
-        try {
-            var proxyUrl = proxies[workingProxyIdx](apiUrl);
-            var headers = { 'X-Naver-Client-Id': clientId, 'X-Naver-Client-Secret': clientSecret };
-            var res = await fetch(proxyUrl, { headers: headers });
-            if (res.ok) { var data = await res.json(); if (data.items) return data; }
-        } catch(e) {}
-        workingProxyIdx = -1; // 실패하면 다시 탐색
-    }
-    for (var i = 0; i < proxies.length; i++) {
-        try {
-            var proxyUrl2 = proxies[i](apiUrl);
-            var headers2 = { 'X-Naver-Client-Id': clientId, 'X-Naver-Client-Secret': clientSecret };
-            var res2 = await fetch(proxyUrl2, { headers: headers2 });
-            if (!res2.ok) continue;
-            var data2 = await res2.json();
-            if (data2.items) { workingProxyIdx = i; return data2; }
-        } catch(e) { continue; }
-    }
+    var url = new URL(apiUrl);
+    var query = url.searchParams.get('query');
+    var display = url.searchParams.get('display') || '10';
+    var sort = url.searchParams.get('sort') || 'sim';
+    var proxyUrl = NAVER_PROXY + '?query=' + encodeURIComponent(query) + '&cid=' + encodeURIComponent(clientId) + '&cs=' + encodeURIComponent(clientSecret) + '&display=' + display + '&sort=' + sort;
+    try {
+        var res = await fetch(proxyUrl);
+        if (res.ok) { var data = await res.json(); if (data.items) return data; }
+    } catch(e) {}
     return { items: [] };
 }
 
