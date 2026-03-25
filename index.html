@@ -3648,16 +3648,7 @@ async function openNaverSearch(code, name) {
     try {
         const query = encodeURIComponent(name);
         const apiUrl = 'https://openapi.naver.com/v1/search/shop.json?query=' + query + '&display=8&sort=sim';
-        const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(apiUrl);
-
-        const res = await fetch(proxyUrl, {
-            headers: {
-                'X-Naver-Client-Id': clientId,
-                'X-Naver-Client-Secret': clientSecret,
-            }
-        });
-        if (!res.ok) throw new Error('API 응답 오류: ' + res.status);
-        const data = await res.json();
+        const data = await fetchNaverAPI(apiUrl, clientId, clientSecret);
         const items = data.items || [];
 
         const grid = document.getElementById('naverImageResults');
@@ -3723,6 +3714,38 @@ async function selectNaverImage(code, encodedUrl) {
 const IMAGE_BUCKET = 'product-images';
 let pendingImageFile = null;
 let uploadedImageCache = [];
+
+// 네이버 API CORS 프록시 (여러 프록시 자동 폴백)
+async function fetchNaverAPI(apiUrl, clientId, clientSecret) {
+    const proxies = [
+        function(u) { return 'https://corsproxy.io/?' + encodeURIComponent(u); },
+        function(u) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); },
+        function(u) { return 'https://cors-anywhere.herokuapp.com/' + u; }
+    ];
+    for (var i = 0; i < proxies.length; i++) {
+        try {
+            var proxyUrl = proxies[i](apiUrl);
+            var headers = {};
+            if (i !== 1) { headers['X-Naver-Client-Id'] = clientId; headers['X-Naver-Client-Secret'] = clientSecret; }
+            var res = await fetch(proxyUrl, { headers: headers });
+            if (!res.ok) continue;
+            var data = await res.json();
+            if (data.items) return data;
+        } catch(e) { continue; }
+    }
+    // 마지막: 헤더 없이 allorigins (네이버 키가 URL에 포함된 경우)
+    try {
+        var urlWithKey = apiUrl + '&_naver_cid=' + clientId + '&_naver_cs=' + clientSecret;
+        var res2 = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(apiUrl), {
+            headers: { 'X-Naver-Client-Id': clientId, 'X-Naver-Client-Secret': clientSecret }
+        });
+        if (res2.ok) {
+            var wrapper = await res2.json();
+            if (wrapper.contents) return JSON.parse(wrapper.contents);
+        }
+    } catch(e) {}
+    return { items: [] };
+}
 
 var imageCacheBuster = Date.now();
 function getProductImageUrl(code) {
@@ -4348,15 +4371,7 @@ async function startPriceCompare() {
 
 async function pcSearchNaver(query, clientId, clientSecret) {
     const apiUrl = 'https://openapi.naver.com/v1/search/shop.json?query=' + encodeURIComponent(query) + '&display=10&sort=asc';
-    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(apiUrl);
-    const res = await fetch(proxyUrl, {
-        headers: {
-            'X-Naver-Client-Id': clientId,
-            'X-Naver-Client-Secret': clientSecret
-        }
-    });
-    if (!res.ok) throw new Error('API 오류 ' + res.status);
-    const data = await res.json();
+    const data = await fetchNaverAPI(apiUrl, clientId, clientSecret);
     return data.items || [];
 }
 
