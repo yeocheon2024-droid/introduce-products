@@ -4510,10 +4510,48 @@ function toggleSidebar() {
     document.getElementById('sidebarOverlay').classList.toggle('active');
 }
 
+// 페이지 로드 시 Supabase 자동 동기화
+async function autoSyncOnLoad() {
+    if (!db) return;
+    try {
+        const { data: productData, error: productErr } = await db
+            .from('products').select('*').order('code');
+        if (productErr || !productData) return;
+
+        products = productData.map(p => ({
+            code: p.code, name: p.name, spec: p.spec || '', unit: p.unit || '',
+            majorCode: p.major_code || '', majorName: p.major_name || '',
+            minorCode: p.minor_code || '', minorName: p.minor_name || '',
+            tax: p.tax || '과세', vendorCode: p.vendor_code || '',
+            vendorName: p.vendor_name || '', vendorType: p.vendor_type || 'self',
+            cost: p.cost || 0, sell: p.sell || 0,
+            registeredAt: p.registered_at || '', imageUrl: p.image_url || ''
+        }));
+
+        const { data: vendorData } = await db.from('vendors').select('*').order('code');
+        if (vendorData) {
+            vendors = vendorData.map(v => ({ code: v.code, name: v.name, type: v.type }));
+        }
+
+        const { data: marginData } = await db.from('margins').select('*');
+        if (marginData) {
+            margins = {};
+            marginData.forEach(m => { margins[m.category_key] = m.rate; });
+        }
+
+        saveAll();
+        renderDashboard();
+        console.log('자동 동기화 완료: 품목 ' + products.length + '개');
+    } catch (e) {
+        console.log('자동 동기화 실패 (오프라인 모드):', e.message);
+    }
+}
+
 // 초기화
 initSupabase();
 initDragDrop();
 renderDashboard();
+autoSyncOnLoad();
 </script>
 
 </div><!-- /main-content -->
