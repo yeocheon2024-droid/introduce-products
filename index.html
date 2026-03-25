@@ -4311,7 +4311,8 @@ async function startPriceCompare() {
         const promises = batch.map(function(row, bIdx) {
             const idx = i + bIdx;
             const name = String(row[nameColIdx]).trim();
-            const price = priceColIdx >= 0 ? (parseInt(String(row[priceColIdx]).replace(/[^0-9]/g,'')) || 0) : 0;
+            const rawPrice = priceColIdx >= 0 ? row[priceColIdx] : 0;
+            const price = typeof rawPrice === 'number' ? Math.round(rawPrice) : (parseInt(String(rawPrice).replace(/[,\s]/g,'')) || 0);
             const spec = specColIdx >= 0 ? (String(row[specColIdx] || '').trim()) : '';
             const searchQuery = searchKeywords[idx] || name;
             return pcSearchNaver(searchQuery, clientId, clientSecret).then(function(items) {
