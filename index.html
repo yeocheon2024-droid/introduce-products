@@ -4316,8 +4316,9 @@ async function startPriceCompare() {
             const spec = specColIdx >= 0 ? (String(row[specColIdx] || '').trim()) : '';
             const searchQuery = searchKeywords[idx] || name;
             return pcSearchNaver(searchQuery, clientId, clientSecret).then(function(items) {
-                const naverItem = items.length > 0 ? items[0] : null;
-                const coupangItem = items.find(function(it) { return it.mallName && it.mallName.includes('쿠팡'); }) || null;
+                const naverItem = pcBestMatch(items, name, spec);
+                const coupangItems = items.filter(function(it) { return it.mallName && it.mallName.includes('쿠팡'); });
+                const coupangItem = coupangItems.length > 0 ? pcBestMatch(coupangItems, name, spec) : null;
                 return {
                     name: name, spec: spec, price: price, searchQuery: searchQuery !== name ? searchQuery : '',
                     naverPrice: naverItem ? parseInt(naverItem.lprice) : null,
@@ -4357,6 +4358,59 @@ async function pcSearchNaver(query, clientId, clientSecret) {
     const apiUrl = 'https://openapi.naver.com/v1/search/shop.json?query=' + encodeURIComponent(query) + '&display=10&sort=asc';
     const data = await fetchNaverAPI(apiUrl, clientId, clientSecret);
     return data.items || [];
+}
+
+function pcNormalize(str) {
+    return String(str).replace(/<[^>]+>/g,'').replace(/[^가-힣a-zA-Z0-9]/g,'').toLowerCase();
+}
+
+function pcExtractSpec(str) {
+    var m = String(str).match(/(\d+(?:\.\d+)?)\s*(kg|g|ml|l|리터|팩|봉|개|ea|입)/i);
+    return m ? { num: parseFloat(m[1]), unit: m[2].toLowerCase().replace('리터','l') } : null;
+}
+
+function pcBestMatch(items, originalName, spec) {
+    if (!items || items.length === 0) return null;
+    var normName = pcNormalize(originalName + ' ' + spec);
+    var nameOnly = pcNormalize(originalName);
+    var specInfo = pcExtractSpec(originalName + ' ' + spec);
+    var best = null;
+    var bestScore = -1;
+
+    for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        var itemTitle = pcNormalize(item.title);
+        var score = 0;
+
+        // 한글 키워드 매칭 (2글자 이상 단어)
+        var keywords = nameOnly.match(/[가-힣]{2,}/g) || [];
+        var matched = 0;
+        for (var k = 0; k < keywords.length; k++) {
+            if (itemTitle.indexOf(keywords[k]) >= 0) matched++;
+        }
+        if (keywords.length > 0) score += (matched / keywords.length) * 60;
+
+        // 규격 매칭
+        if (specInfo) {
+            var itemSpec = pcExtractSpec(item.title);
+            if (itemSpec && itemSpec.unit === specInfo.unit && itemSpec.num === specInfo.num) {
+                score += 30;
+            } else if (itemSpec && itemSpec.unit === specInfo.unit) {
+                score += 10;
+            }
+        }
+
+        // 전체 문자열 포함 보너스
+        if (itemTitle.indexOf(nameOnly) >= 0) score += 10;
+
+        if (score > bestScore) {
+            bestScore = score;
+            best = item;
+        }
+    }
+
+    // 최소 점수 30점 이상이어야 매칭
+    return bestScore >= 30 ? best : items[0];
 }
 
 function stopPriceCompare() {
