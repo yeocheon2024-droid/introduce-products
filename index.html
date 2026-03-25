@@ -1752,7 +1752,7 @@ function debounceSearch() {
 // 데이터 초기화
 // ============================================================
 const CATEGORY_TREE = {
-    '01': { name: '농산품', sub: { '01': '양곡', '02': '야채', '03': '청과' } },
+    '01': { name: '농산품', sub: { '01': '잡곡', '02': '쌀', '03': '청과' } },
     '02': { name: '수산품', sub: { '01': '어류', '02': '연체류', '03': '갑각류', '04': '조개/패류', '05': '해조류' } },
     '03': { name: '축산품', sub: { '01': '돈육', '02': '우육', '03': '계육', '04': '계란' } },
     '04': { name: '공산품', sub: {
@@ -1775,9 +1775,10 @@ function loadData(key, defaultVal) {
 }
 
 // 가격 데이터 강제 갱신 (1회성)
-if (!localStorage.getItem('price_updated_v6')) {
+// v7: 중분류명 동기화 (잡곡/쌀, 캔/레토르트)
+if (!localStorage.getItem('price_updated_v7')) {
     localStorage.removeItem('erp_products');
-    localStorage.setItem('price_updated_v6', 'done');
+    localStorage.setItem('price_updated_v7', 'done');
 }
 let products = loadData('erp_products', null);
 if (!products || products.length === 0) {
