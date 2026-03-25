@@ -942,7 +942,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.6</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.7</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -4355,7 +4355,9 @@ async function startPriceCompare() {
 }
 
 async function pcSearchNaver(query, clientId, clientSecret) {
-    const apiUrl = 'https://openapi.naver.com/v1/search/shop.json?query=' + encodeURIComponent(query) + '&display=10&sort=asc';
+    // 검색어 정리: 언더스코어→공백, 괄호/특수문자 제거
+    var cleanQuery = query.replace(/_/g, ' ').replace(/[\[\](){}#@&]/g, '').replace(/\s+/g, ' ').trim();
+    const apiUrl = 'https://openapi.naver.com/v1/search/shop.json?query=' + encodeURIComponent(cleanQuery) + '&display=10&sort=sim';
     const data = await fetchNaverAPI(apiUrl, clientId, clientSecret);
     return data.items || [];
 }
