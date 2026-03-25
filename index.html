@@ -4218,7 +4218,7 @@ async function loadPCFile(event) {
         if (hl.includes('품목') || hl.includes('상품') || hl.includes('이름') || hl.includes('name')) {
             document.getElementById('pcNameCol').value = i;
         }
-        if (hl.includes('단가') || hl.includes('가격') || hl.includes('price') || hl.includes('공급가')) {
+        if (hl.includes('단가') || hl.includes('가격') || hl.includes('price') || hl.includes('공급가') || hl.includes('출고가') || hl.includes('판매가') || hl.includes('매입가')) {
             if (document.getElementById('pcPriceCol').value === '') document.getElementById('pcPriceCol').value = i;
         }
         if (hl.includes('규격') || hl.includes('용량') || hl.includes('spec')) {
