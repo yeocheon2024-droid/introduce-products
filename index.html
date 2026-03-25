@@ -472,6 +472,33 @@
             object-fit: cover;
             background: var(--bg-warm);
             border: 1px solid var(--border-light);
+            cursor: pointer;
+            transition: transform 0.15s;
+        }
+        .product-thumb:hover {
+            transform: scale(1.15);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .image-lightbox {
+            position: fixed; top:0; left:0; width:100%; height:100%;
+            background: rgba(0,0,0,0.8); z-index: 10000;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; opacity:0; transition: opacity 0.2s;
+        }
+        .image-lightbox.active { opacity:1; }
+        .image-lightbox img {
+            max-width: 90vw; max-height: 85vh;
+            border-radius: 12px; box-shadow: 0 4px 30px rgba(0,0,0,0.5);
+            object-fit: contain; background: #fff;
+        }
+        .image-lightbox .lightbox-info {
+            position: absolute; bottom: 30px; left:50%; transform: translateX(-50%);
+            color: #fff; font-size: 1rem; text-align: center;
+            background: rgba(0,0,0,0.5); padding: 8px 20px; border-radius: 8px;
+        }
+        .image-lightbox .lightbox-close {
+            position: absolute; top: 20px; right: 25px;
+            color: #fff; font-size: 2rem; cursor: pointer;
         }
         .product-thumb-placeholder {
             width: 40px;
@@ -3705,7 +3732,31 @@ function getProductImageUrl(code) {
 function getProductThumbHTML(code) {
     const p = products.find(pr => pr.code === code);
     const url = (p && p.imageUrl) ? p.imageUrl : getProductImageUrl(code);
-    return '<img src="' + url + '" class="product-thumb" loading="lazy" onerror="this.outerHTML=\'<div class=\\\'product-thumb-placeholder\\\'>&#128230;</div>\'">';
+    const name = p ? p.name : '';
+    const spec = p ? (p.spec || '') : '';
+    return '<img src="' + url + '" class="product-thumb" loading="lazy" onclick="openImageLightbox(\'' + url + '\',\'' + name.replace(/'/g, "\\'") + '\',\'' + spec.replace(/'/g, "\\'") + '\')" onerror="this.outerHTML=\'<div class=\\\'product-thumb-placeholder\\\'>&#128230;</div>\'">';
+}
+
+function openImageLightbox(url, name, spec) {
+    let lb = document.getElementById('imageLightbox');
+    if (!lb) {
+        lb = document.createElement('div');
+        lb.id = 'imageLightbox';
+        lb.className = 'image-lightbox';
+        lb.onclick = function(e) { if (e.target === lb || e.target.className === 'lightbox-close') closeImageLightbox(); };
+        lb.innerHTML = '<span class="lightbox-close">&times;</span><img src="" id="lightboxImg"><div class="lightbox-info" id="lightboxInfo"></div>';
+        document.body.appendChild(lb);
+        document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeImageLightbox(); });
+    }
+    document.getElementById('lightboxImg').src = url;
+    document.getElementById('lightboxInfo').textContent = name + (spec ? ' (' + spec + ')' : '');
+    requestAnimationFrame(function() { lb.classList.add('active'); });
+    document.body.style.overflow = 'hidden';
+}
+
+function closeImageLightbox() {
+    const lb = document.getElementById('imageLightbox');
+    if (lb) { lb.classList.remove('active'); document.body.style.overflow = ''; }
 }
 
 // 품목 모달에서 이미지 미리보기
