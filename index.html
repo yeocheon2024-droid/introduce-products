@@ -4695,15 +4695,16 @@ function toggleSidebar() {
     document.getElementById('sidebarOverlay').classList.toggle('active');
 }
 
-// 페이지 로드 시 Supabase 자동 동기화
+// 페이지 로드 시 Supabase 양방향 병합 동기화
 async function autoSyncOnLoad() {
     if (!db) return;
     try {
+        // 1) 품목 양방향 병합
         const { data: productData, error: productErr } = await db
             .from('products').select('*').order('code');
         if (productErr || !productData) return;
 
-        products = productData.map(p => ({
+        const cloudProducts = productData.map(p => ({
             code: p.code, name: p.name, spec: p.spec || '', unit: p.unit || '',
             majorCode: p.major_code || '', majorName: p.major_name || '',
             minorCode: p.minor_code || '', minorName: p.minor_name || '',
@@ -4713,21 +4714,57 @@ async function autoSyncOnLoad() {
             registeredAt: p.registered_at || '', imageUrl: p.image_url || ''
         }));
 
-        const { data: vendorData } = await db.from('vendors').select('*').order('code');
-        if (vendorData) {
-            vendors = vendorData.map(v => ({ code: v.code, name: v.name, type: v.type }));
+        // 클라우드에 있는 코드 목록
+        const cloudCodes = new Set(cloudProducts.map(p => p.code));
+        // 로컬에만 있는 품목 (아직 업로드 안 된 것)
+        const localOnly = products.filter(p => !cloudCodes.has(p.code));
+
+        // 병합: 클라우드 데이터 + 로컬에만 있는 품목
+        products = [...cloudProducts, ...localOnly];
+
+        // 로컬에만 있던 품목을 Supabase에 업로드
+        if (localOnly.length > 0) {
+            console.log('로컬에만 있는 품목 ' + localOnly.length + '개 → Supabase 업로드');
+            const batch = localOnly.map(p => ({
+                code: p.code, name: p.name, spec: p.spec || '', unit: p.unit || '',
+                major_code: p.majorCode || '', major_name: p.majorName || '',
+                minor_code: p.minorCode || '', minor_name: p.minorName || '',
+                tax: p.tax || '과세', vendor_code: p.vendorCode || '',
+                vendor_name: p.vendorName || '', vendor_type: p.vendorType || 'self',
+                cost: p.cost || 0, sell: p.sell || 0,
+                registered_at: p.registeredAt || new Date().toISOString().split('T')[0]
+            }));
+            for (let i = 0; i < batch.length; i += 50) {
+                await db.from('products').upsert(batch.slice(i, i + 50), { onConflict: 'code' });
+            }
         }
 
+        // 2) 매입처 양방향 병합
+        const { data: vendorData } = await db.from('vendors').select('*').order('code');
+        if (vendorData) {
+            const cloudVendors = vendorData.map(v => ({ code: v.code, name: v.name, type: v.type }));
+            const cloudVendorCodes = new Set(cloudVendors.map(v => v.code));
+            const localOnlyVendors = vendors.filter(v => !cloudVendorCodes.has(v.code));
+            vendors = [...cloudVendors, ...localOnlyVendors];
+
+            if (localOnlyVendors.length > 0) {
+                for (const v of localOnlyVendors) {
+                    await db.from('vendors').upsert({ code: v.code, name: v.name, type: v.type }, { onConflict: 'code' });
+                }
+            }
+        }
+
+        // 3) 마진율
         const { data: marginData } = await db.from('margins').select('*');
         if (marginData) {
             margins = {};
             marginData.forEach(m => { margins[m.category_key] = m.rate; });
         }
 
-        // 발주/견적 기록 동기화
+        // 4) 발주/견적 기록 양방향 병합
         const { data: orderData } = await db.from('order_records').select('*').order('date', { ascending: false });
         if (orderData) {
-            orderRecords = orderData.map(r => ({
+            const cloudRecords = orderData.map(r => ({
                 id: r.id, type: r.type, date: r.date,
                 vendorCode: r.vendor_code || '', vendorName: r.vendor_name || '',
                 memo: r.memo || '',
@@ -4735,12 +4772,27 @@ async function autoSyncOnLoad() {
                 totalAmount: r.total_amount || 0,
                 createdAt: r.created_at || '', updatedAt: r.updated_at || ''
             }));
+            const cloudIds = new Set(cloudRecords.map(r => r.id));
+            const localOnlyRecords = orderRecords.filter(r => !cloudIds.has(r.id));
+            orderRecords = [...cloudRecords, ...localOnlyRecords];
+
+            if (localOnlyRecords.length > 0) {
+                const batch = localOnlyRecords.map(r => ({
+                    id: r.id, type: r.type, date: r.date,
+                    vendor_code: r.vendorCode || '', vendor_name: r.vendorName || '',
+                    memo: r.memo || '', items: JSON.stringify(r.items || []),
+                    total_amount: r.totalAmount || 0,
+                    created_at: r.createdAt || new Date().toISOString(),
+                    updated_at: r.updatedAt || null
+                }));
+                await db.from('order_records').upsert(batch, { onConflict: 'id' });
+            }
             ohSaveRecordsLocal();
         }
 
         saveAll();
         renderDashboard();
-        console.log('자동 동기화 완료: 품목 ' + products.length + '개, 발주/견적 ' + orderRecords.length + '개');
+        console.log('양방향 동기화 완료: 품목 ' + products.length + '개 (로컬 전용 ' + localOnly.length + '개 업로드), 발주/견적 ' + orderRecords.length + '개');
     } catch (e) {
         console.log('자동 동기화 실패 (오프라인 모드):', e.message);
     }
