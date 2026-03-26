@@ -5023,6 +5023,7 @@ function ohRenderList() {
             if (r.memo) html += '<span style="color:var(--text-muted);font-size:0.78rem;">· ' + r.memo + '</span>';
             html += '</div>';
             html += '<div style="display:flex;gap:6px;">';
+            html += '<button onclick="ohDownloadOrder(\'' + r.id + '\')" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:0.78rem;">발주서</button>';
             html += '<button onclick="ohEditRecord(\'' + r.id + '\')" style="background:none;border:none;color:var(--info);cursor:pointer;font-size:0.78rem;">수정</button>';
             html += '<button onclick="ohDeleteRecord(\'' + r.id + '\')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:0.78rem;">삭제</button>';
             html += '</div></div>';
@@ -5055,15 +5056,18 @@ function ohDayOfWeek(dateStr) {
     return days[new Date(dateStr).getDay()];
 }
 
-// 엑셀 파일 업로드 처리
+// 엑셀 파일 업로드 처리 (미리보기 → 저장 버튼)
+let ohPendingRecords = []; // 저장 대기 중인 파싱 결과
+
 function ohHandleFiles(files) {
     if (!files || files.length === 0) return;
     const resultDiv = document.getElementById('ohUploadResult');
     resultDiv.style.display = 'block';
     resultDiv.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">파일 처리 중...</p>';
+    ohPendingRecords = [];
 
     let processed = 0;
-    let results = [];
+    let parseResults = [];
 
     Array.from(files).forEach(file => {
         const reader = new FileReader();
@@ -5075,14 +5079,14 @@ function ohHandleFiles(files) {
                 const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
                 const result = ohParseOrderExcel(rows, file.name);
-                results.push(result);
+                parseResults.push(result);
             } catch (err) {
-                results.push({ fileName: file.name, success: false, error: err.message });
+                parseResults.push({ fileName: file.name, success: false, error: err.message });
             }
 
             processed++;
             if (processed === files.length) {
-                ohShowUploadResults(results);
+                ohShowUploadPreview(parseResults);
             }
         };
         reader.readAsArrayBuffer(file);
@@ -5193,37 +5197,158 @@ function ohParseOrderExcel(rows, fileName) {
         createdAt: new Date().toISOString()
     };
 
-    orderRecords.push(record);
-    ohSaveRecords();
-
+    // 저장하지 않고 반환만 (미리보기용)
     return {
         fileName, success: true,
         date: date,
         vendorName: vendorName || '미확인',
         type: type,
         itemCount: items.length,
-        totalAmount: totalAmount
+        totalAmount: totalAmount,
+        record: record
     };
 }
 
-function ohShowUploadResults(results) {
+function ohShowUploadPreview(results) {
     const div = document.getElementById('ohUploadResult');
+    ohPendingRecords = [];
     let html = '';
+
     results.forEach(r => {
         if (r.success) {
+            ohPendingRecords.push(r.record);
             const typeName = r.type === 'order' ? '발주서' : '견적서';
-            html += '<div style="background:var(--success-light);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:6px;font-size:0.84rem;">';
-            html += '<strong style="color:var(--success);">&#10003; ' + r.fileName + '</strong> → ';
+            html += '<div style="background:var(--info-light);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:6px;font-size:0.84rem;">';
+            html += '<strong style="color:var(--info);">' + r.fileName + '</strong> → ';
             html += typeName + ' · ' + r.date + ' · ' + r.vendorName + ' · ' + r.itemCount + '개 품목 · ' + r.totalAmount.toLocaleString() + '원';
-            html += '</div>';
+
+            // 품목 미리보기 테이블
+            html += '<table style="width:100%;font-size:0.78rem;border-collapse:collapse;margin-top:8px;">';
+            html += '<tr style="border-bottom:1px solid var(--border);color:var(--text-secondary);"><td style="padding:2px 4px;">품목코드</td><td style="padding:2px 4px;">품목명</td><td style="padding:2px 4px;">규격</td><td style="padding:2px 4px;text-align:center;">수량</td><td style="padding:2px 4px;text-align:right;">단가</td><td style="padding:2px 4px;text-align:right;">금액</td></tr>';
+            r.record.items.forEach(item => {
+                html += '<tr style="border-bottom:1px solid var(--border-light);">';
+                html += '<td style="padding:2px 4px;color:var(--text-muted);">' + (item.code || '-') + '</td>';
+                html += '<td style="padding:2px 4px;">' + item.name + '</td>';
+                html += '<td style="padding:2px 4px;color:var(--text-muted);">' + (item.spec || '-') + '</td>';
+                html += '<td style="padding:2px 4px;text-align:center;">' + item.qty + '</td>';
+                html += '<td style="padding:2px 4px;text-align:right;">' + item.price.toLocaleString() + '</td>';
+                html += '<td style="padding:2px 4px;text-align:right;">' + item.amount.toLocaleString() + '</td>';
+                html += '</tr>';
+            });
+            html += '</table></div>';
         } else {
             html += '<div style="background:var(--danger-light);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:6px;font-size:0.84rem;">';
             html += '<strong style="color:var(--danger);">&#10007; ' + r.fileName + '</strong> — ' + r.error;
             html += '</div>';
         }
     });
+
+    if (ohPendingRecords.length > 0) {
+        html += '<div style="display:flex;gap:10px;margin-top:12px;">';
+        html += '<button class="btn btn-primary" onclick="ohConfirmSave()">저장 (' + ohPendingRecords.length + '건)</button>';
+        html += '<button class="btn" onclick="ohCancelUpload()">취소</button>';
+        html += '</div>';
+    }
+
     div.innerHTML = html;
+}
+
+function ohConfirmSave() {
+    ohPendingRecords.forEach(rec => {
+        orderRecords.push(rec);
+    });
+    ohSaveRecords();
+
+    const count = ohPendingRecords.length;
+    ohPendingRecords = [];
+
+    const div = document.getElementById('ohUploadResult');
+    div.innerHTML = '<div style="background:var(--success-light);border-radius:var(--radius-sm);padding:10px 14px;font-size:0.84rem;"><strong style="color:var(--success);">&#10003; ' + count + '건 저장 완료</strong></div>';
     ohRenderList();
+}
+
+function ohCancelUpload() {
+    ohPendingRecords = [];
+    document.getElementById('ohUploadResult').style.display = 'none';
+    document.getElementById('ohUploadResult').innerHTML = '';
+}
+
+// 발주서 양식 엑셀 다운로드 (발주고 양식 20컬럼)
+function ohDownloadOrder(id) {
+    const rec = orderRecords.find(r => r.id === id);
+    if (!rec) return;
+
+    // 발주고 매입처코드 매핑
+    const vendorCodeMap = { 'WI': '000655', 'HN': '000539', 'WD': '000541' };
+
+    // Row 1: 메타 헤더
+    const row1 = ['품목구분', '', '', '', '날짜', '매입처', '배달처주문', '', '', '', '', '', '', '발주일자', '', '', '', '', '', ''];
+    // Row 2: 컬럼 헤더
+    const row2 = ['품목코드', '품 명', '규격', '단위', '세금', '매입처', '주문',
+        '상품', '면세공급가액', '과세공급가액', '공급가액', '부가세', '합계금액',
+        '매출', '상품', '면세공급가액', '과세공급가액', '공급가액', '부가세', '합계금액'];
+
+    // 데이터 행
+    const dataRows = [];
+    let sumQty = 0, sumSupply = 0, sumTax = 0, sumTotal = 0;
+
+    rec.items.forEach(item => {
+        const p = products.find(pr => pr.code === item.code);
+        const isTaxFree = p && p.tax === '면세';
+        const totalAmt = item.amount; // VAT포함 금액
+
+        let supply = 0, vat = 0, taxFreeSupply = 0, taxSupply = 0;
+        if (isTaxFree) {
+            supply = totalAmt;
+            taxFreeSupply = totalAmt;
+            vat = 0;
+        } else {
+            supply = Math.round(totalAmt / 1.1);
+            vat = totalAmt - supply;
+            taxSupply = supply;
+        }
+
+        sumQty += item.qty;
+        sumSupply += supply;
+        sumTax += vat;
+        sumTotal += totalAmt;
+
+        dataRows.push([
+            item.code,
+            item.name,
+            item.spec || '',
+            p ? (p.unit || 'EA') : 'EA',
+            isTaxFree ? '면세' : '과세',
+            (vendorCodeMap[rec.vendorCode] || rec.vendorCode || '') + rec.vendorName,
+            item.qty,
+            0, // 상품
+            taxFreeSupply, // 면세공급가액
+            taxSupply, // 과세공급가액
+            supply, // 공급가액
+            vat, // 부가세
+            totalAmt, // 합계금액
+            0, 0, 0, 0, 0, 0, 0 // 매출 측 (빈값)
+        ]);
+    });
+
+    // 합계 행
+    const sumRow = ['< 합 계 >', '', '', '', '', '',
+        sumQty, 0, 0, sumSupply, sumSupply, sumTax, sumTotal,
+        0, 0, 0, 0, 0, 0, 0];
+
+    // Row 1 메타 채우기
+    row1[4] = rec.date;
+    row1[5] = rec.vendorName || '';
+    row1[13] = rec.date;
+
+    const wsData = [row1, row2, ...dataRows, sumRow];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet');
+
+    const dateStr = rec.date.replace(/-/g, '').slice(2); // 2026-03-26 → 260326
+    const fileName = dateStr + '_' + (rec.vendorName || '발주서') + '.xlsx';
+    XLSX.writeFile(wb, fileName);
 }
 
 function ohExportExcel() {
