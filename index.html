@@ -3573,6 +3573,41 @@ async function uploadToSupabase() {
             if (error) syncLog(`  마진율 오류: ${error.message}`);
         }
 
+        // 5) 발주/견적 기록 업로드
+        syncLog(`발주/견적 기록 ${orderRecords.length}개 업로드 중...`);
+        for (let i = 0; i < orderRecords.length; i += 50) {
+            const batch = orderRecords.slice(i, i + 50).map(r => ({
+                id: r.id,
+                type: r.type,
+                date: r.date,
+                vendor_code: r.vendorCode || '',
+                vendor_name: r.vendorName || '',
+                memo: r.memo || '',
+                items: JSON.stringify(r.items || []),
+                total_amount: r.totalAmount || 0,
+                created_at: r.createdAt || new Date().toISOString(),
+                updated_at: r.updatedAt || null
+            }));
+            const { error } = await db.from('order_records')
+                .upsert(batch, { onConflict: 'id' });
+            if (error) syncLog(`  발주/견적 기록 오류: ${error.message}`);
+            else syncLog(`  발주/견적 기록 ${i+1}~${i+batch.length} 완료`);
+        }
+
+        // Supabase에만 있는 기록 삭제
+        const { data: cloudRecords } = await db.from('order_records').select('id');
+        if (cloudRecords) {
+            const localIds = new Set(orderRecords.map(r => r.id));
+            const toDeleteOh = cloudRecords.filter(cr => !localIds.has(cr.id)).map(cr => cr.id);
+            if (toDeleteOh.length > 0) {
+                for (let di = 0; di < toDeleteOh.length; di += 50) {
+                    const delBatch = toDeleteOh.slice(di, di + 50);
+                    await db.from('order_records').delete().in('id', delBatch);
+                }
+                syncLog(`  Supabase에서 ${toDeleteOh.length}개 기록 삭제 완료`);
+            }
+        }
+
         syncLog('=== 업로드 완료! ===');
         alert('Supabase 업로드가 완료되었습니다.');
 
@@ -3638,10 +3673,33 @@ async function downloadFromSupabase() {
         marginData.forEach(m => { margins[m.category_key] = m.rate; });
         syncLog(`마진율 ${marginData.length}개 다운로드 완료`);
 
+        // 4) 발주/견적 기록 다운로드
+        syncLog('발주/견적 기록 다운로드 중...');
+        const { data: orderData, error: orderErr } = await db
+            .from('order_records').select('*').order('date', { ascending: false });
+        if (!orderErr && orderData) {
+            orderRecords = orderData.map(r => ({
+                id: r.id,
+                type: r.type,
+                date: r.date,
+                vendorCode: r.vendor_code || '',
+                vendorName: r.vendor_name || '',
+                memo: r.memo || '',
+                items: typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []),
+                totalAmount: r.total_amount || 0,
+                createdAt: r.created_at || '',
+                updatedAt: r.updated_at || ''
+            }));
+            ohSaveRecordsLocal();
+            syncLog(`발주/견적 기록 ${orderRecords.length}개 다운로드 완료`);
+        } else if (orderErr) {
+            syncLog(`발주/견적 기록 다운로드 스킵 (테이블 없음 가능): ${orderErr.message}`);
+        }
+
         // localStorage에 저장
         saveAll();
         syncLog('=== 다운로드 완료! ===');
-        alert(`다운로드 완료!\n품목 ${products.length}개, 매입처 ${vendors.length}개`);
+        alert(`다운로드 완료!\n품목 ${products.length}개, 매입처 ${vendors.length}개, 발주/견적 ${orderRecords.length}개`);
         renderDashboard();
 
     } catch (err) {
@@ -4666,9 +4724,23 @@ async function autoSyncOnLoad() {
             marginData.forEach(m => { margins[m.category_key] = m.rate; });
         }
 
+        // 발주/견적 기록 동기화
+        const { data: orderData } = await db.from('order_records').select('*').order('date', { ascending: false });
+        if (orderData) {
+            orderRecords = orderData.map(r => ({
+                id: r.id, type: r.type, date: r.date,
+                vendorCode: r.vendor_code || '', vendorName: r.vendor_name || '',
+                memo: r.memo || '',
+                items: typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []),
+                totalAmount: r.total_amount || 0,
+                createdAt: r.created_at || '', updatedAt: r.updated_at || ''
+            }));
+            ohSaveRecordsLocal();
+        }
+
         saveAll();
         renderDashboard();
-        console.log('자동 동기화 완료: 품목 ' + products.length + '개');
+        console.log('자동 동기화 완료: 품목 ' + products.length + '개, 발주/견적 ' + orderRecords.length + '개');
     } catch (e) {
         console.log('자동 동기화 실패 (오프라인 모드):', e.message);
     }
@@ -4680,8 +4752,53 @@ async function autoSyncOnLoad() {
 let orderRecords = JSON.parse(localStorage.getItem('erp_order_records') || '[]');
 let ohEditingId = null;
 
-function ohSaveRecords() {
+function ohSaveRecordsLocal() {
     localStorage.setItem('erp_order_records', JSON.stringify(orderRecords));
+}
+
+function ohSaveRecords() {
+    ohSaveRecordsLocal();
+    // Supabase 자동 동기화
+    if (db) ohSyncToSupabase();
+}
+
+let ohSyncTimer = null;
+function ohSyncToSupabase() {
+    clearTimeout(ohSyncTimer);
+    ohSyncTimer = setTimeout(async () => {
+        try {
+            const batch = orderRecords.map(r => ({
+                id: r.id,
+                type: r.type,
+                date: r.date,
+                vendor_code: r.vendorCode || '',
+                vendor_name: r.vendorName || '',
+                memo: r.memo || '',
+                items: JSON.stringify(r.items || []),
+                total_amount: r.totalAmount || 0,
+                created_at: r.createdAt || new Date().toISOString(),
+                updated_at: r.updatedAt || null
+            }));
+            // upsert (50개씩)
+            for (let i = 0; i < batch.length; i += 50) {
+                await db.from('order_records').upsert(batch.slice(i, i + 50), { onConflict: 'id' });
+            }
+            // 삭제된 기록 정리
+            const { data: cloudRecs } = await db.from('order_records').select('id');
+            if (cloudRecs) {
+                const localIds = new Set(orderRecords.map(r => r.id));
+                const toDelete = cloudRecs.filter(cr => !localIds.has(cr.id)).map(cr => cr.id);
+                if (toDelete.length > 0) {
+                    for (let di = 0; di < toDelete.length; di += 50) {
+                        await db.from('order_records').delete().in('id', toDelete.slice(di, di + 50));
+                    }
+                }
+            }
+            console.log('발주/견적 기록 Supabase 동기화 완료');
+        } catch (e) {
+            console.log('발주/견적 기록 Supabase 동기화 실패:', e.message);
+        }
+    }, 2000);
 }
 
 function initOrderHistory() {
@@ -5010,10 +5127,13 @@ function ohParseOrderExcel(rows, fileName) {
 
         const spec = String(row[2] || '').trim();
         const qty = parseInt(row[6]) || 0;
-        const totalPrice = parseInt(row[12]) || 0; // M열: 합계금액(VAT포함)
-        const unitPrice = qty > 0 ? Math.round(totalPrice / qty) : totalPrice;
 
-        if (qty <= 0 && totalPrice <= 0) continue;
+        if (qty <= 0) continue;
+
+        // 단가는 등록된 품목의 매입단가(cost)에서 가져옴 (엑셀에는 수량만 입력)
+        const matched = products.find(p => p.code === code);
+        const unitPrice = matched ? (matched.cost || 0) : 0;
+        const totalPrice = qty * unitPrice;
 
         // 첫 데이터에서 매입처 추출
         if (!vendorCode && row[5]) {
@@ -5042,8 +5162,8 @@ function ohParseOrderExcel(rows, fileName) {
 
         items.push({
             code: code,
-            name: name,
-            spec: spec,
+            name: matched ? matched.name : name,
+            spec: matched ? (matched.spec || spec) : spec,
             qty: qty,
             price: unitPrice,
             amount: totalPrice
