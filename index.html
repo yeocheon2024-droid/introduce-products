@@ -1392,9 +1392,29 @@
 
 <!-- 발주/견적 기록 -->
 <div class="tab-content" id="tab-orderHistory">
+    <!-- 엑셀 업로드로 자동 등록 -->
+    <div class="card">
+        <h3>엑셀 파일로 자동 등록</h3>
+        <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:14px;">
+            발주고에서 다운받은 발주서/견적서 엑셀 파일을 업로드하면 자동으로 기록이 생성됩니다.<br>
+            여러 파일을 한번에 업로드할 수 있습니다. 파일명에서 날짜를 자동 추출합니다 (예: 260326.xlsx → 2026-03-26).
+        </p>
+        <div id="ohDropZone" style="border:2px dashed var(--border);border-radius:var(--radius);padding:30px;text-align:center;cursor:pointer;transition:var(--transition);margin-bottom:14px;"
+             onclick="document.getElementById('ohFileInput').click();"
+             ondragover="event.preventDefault();this.style.borderColor='var(--accent)';this.style.background='var(--accent-light)';"
+             ondragleave="this.style.borderColor='var(--border)';this.style.background='transparent';"
+             ondrop="event.preventDefault();this.style.borderColor='var(--border)';this.style.background='transparent';ohHandleFiles(event.dataTransfer.files);">
+            <div style="font-size:1.5rem;margin-bottom:8px;">&#128203;</div>
+            <p style="font-size:0.88rem;color:var(--text-secondary);">발주서/견적서 엑셀 파일을 드래그하거나 클릭하여 업로드</p>
+            <p style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">.xlsx, .xls 지원</p>
+        </div>
+        <input type="file" id="ohFileInput" accept=".xlsx,.xls" multiple style="display:none" onchange="ohHandleFiles(this.files);">
+        <div id="ohUploadResult" style="display:none;"></div>
+    </div>
+
     <!-- 기록 등록 폼 -->
     <div class="card">
-        <h3>발주/견적 기록 등록</h3>
+        <h3>수동 등록</h3>
         <div class="form-row">
             <div class="form-group">
                 <label>유형</label>
@@ -4916,6 +4936,174 @@ function ohRenderList() {
 function ohDayOfWeek(dateStr) {
     const days = ['일', '월', '화', '수', '목', '금', '토'];
     return days[new Date(dateStr).getDay()];
+}
+
+// 엑셀 파일 업로드 처리
+function ohHandleFiles(files) {
+    if (!files || files.length === 0) return;
+    const resultDiv = document.getElementById('ohUploadResult');
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">파일 처리 중...</p>';
+
+    let processed = 0;
+    let results = [];
+
+    Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const wb = XLSX.read(data, { type: 'array' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+                const result = ohParseOrderExcel(rows, file.name);
+                results.push(result);
+            } catch (err) {
+                results.push({ fileName: file.name, success: false, error: err.message });
+            }
+
+            processed++;
+            if (processed === files.length) {
+                ohShowUploadResults(results);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+function ohParseOrderExcel(rows, fileName) {
+    if (rows.length < 3) {
+        return { fileName, success: false, error: '데이터가 부족합니다 (최소 3행 필요)' };
+    }
+
+    // 파일명에서 날짜 추출 (260326 → 2026-03-26, 250115 → 2025-01-15 등)
+    const dateMatch = fileName.match(/(\d{6})/);
+    let date = new Date().toISOString().slice(0, 10);
+    if (dateMatch) {
+        const d = dateMatch[1];
+        const yy = parseInt(d.slice(0, 2));
+        const mm = d.slice(2, 4);
+        const dd = d.slice(4, 6);
+        const year = yy >= 50 ? 1900 + yy : 2000 + yy;
+        date = year + '-' + mm + '-' + dd;
+    }
+
+    // Row 1 메타: A1=품목구분, E1=날짜, F1=매입처
+    const headerRow = rows[0] || [];
+    // Row 1의 F열(인덱스5)이 매입처명일 수 있음
+    let vendorName = '';
+    let vendorCode = '';
+
+    // Row 2는 컬럼 헤더, Row 3부터 데이터
+    // 컬럼: A=품목코드, B=품명, C=규격, D=단위, E=세금, F=매입처, G=주문수량
+    // H=상품, I=면세공급가액, J=과세공급가액, K=공급가액, L=부가세, M=합계금액
+
+    const items = [];
+    for (let i = 2; i < rows.length; i++) {
+        const row = rows[i];
+        const code = String(row[0] || '').trim();
+        const name = String(row[1] || '').trim();
+
+        // 합계 행 스킵
+        if (code.includes('합 계') || code.includes('합계') || !name) continue;
+
+        const spec = String(row[2] || '').trim();
+        const qty = parseInt(row[6]) || 0;
+        const totalPrice = parseInt(row[12]) || 0; // M열: 합계금액(VAT포함)
+        const unitPrice = qty > 0 ? Math.round(totalPrice / qty) : totalPrice;
+
+        if (qty <= 0 && totalPrice <= 0) continue;
+
+        // 첫 데이터에서 매입처 추출
+        if (!vendorCode && row[5]) {
+            vendorName = String(row[5]).trim();
+            // 앞의 '0' 제거 (예: 0원일푸드 → 원일푸드)
+            vendorName = vendorName.replace(/^0+/, '');
+            // 등록된 매입처에서 매칭
+            const matchedVendor = vendors.find(v =>
+                v.name === vendorName || vendorName.includes(v.name) || v.name.includes(vendorName)
+            );
+            if (matchedVendor) {
+                vendorCode = matchedVendor.code;
+                vendorName = matchedVendor.name;
+            }
+        }
+
+        // 품목코드에서 매입처 추출 (코드 앞 2글자)
+        if (!vendorCode && code.length >= 2) {
+            const prefix = code.slice(0, 2).toUpperCase();
+            const v = vendors.find(vd => vd.code === prefix);
+            if (v) {
+                vendorCode = v.code;
+                vendorName = v.name;
+            }
+        }
+
+        items.push({
+            code: code,
+            name: name,
+            spec: spec,
+            qty: qty,
+            price: unitPrice,
+            amount: totalPrice
+        });
+    }
+
+    if (items.length === 0) {
+        return { fileName, success: false, error: '품목 데이터를 찾을 수 없습니다' };
+    }
+
+    // 유형 판별: 헤더에서 추출 시도, 기본은 발주서
+    let type = 'order';
+    const headerStr = JSON.stringify(rows[0] || []);
+    if (headerStr.includes('견적')) type = 'quote';
+
+    const totalAmount = items.reduce((s, it) => s + it.amount, 0);
+
+    const record = {
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        type: type,
+        date: date,
+        vendorCode: vendorCode,
+        vendorName: vendorName || '미확인',
+        memo: '엑셀 업로드: ' + fileName,
+        items: items,
+        totalAmount: totalAmount,
+        createdAt: new Date().toISOString()
+    };
+
+    orderRecords.push(record);
+    ohSaveRecords();
+
+    return {
+        fileName, success: true,
+        date: date,
+        vendorName: vendorName || '미확인',
+        type: type,
+        itemCount: items.length,
+        totalAmount: totalAmount
+    };
+}
+
+function ohShowUploadResults(results) {
+    const div = document.getElementById('ohUploadResult');
+    let html = '';
+    results.forEach(r => {
+        if (r.success) {
+            const typeName = r.type === 'order' ? '발주서' : '견적서';
+            html += '<div style="background:var(--success-light);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:6px;font-size:0.84rem;">';
+            html += '<strong style="color:var(--success);">&#10003; ' + r.fileName + '</strong> → ';
+            html += typeName + ' · ' + r.date + ' · ' + r.vendorName + ' · ' + r.itemCount + '개 품목 · ' + r.totalAmount.toLocaleString() + '원';
+            html += '</div>';
+        } else {
+            html += '<div style="background:var(--danger-light);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:6px;font-size:0.84rem;">';
+            html += '<strong style="color:var(--danger);">&#10007; ' + r.fileName + '</strong> — ' + r.error;
+            html += '</div>';
+        }
+    });
+    div.innerHTML = html;
+    ohRenderList();
 }
 
 function ohExportExcel() {
