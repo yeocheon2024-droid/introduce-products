@@ -10,7 +10,7 @@
 - **데이터베이스**: Supabase (클라우드) + localStorage (로컬)
 - **이미지 저장**: Supabase Storage (버킷: `product-images`)
 - **AI**: Claude API (claude-sonnet-4-20250514) - 견적서 분석용
-- **라이브러리**: SheetJS (엑셀 파싱/생성), Supabase JS Client v2
+- **라이브러리**: SheetJS (엑셀 파싱/생성), Supabase JS Client v2, html2canvas (PNG 캡처)
 - **Supabase 프로젝트**: zsxmmhgrmysqauuojmir.supabase.co
 - **GitHub**: https://github.com/yeocheon2024-droid/introduce-products.git (public)
 - **배포 URL**: https://yeocheon2024-droid.github.io/introduce-products/
@@ -19,18 +19,28 @@
 
 ## 파일 구조
 ```
-index.html                    - 메인 앱 (HTML+CSS+JS, ~2800줄)
+index.html                    - 메인 앱 (HTML+CSS+JS, ~5500줄)
 default-products.js           - 기본 등록 품목 189개 (JSON, 판매단가 포함)
 CLAUDE.md                     - 이 파일 (프로젝트 문서)
 .gitignore                    - *.xlsx, *.xls, *.csv, *.png, *.jpg, *.txt, *.json 제외
 03 프로그램 초기세팅자료/       - 엑셀 원본 파일들
 02 이미지파일/                 - 품목 이미지 파일 (57개 PNG)
 01 디자인레퍼런스/             - 디자인 참고 자료
+08 발주서 예시파일/            - 발주고 발주서 엑셀 샘플 (260326.xlsx)
+product-catalog-price/        - 제품 카탈로그 사이트 (Next.js, Cloudflare Pages 배포)
+product-flyer/                - 전단지 생성기 (Next.js, Cloudflare Pages 배포)
+product-site/                 - 제품 소개 사이트 (Next.js, Cloudflare Pages 배포)
 ```
+
+### 관련 사이트 (모두 같은 Supabase products 테이블 사용)
+- **product-catalog-price**: GitHub `yeocheon2024-droid/product-catalog-price` → Cloudflare Pages
+- **product-flyer**: GitHub `yeocheon2024-droid/product-flyer` → Cloudflare Pages
+- **product-site**: GitHub `yeocheon2024-droid/product-catalog` → Cloudflare Pages
+- 환경변수: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (.env.local)
 
 ---
 
-## 주요 기능 (탭 메뉴 10개)
+## 주요 기능 (탭 메뉴 12개)
 
 ### 1. 대시보드
 - 총 품목수, 자체매입/외부매입 수, 매입처 수 통계
@@ -89,8 +99,30 @@ CLAUDE.md                     - 이 파일 (프로젝트 문서)
 - 발주고 형식 (39컬럼)
 - 경영박사 형식 (7컬럼)
 
-### 10. Supabase 설정 & 동기화
-- 로컬 ↔ 클라우드 양방향 동기화
+### 10. 가격 비교
+- 엑셀 업로드 → 네이버쇼핑 최저가와 비교
+
+### 11. 발주/견적 기록 (v2.9 신규)
+- 날짜별 발주서·견적서 CRUD 기록 관리
+- **엑셀 자동 등록**: 발주고 엑셀 파일 업로드 → 미리보기 → 저장 버튼 클릭 후 등록
+  - 파일명에서 날짜 자동 추출 (260326.xlsx → 2026-03-26)
+  - 품목코드로 등록된 매입단가(cost) 자동 적용 (엑셀에는 수량만 입력)
+  - 매입처 자동 인식 (F열 또는 품목코드 앞 2글자)
+- **수동 등록**: 유형/날짜/매입처 선택 → 품목 추가 → 저장
+  - 품목코드 입력 시 품목명/규격/단가 자동 채움
+- **기록 목록**: 날짜별 그룹핑, 유형/기간/매입처 필터, 엑셀 다운로드
+- **발주서 미리보기 & PNG 저장**: 발주서 버튼 → 실제 발주서 양식 모달
+  - 브라운 톤 헤더, 발주일자/납품요청일/발주처/발주회사/담당자/연락처
+  - 품목 테이블: 공급가액/VAT/합계(VAT포함) 분리 표시, 과세/면세 자동 구분
+  - 상단 툴바에서 발주회사/담당자/연락처 직접 입력 (실시간 반영)
+  - html2canvas로 PNG 이미지 다운로드, 엑셀(발주고 양식 20컬럼) 다운로드
+- **Supabase 연동**: order_records 테이블에 자동 동기화 (저장/수정/삭제 시 2초 디바운스)
+- localStorage 키: `erp_order_records`
+
+### 12. Supabase 설정 & 동기화
+- 로컬 ↔ 클라우드 양방향 병합 동기화 (v2.9 개선)
+- 페이지 로드 시 양방향 병합: 클라우드 데이터 + 로컬에만 있는 데이터 합침
+- 로컬에만 있는 품목은 자동으로 Supabase에 업로드 (품목 유실 방지)
 - 자동 연결 (키 내장)
 
 ---
@@ -184,6 +216,7 @@ code(2글자), name, type(self/external)
 - `products` - 품목 마스터
 - `vendors` - 매입처 정보
 - `margins` - 마진율 설정
+- `order_records` - 발주/견적 기록 (id TEXT PK, type, date, vendor_code, vendor_name, memo, items JSONB, total_amount, created_at, updated_at)
 
 ### Storage
 - 버킷: `product-images` (Public)
@@ -196,6 +229,7 @@ code(2글자), name, type(self/external)
 - `erp_vendors` - 매입처 데이터
 - `erp_margins` - 마진율 설정
 - `supabase_url`, `supabase_key` - Supabase 연결 정보
+- `erp_order_records` - 발주/견적 기록
 - `erp_api_key` - Claude API 키
 - `price_updated_v6` - 가격 갱신 플래그
 
@@ -220,3 +254,5 @@ code(2글자), name, type(self/external)
 - Claude API 키는 브라우저 localStorage에 저장 (txt 메모장에 백업)
 - Supabase 키는 코드에 내장됨 (anon public key라 노출 무방)
 - `default-products.js` 수정 시 localStorage 갱신 플래그(price_updated_vN) 버전업 필요
+- 자동 동기화는 양방향 병합 방식 — 로컬에만 있는 품목을 Supabase에 자동 업로드하므로 품목 유실 없음
+- 발주서 엑셀 업로드 시 단가는 입력하지 않음 — 등록된 품목의 매입단가(cost)에서 자동 적용
