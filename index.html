@@ -3738,10 +3738,14 @@ function getProductImageUrl(code) {
 
 function getProductThumbHTML(code) {
     const p = products.find(pr => pr.code === code);
-    const url = (p && p.imageUrl) ? p.imageUrl : getProductImageUrl(code);
+    let url = (p && p.imageUrl) ? p.imageUrl : getProductImageUrl(code);
+    // 외부 URL(네이버 등)은 핫링크 차단되므로 wsrv.nl 프록시로 표시
+    const isExternal = url.startsWith('http') && !url.includes('supabase');
+    const displayUrl = isExternal ? 'https://wsrv.nl/?url=' + encodeURIComponent(url) + '&w=80&h=80&fit=cover&output=webp' : url;
+    const lightboxUrl = isExternal ? 'https://wsrv.nl/?url=' + encodeURIComponent(url) + '&output=webp' : url;
     const name = p ? p.name : '';
     const spec = p ? (p.spec || '') : '';
-    return '<img src="' + url + '" class="product-thumb" loading="lazy" onclick="openImageLightbox(\'' + url + '\',\'' + name.replace(/'/g, "\\'") + '\',\'' + spec.replace(/'/g, "\\'") + '\')" onerror="this.outerHTML=\'<div class=\\\'product-thumb-placeholder\\\'>&#128230;</div>\'">';
+    return '<img src="' + displayUrl + '" class="product-thumb" loading="lazy" onclick="openImageLightbox(\'' + lightboxUrl + '\',\'' + name.replace(/'/g, "\\'") + '\',\'' + spec.replace(/'/g, "\\'") + '\')" onerror="this.outerHTML=\'<div class=\\\'product-thumb-placeholder\\\'>&#128230;</div>\'">';
 }
 
 function openImageLightbox(url, name, spec) {
