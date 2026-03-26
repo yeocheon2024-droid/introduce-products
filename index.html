@@ -965,13 +965,16 @@
     </div>
 
     <div class="sidebar-section">
-        <div class="sidebar-section-title">견적서</div>
+        <div class="sidebar-section-title">견적서 & 발주</div>
         <div class="sidebar-nav">
             <button onclick="switchTab('quote')">
                 <span class="nav-icon">&#9733;</span>견적서 분석
             </button>
             <button onclick="switchTab('priceCompare')">
                 <span class="nav-icon">&#128202;</span>가격 비교
+            </button>
+            <button onclick="switchTab('orderHistory')">
+                <span class="nav-icon">&#128203;</span>발주/견적 기록
             </button>
         </div>
     </div>
@@ -1384,6 +1387,104 @@
                 <tbody id="exportPreviewBody"></tbody>
             </table>
         </div>
+    </div>
+</div>
+
+<!-- 발주/견적 기록 -->
+<div class="tab-content" id="tab-orderHistory">
+    <!-- 기록 등록 폼 -->
+    <div class="card">
+        <h3>발주/견적 기록 등록</h3>
+        <div class="form-row">
+            <div class="form-group">
+                <label>유형</label>
+                <select id="ohType">
+                    <option value="order">발주서</option>
+                    <option value="quote">견적서</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>날짜</label>
+                <input type="date" id="ohDate">
+            </div>
+            <div class="form-group">
+                <label>매입처</label>
+                <select id="ohVendor"></select>
+            </div>
+        </div>
+        <div class="form-group" style="margin-bottom:12px;">
+            <label>메모 (선택)</label>
+            <input type="text" id="ohMemo" placeholder="예: 3월 넷째주 정기발주">
+        </div>
+
+        <!-- 품목 추가 영역 -->
+        <div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <strong style="font-size:0.88rem;">품목 목록</strong>
+                <button class="btn btn-sm" onclick="ohAddItemRow()" style="font-size:0.78rem;padding:4px 10px;">+ 품목 추가</button>
+            </div>
+            <div class="table-wrap" style="max-height:300px;overflow-y:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:120px;">품목코드</th>
+                            <th>품목명</th>
+                            <th style="width:80px;">규격</th>
+                            <th style="width:60px;">수량</th>
+                            <th style="width:100px;">단가</th>
+                            <th style="width:100px;">금액</th>
+                            <th style="width:40px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="ohItemsBody"></tbody>
+                </table>
+            </div>
+            <div style="text-align:right;margin-top:8px;font-size:0.88rem;">
+                합계: <strong id="ohTotalAmount" style="color:var(--accent);">0</strong>원
+            </div>
+        </div>
+
+        <div style="display:flex;gap:10px;">
+            <button class="btn btn-primary" onclick="ohSaveRecord()">기록 저장</button>
+            <button class="btn" onclick="ohClearForm()">초기화</button>
+        </div>
+    </div>
+
+    <!-- 검색/필터 -->
+    <div class="card">
+        <div class="form-row" style="margin-bottom:0;">
+            <div class="form-group">
+                <label>유형 필터</label>
+                <select id="ohFilterType" onchange="ohRenderList()">
+                    <option value="all">전체</option>
+                    <option value="order">발주서</option>
+                    <option value="quote">견적서</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>기간 (시작)</label>
+                <input type="date" id="ohFilterFrom" onchange="ohRenderList()">
+            </div>
+            <div class="form-group">
+                <label>기간 (끝)</label>
+                <input type="date" id="ohFilterTo" onchange="ohRenderList()">
+            </div>
+            <div class="form-group">
+                <label>매입처</label>
+                <select id="ohFilterVendor" onchange="ohRenderList()">
+                    <option value="all">전체</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- 기록 목록 -->
+    <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+            <h3>기록 목록 <span id="ohListCount" style="color:var(--text-muted);font-weight:400;font-size:0.85rem;"></span></h3>
+            <button class="btn btn-sm" onclick="ohExportExcel()" style="font-size:0.78rem;padding:4px 10px;">엑셀 다운로드</button>
+        </div>
+        <div id="ohListArea"></div>
     </div>
 </div>
 
@@ -1808,7 +1909,8 @@ const PAGE_TITLES = {
     images: '이미지 관리',
     export: 'ERP 내보내기',
     settings: 'Supabase 설정',
-    priceCompare: '가격 비교'
+    priceCompare: '가격 비교',
+    orderHistory: '발주/견적 기록'
 };
 
 function switchTab(tabId) {
@@ -1847,6 +1949,7 @@ function switchTab(tabId) {
     if (tabId === 'export') { populateExportVendor(); }
     if (tabId === 'settings') { initSupabase(); }
     if (tabId === 'priceCompare') { initPriceCompare(); }
+    if (tabId === 'orderHistory') { initOrderHistory(); }
 }
 
 // ============================================================
@@ -4549,6 +4652,305 @@ async function autoSyncOnLoad() {
     } catch (e) {
         console.log('자동 동기화 실패 (오프라인 모드):', e.message);
     }
+}
+
+// ============================================================
+// 발주/견적 기록
+// ============================================================
+let orderRecords = JSON.parse(localStorage.getItem('erp_order_records') || '[]');
+let ohEditingId = null;
+
+function ohSaveRecords() {
+    localStorage.setItem('erp_order_records', JSON.stringify(orderRecords));
+}
+
+function initOrderHistory() {
+    // 날짜 기본값: 오늘
+    const today = new Date().toISOString().slice(0, 10);
+    document.getElementById('ohDate').value = today;
+
+    // 매입처 셀렉트 채우기
+    const vendorSel = document.getElementById('ohVendor');
+    const filterVendorSel = document.getElementById('ohFilterVendor');
+    vendorSel.innerHTML = '';
+    filterVendorSel.innerHTML = '<option value="all">전체</option>';
+    vendors.forEach(v => {
+        vendorSel.innerHTML += '<option value="' + v.code + '">' + v.name + ' (' + v.code + ')</option>';
+        filterVendorSel.innerHTML += '<option value="' + v.code + '">' + v.name + '</option>';
+    });
+
+    // 품목 행 초기 1개
+    const tbody = document.getElementById('ohItemsBody');
+    if (tbody.children.length === 0) ohAddItemRow();
+
+    ohRenderList();
+}
+
+function ohAddItemRow() {
+    const tbody = document.getElementById('ohItemsBody');
+    const row = document.createElement('tr');
+    row.innerHTML =
+        '<td><input type="text" class="oh-code" placeholder="품목코드" style="width:100%;font-size:0.82rem;" oninput="ohCodeLookup(this)" onchange="ohCodeLookup(this)"></td>' +
+        '<td><input type="text" class="oh-name" placeholder="품목명" style="width:100%;font-size:0.82rem;"></td>' +
+        '<td><input type="text" class="oh-spec" placeholder="규격" style="width:100%;font-size:0.82rem;"></td>' +
+        '<td><input type="number" class="oh-qty" value="1" min="1" style="width:100%;font-size:0.82rem;text-align:center;" oninput="ohCalcRow(this)"></td>' +
+        '<td><input type="number" class="oh-price" value="0" min="0" style="width:100%;font-size:0.82rem;text-align:right;" oninput="ohCalcRow(this)"></td>' +
+        '<td style="text-align:right;font-size:0.82rem;" class="oh-amount">0</td>' +
+        '<td><button onclick="this.closest(\'tr\').remove();ohCalcTotal();" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:1rem;">&#10005;</button></td>';
+    tbody.appendChild(row);
+}
+
+function ohCodeLookup(input) {
+    const code = input.value.trim();
+    if (!code) return;
+    const p = products.find(pr => pr.code === code);
+    if (p) {
+        const row = input.closest('tr');
+        row.querySelector('.oh-name').value = p.name;
+        row.querySelector('.oh-spec').value = p.spec || '';
+        // 발주서면 매입단가, 견적서면 판매단가
+        const type = document.getElementById('ohType').value;
+        const price = type === 'order' ? (p.cost || 0) : (p.sell || p.cost || 0);
+        row.querySelector('.oh-price').value = price;
+        ohCalcRow(input);
+    }
+}
+
+function ohCalcRow(input) {
+    const row = input.closest('tr');
+    const qty = parseInt(row.querySelector('.oh-qty').value) || 0;
+    const price = parseInt(row.querySelector('.oh-price').value) || 0;
+    row.querySelector('.oh-amount').textContent = (qty * price).toLocaleString();
+    ohCalcTotal();
+}
+
+function ohCalcTotal() {
+    let total = 0;
+    document.querySelectorAll('#ohItemsBody tr').forEach(row => {
+        const qty = parseInt(row.querySelector('.oh-qty').value) || 0;
+        const price = parseInt(row.querySelector('.oh-price').value) || 0;
+        total += qty * price;
+    });
+    document.getElementById('ohTotalAmount').textContent = total.toLocaleString();
+}
+
+function ohSaveRecord() {
+    const type = document.getElementById('ohType').value;
+    const date = document.getElementById('ohDate').value;
+    const vendorCode = document.getElementById('ohVendor').value;
+    const memo = document.getElementById('ohMemo').value.trim();
+
+    if (!date) { alert('날짜를 선택하세요.'); return; }
+    if (!vendorCode) { alert('매입처를 선택하세요.'); return; }
+
+    const items = [];
+    let hasItem = false;
+    document.querySelectorAll('#ohItemsBody tr').forEach(row => {
+        const code = row.querySelector('.oh-code').value.trim();
+        const name = row.querySelector('.oh-name').value.trim();
+        const spec = row.querySelector('.oh-spec').value.trim();
+        const qty = parseInt(row.querySelector('.oh-qty').value) || 0;
+        const price = parseInt(row.querySelector('.oh-price').value) || 0;
+        if (name && qty > 0) {
+            items.push({ code, name, spec, qty, price, amount: qty * price });
+            hasItem = true;
+        }
+    });
+
+    if (!hasItem) { alert('품목을 1개 이상 입력하세요.'); return; }
+
+    const vendor = vendors.find(v => v.code === vendorCode);
+    const totalAmount = items.reduce((s, i) => s + i.amount, 0);
+
+    if (ohEditingId) {
+        // 수정
+        const idx = orderRecords.findIndex(r => r.id === ohEditingId);
+        if (idx !== -1) {
+            orderRecords[idx] = {
+                ...orderRecords[idx],
+                type, date, vendorCode, vendorName: vendor ? vendor.name : vendorCode,
+                memo, items, totalAmount, updatedAt: new Date().toISOString()
+            };
+        }
+        ohEditingId = null;
+    } else {
+        // 신규
+        orderRecords.push({
+            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            type, date, vendorCode, vendorName: vendor ? vendor.name : vendorCode,
+            memo, items, totalAmount,
+            createdAt: new Date().toISOString()
+        });
+    }
+
+    ohSaveRecords();
+    ohClearForm();
+    ohRenderList();
+    alert((type === 'order' ? '발주' : '견적') + ' 기록이 저장되었습니다.');
+}
+
+function ohClearForm() {
+    ohEditingId = null;
+    document.getElementById('ohDate').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('ohType').value = 'order';
+    document.getElementById('ohMemo').value = '';
+    document.getElementById('ohItemsBody').innerHTML = '';
+    ohAddItemRow();
+    document.getElementById('ohTotalAmount').textContent = '0';
+}
+
+function ohEditRecord(id) {
+    const rec = orderRecords.find(r => r.id === id);
+    if (!rec) return;
+
+    ohEditingId = id;
+    document.getElementById('ohType').value = rec.type;
+    document.getElementById('ohDate').value = rec.date;
+    document.getElementById('ohVendor').value = rec.vendorCode;
+    document.getElementById('ohMemo').value = rec.memo || '';
+
+    const tbody = document.getElementById('ohItemsBody');
+    tbody.innerHTML = '';
+    rec.items.forEach(item => {
+        ohAddItemRow();
+        const row = tbody.lastElementChild;
+        row.querySelector('.oh-code').value = item.code || '';
+        row.querySelector('.oh-name').value = item.name || '';
+        row.querySelector('.oh-spec').value = item.spec || '';
+        row.querySelector('.oh-qty').value = item.qty;
+        row.querySelector('.oh-price').value = item.price;
+        row.querySelector('.oh-amount').textContent = item.amount.toLocaleString();
+    });
+    ohCalcTotal();
+
+    // 폼으로 스크롤
+    document.getElementById('tab-orderHistory').scrollIntoView({ behavior: 'smooth' });
+}
+
+function ohDeleteRecord(id) {
+    if (!confirm('이 기록을 삭제하시겠습니까?')) return;
+    orderRecords = orderRecords.filter(r => r.id !== id);
+    ohSaveRecords();
+    ohRenderList();
+}
+
+function ohRenderList() {
+    const filterType = document.getElementById('ohFilterType').value;
+    const filterFrom = document.getElementById('ohFilterFrom').value;
+    const filterTo = document.getElementById('ohFilterTo').value;
+    const filterVendor = document.getElementById('ohFilterVendor').value;
+
+    let filtered = orderRecords.filter(r => {
+        if (filterType !== 'all' && r.type !== filterType) return false;
+        if (filterFrom && r.date < filterFrom) return false;
+        if (filterTo && r.date > filterTo) return false;
+        if (filterVendor !== 'all' && r.vendorCode !== filterVendor) return false;
+        return true;
+    });
+
+    // 날짜 내림차순 정렬
+    filtered.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+
+    document.getElementById('ohListCount').textContent = '(' + filtered.length + '건)';
+
+    const area = document.getElementById('ohListArea');
+    if (filtered.length === 0) {
+        area.innerHTML = '<p style="text-align:center;color:var(--text-muted);padding:30px 0;">기록이 없습니다.</p>';
+        return;
+    }
+
+    // 날짜별 그룹핑
+    const groups = {};
+    filtered.forEach(r => {
+        if (!groups[r.date]) groups[r.date] = [];
+        groups[r.date].push(r);
+    });
+
+    let html = '';
+    Object.keys(groups).sort().reverse().forEach(date => {
+        const dayTotal = groups[date].reduce((s, r) => s + r.totalAmount, 0);
+        html += '<div style="margin-bottom:16px;">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg-warm);border-radius:var(--radius-sm);margin-bottom:8px;">';
+        html += '<strong style="font-size:0.9rem;">' + date + ' (' + ohDayOfWeek(date) + ')</strong>';
+        html += '<span style="font-size:0.82rem;color:var(--accent);">' + groups[date].length + '건 · ' + dayTotal.toLocaleString() + '원</span>';
+        html += '</div>';
+
+        groups[date].forEach(r => {
+            const typeBadge = r.type === 'order'
+                ? '<span style="background:var(--info-light);color:var(--info);padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:600;">발주</span>'
+                : '<span style="background:var(--purple-light);color:var(--purple);padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:600;">견적</span>';
+
+            html += '<div style="border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:12px;margin-bottom:6px;background:var(--bg-card);">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+            html += '<div style="display:flex;align-items:center;gap:8px;">' + typeBadge + '<strong style="font-size:0.88rem;">' + (r.vendorName || r.vendorCode) + '</strong>';
+            if (r.memo) html += '<span style="color:var(--text-muted);font-size:0.78rem;">· ' + r.memo + '</span>';
+            html += '</div>';
+            html += '<div style="display:flex;gap:6px;">';
+            html += '<button onclick="ohEditRecord(\'' + r.id + '\')" style="background:none;border:none;color:var(--info);cursor:pointer;font-size:0.78rem;">수정</button>';
+            html += '<button onclick="ohDeleteRecord(\'' + r.id + '\')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:0.78rem;">삭제</button>';
+            html += '</div></div>';
+
+            // 품목 테이블
+            html += '<table style="width:100%;font-size:0.8rem;border-collapse:collapse;">';
+            html += '<tr style="border-bottom:1px solid var(--border-light);color:var(--text-secondary);">';
+            html += '<td style="padding:3px 6px;">품목명</td><td style="padding:3px 6px;">규격</td><td style="padding:3px 6px;text-align:center;">수량</td><td style="padding:3px 6px;text-align:right;">단가</td><td style="padding:3px 6px;text-align:right;">금액</td></tr>';
+            r.items.forEach(item => {
+                html += '<tr style="border-bottom:1px solid var(--border-light);">';
+                html += '<td style="padding:3px 6px;">' + item.name + '</td>';
+                html += '<td style="padding:3px 6px;color:var(--text-muted);">' + (item.spec || '-') + '</td>';
+                html += '<td style="padding:3px 6px;text-align:center;">' + item.qty + '</td>';
+                html += '<td style="padding:3px 6px;text-align:right;">' + item.price.toLocaleString() + '</td>';
+                html += '<td style="padding:3px 6px;text-align:right;">' + item.amount.toLocaleString() + '</td>';
+                html += '</tr>';
+            });
+            html += '<tr><td colspan="4" style="padding:4px 6px;text-align:right;font-weight:600;">합계</td>';
+            html += '<td style="padding:4px 6px;text-align:right;font-weight:600;color:var(--accent);">' + r.totalAmount.toLocaleString() + '원</td></tr>';
+            html += '</table></div>';
+        });
+        html += '</div>';
+    });
+
+    area.innerHTML = html;
+}
+
+function ohDayOfWeek(dateStr) {
+    const days = ['일', '월', '화', '수', '목', '금', '토'];
+    return days[new Date(dateStr).getDay()];
+}
+
+function ohExportExcel() {
+    const filterType = document.getElementById('ohFilterType').value;
+    const filterFrom = document.getElementById('ohFilterFrom').value;
+    const filterTo = document.getElementById('ohFilterTo').value;
+    const filterVendor = document.getElementById('ohFilterVendor').value;
+
+    let filtered = orderRecords.filter(r => {
+        if (filterType !== 'all' && r.type !== filterType) return false;
+        if (filterFrom && r.date < filterFrom) return false;
+        if (filterTo && r.date > filterTo) return false;
+        if (filterVendor !== 'all' && r.vendorCode !== filterVendor) return false;
+        return true;
+    });
+
+    if (filtered.length === 0) { alert('내보낼 기록이 없습니다.'); return; }
+
+    const rows = [['유형', '날짜', '매입처', '메모', '품목코드', '품목명', '규격', '수량', '단가', '금액']];
+    filtered.sort((a, b) => a.date.localeCompare(b.date));
+    filtered.forEach(r => {
+        r.items.forEach(item => {
+            rows.push([
+                r.type === 'order' ? '발주' : '견적',
+                r.date, r.vendorName || r.vendorCode, r.memo || '',
+                item.code || '', item.name, item.spec || '', item.qty, item.price, item.amount
+            ]);
+        });
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '발주견적기록');
+    const typeName = filterType === 'order' ? '발주' : filterType === 'quote' ? '견적' : '발주견적';
+    XLSX.writeFile(wb, typeName + '_기록_' + new Date().toISOString().slice(0, 10) + '.xlsx');
 }
 
 // 초기화
