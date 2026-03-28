@@ -995,6 +995,9 @@
             <button onclick="switchTab('export')">
                 <span class="nav-icon">&#8595;</span>ERP 내보내기
             </button>
+            <button onclick="switchTab('displayName')">
+                <span class="nav-icon">&#9998;</span>표시명 관리
+            </button>
         </div>
     </div>
 
@@ -1645,6 +1648,54 @@
     </div>
 </div>
 
+<!-- 표시명 관리 탭 -->
+<div class="tab-content" id="tab-displayName">
+    <h2>표시명 관리</h2>
+    <p style="color:#888;margin-bottom:16px;">카탈로그·전단지·가격표 사이트에 표시될 품목명을 관리합니다. 원본 품목명은 변경되지 않습니다.</p>
+
+    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
+        <select id="dnVendorFilter" onchange="renderDisplayNameTable()" style="padding:8px 12px;border:1px solid #ddd;border-radius:8px;">
+            <option value="">전체 매입처</option>
+        </select>
+        <select id="dnCategoryFilter" onchange="renderDisplayNameTable()" style="padding:8px 12px;border:1px solid #ddd;border-radius:8px;">
+            <option value="">전체 분류</option>
+        </select>
+        <input type="text" id="dnSearchInput" placeholder="품목명 검색..." oninput="renderDisplayNameTable()" style="padding:8px 12px;border:1px solid #ddd;border-radius:8px;flex:1;min-width:150px;">
+        <span id="dnFilterCount" style="color:#888;font-size:0.85rem;"></span>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+        <button onclick="aiGenerateDisplayNames()" style="background:#C8956C;color:#fff;border:none;padding:10px 20px;border-radius:8px;font-weight:700;cursor:pointer;">
+            🤖 AI 일괄 생성
+        </button>
+        <button onclick="saveAllDisplayNames()" style="background:#2d6a4f;color:#fff;border:none;padding:10px 20px;border-radius:8px;font-weight:700;cursor:pointer;">
+            💾 전체 저장
+        </button>
+        <button onclick="clearAllDisplayNames()" style="background:#e74c3c;color:#fff;border:none;padding:10px 20px;border-radius:8px;font-weight:700;cursor:pointer;">
+            🗑 표시명 초기화
+        </button>
+    </div>
+
+    <div id="dnProgress" style="display:none;margin-bottom:16px;padding:12px;background:#f0f7ff;border-radius:8px;color:#1a73e8;font-size:0.9rem;"></div>
+
+    <div style="overflow-x:auto;">
+        <table class="data-table" id="displayNameTable">
+            <thead>
+                <tr>
+                    <th style="width:50px;">No</th>
+                    <th style="width:90px;">품목코드</th>
+                    <th style="width:80px;">매입처</th>
+                    <th>원본 품목명</th>
+                    <th>규격</th>
+                    <th>표시명 (카탈로그용)</th>
+                    <th style="width:70px;">상태</th>
+                </tr>
+            </thead>
+            <tbody id="dnTableBody"></tbody>
+        </table>
+    </div>
+</div>
+
 <!-- 품목 추가/수정 모달 -->
 <!-- 발주서 모달 -->
 <div class="modal-overlay" id="purchaseOrderModal" onclick="if(event.target===this)closeModal('purchaseOrderModal')">
@@ -1931,7 +1982,8 @@ const PAGE_TITLES = {
     export: 'ERP 내보내기',
     settings: 'Supabase 설정',
     priceCompare: '가격 비교',
-    orderHistory: '발주/견적 기록'
+    orderHistory: '발주/견적 기록',
+    displayName: '표시명 관리'
 };
 
 function switchTab(tabId) {
@@ -1971,6 +2023,7 @@ function switchTab(tabId) {
     if (tabId === 'settings') { initSupabase(); }
     if (tabId === 'priceCompare') { initPriceCompare(); }
     if (tabId === 'orderHistory') { initOrderHistory(); }
+    if (tabId === 'displayName') { initDisplayNameTab(); }
 }
 
 // ============================================================
@@ -3535,7 +3588,8 @@ async function uploadToSupabase() {
                 vendor_type: p.vendorType || 'self',
                 cost: p.cost || 0,
                 sell: p.sell || 0,
-                registered_at: p.registeredAt || new Date().toISOString().split('T')[0]
+                registered_at: p.registeredAt || new Date().toISOString().split('T')[0],
+                display_name: p.displayName || null
             }));
 
             const { error } = await db.from('products')
@@ -3660,7 +3714,8 @@ async function downloadFromSupabase() {
             cost: p.cost || 0,
             sell: p.sell || 0,
             registeredAt: p.registered_at || '',
-            imageUrl: p.image_url || ''
+            imageUrl: p.image_url || '',
+            displayName: p.display_name || ''
         }));
         syncLog(`품목 ${products.length}개 다운로드 완료`);
 
@@ -4712,7 +4767,8 @@ async function autoSyncOnLoad() {
             tax: p.tax || '과세', vendorCode: p.vendor_code || '',
             vendorName: p.vendor_name || '', vendorType: p.vendor_type || 'self',
             cost: p.cost || 0, sell: p.sell || 0,
-            registeredAt: p.registered_at || '', imageUrl: p.image_url || ''
+            registeredAt: p.registered_at || '', imageUrl: p.image_url || '',
+            displayName: p.display_name || ''
         }));
 
         // 클라우드에 있는 코드 목록
@@ -4733,7 +4789,8 @@ async function autoSyncOnLoad() {
                 tax: p.tax || '과세', vendor_code: p.vendorCode || '',
                 vendor_name: p.vendorName || '', vendor_type: p.vendorType || 'self',
                 cost: p.cost || 0, sell: p.sell || 0,
-                registered_at: p.registeredAt || new Date().toISOString().split('T')[0]
+                registered_at: p.registeredAt || new Date().toISOString().split('T')[0],
+                display_name: p.displayName || null
             }));
             for (let i = 0; i < batch.length; i += 50) {
                 await db.from('products').upsert(batch.slice(i, i + 50), { onConflict: 'code' });
@@ -5607,6 +5664,164 @@ async function ohCapturePNG() {
     } catch (e) {
         alert('PNG 생성 실패: ' + e.message);
     }
+}
+
+// ============================================================
+// 표시명 관리
+// ============================================================
+function initDisplayNameTab() {
+    // 매입처 필터 채우기
+    const vendorSelect = document.getElementById('dnVendorFilter');
+    const existingVendors = new Set(products.map(p => p.vendorName).filter(Boolean));
+    vendorSelect.innerHTML = '<option value="">전체 매입처</option>';
+    existingVendors.forEach(v => {
+        vendorSelect.innerHTML += '<option value="' + v + '">' + v + '</option>';
+    });
+    // 분류 필터 채우기
+    const catSelect = document.getElementById('dnCategoryFilter');
+    const existingCats = new Set(products.map(p => p.minorName).filter(Boolean));
+    catSelect.innerHTML = '<option value="">전체 분류</option>';
+    existingCats.forEach(c => {
+        catSelect.innerHTML += '<option value="' + c + '">' + c + '</option>';
+    });
+    renderDisplayNameTable();
+}
+
+function getFilteredDnProducts() {
+    const vendor = document.getElementById('dnVendorFilter').value;
+    const cat = document.getElementById('dnCategoryFilter').value;
+    const search = document.getElementById('dnSearchInput').value.toLowerCase();
+    return products.filter(p => {
+        if (vendor && p.vendorName !== vendor) return false;
+        if (cat && p.minorName !== cat) return false;
+        if (search && !p.name.toLowerCase().includes(search) && !p.code.toLowerCase().includes(search)) return false;
+        return true;
+    });
+}
+
+function renderDisplayNameTable() {
+    const filtered = getFilteredDnProducts();
+    const tbody = document.getElementById('dnTableBody');
+    document.getElementById('dnFilterCount').textContent = filtered.length + '개 품목';
+
+    tbody.innerHTML = filtered.map(function(p, i) {
+        const hasDisplayName = p.displayName && p.displayName.trim();
+        const status = hasDisplayName ? '<span style="color:#2d6a4f;font-weight:700;">설정됨</span>' : '<span style="color:#aaa;">미설정</span>';
+        return '<tr>' +
+            '<td>' + (i + 1) + '</td>' +
+            '<td style="font-size:0.8rem;color:#888;">' + p.code + '</td>' +
+            '<td style="font-size:0.85rem;">' + (p.vendorName || '-') + '</td>' +
+            '<td style="font-weight:600;">' + p.name + '</td>' +
+            '<td style="color:#888;">' + (p.spec || '-') + '</td>' +
+            '<td><input type="text" data-code="' + p.code + '" value="' + (p.displayName || '') + '" placeholder="표시명 입력..." style="width:100%;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:0.9rem;" onchange="onDisplayNameChange(this)"></td>' +
+            '<td style="text-align:center;">' + status + '</td>' +
+            '</tr>';
+    }).join('');
+}
+
+function onDisplayNameChange(input) {
+    const code = input.getAttribute('data-code');
+    const product = products.find(p => p.code === code);
+    if (product) {
+        product.displayName = input.value.trim();
+    }
+}
+
+function saveAllDisplayNames() {
+    saveAll();
+    showToast('표시명이 저장되었습니다.');
+    renderDisplayNameTable();
+}
+
+function clearAllDisplayNames() {
+    if (!confirm('모든 품목의 표시명을 초기화하시겠습니까?')) return;
+    const filtered = getFilteredDnProducts();
+    filtered.forEach(p => { p.displayName = ''; });
+    saveAll();
+    renderDisplayNameTable();
+    showToast('표시명이 초기화되었습니다.');
+}
+
+async function aiGenerateDisplayNames() {
+    const apiKey = localStorage.getItem('erp_api_key');
+    if (!apiKey) {
+        alert('Claude API 키를 먼저 설정해주세요. (견적서 분석 탭에서 설정)');
+        return;
+    }
+
+    const filtered = getFilteredDnProducts();
+    if (filtered.length === 0) {
+        alert('표시명을 생성할 품목이 없습니다.');
+        return;
+    }
+
+    const onlyEmpty = confirm('표시명이 비어있는 품목만 생성할까요?\n\n확인: 비어있는 것만\n취소: 전체 다시 생성');
+
+    const targets = onlyEmpty ? filtered.filter(p => !p.displayName || !p.displayName.trim()) : filtered;
+    if (targets.length === 0) {
+        alert('생성할 품목이 없습니다.');
+        return;
+    }
+
+    const progress = document.getElementById('dnProgress');
+    progress.style.display = 'block';
+    progress.textContent = '🤖 AI가 표시명을 생성 중입니다... (0/' + targets.length + ')';
+
+    // 50개씩 배치 처리
+    const batchSize = 50;
+    let completed = 0;
+
+    for (let i = 0; i < targets.length; i += batchSize) {
+        const batch = targets.slice(i, i + batchSize);
+        const itemList = batch.map(p => p.code + '|' + p.name + '|' + (p.spec || '') + '|' + (p.vendorName || '')).join('\n');
+
+        try {
+            const res = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': apiKey,
+                    'anthropic-version': '2023-06-01',
+                    'anthropic-dangerous-direct-browser-access': 'true'
+                },
+                body: JSON.stringify({
+                    model: 'claude-sonnet-4-20250514',
+                    max_tokens: 4096,
+                    messages: [{
+                        role: 'user',
+                        content: '아래는 식자재 품목 목록입니다. 각 품목의 매입처 내부 이름을 고객에게 보여줄 깔끔한 표시명으로 변환해주세요.\n\n규칙:\n- 매입처 접두사 제거 (예: "왔다)" "원일)" 등)\n- 불필요한 기호, 괄호 정리\n- 핵심 품목명 + 용량/규격만 남기기\n- 너무 짧거나 이미 깔끔한 이름은 그대로 유지\n- 결과는 반드시 "품목코드|표시명" 형식으로 한 줄씩 출력\n- 다른 설명 없이 결과만 출력\n\n품목 목록 (코드|이름|규격|매입처):\n' + itemList
+                    }]
+                })
+            });
+
+            const data = await res.json();
+            const text = data.content && data.content[0] ? data.content[0].text : '';
+
+            text.split('\n').forEach(function(line) {
+                const parts = line.split('|');
+                if (parts.length >= 2) {
+                    const code = parts[0].trim();
+                    const displayName = parts[1].trim();
+                    const product = products.find(p => p.code === code);
+                    if (product && displayName) {
+                        product.displayName = displayName;
+                    }
+                }
+            });
+
+            completed += batch.length;
+            progress.textContent = '🤖 AI가 표시명을 생성 중입니다... (' + completed + '/' + targets.length + ')';
+        } catch (err) {
+            console.error('AI 생성 오류:', err);
+            progress.textContent = '❌ 오류 발생: ' + err.message;
+            break;
+        }
+    }
+
+    saveAll();
+    renderDisplayNameTable();
+    progress.textContent = '✅ ' + completed + '개 품목의 표시명이 생성되었습니다.';
+    setTimeout(() => { progress.style.display = 'none'; }, 5000);
 }
 
 // 초기화
