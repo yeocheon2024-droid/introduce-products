@@ -1,259 +1,52 @@
-# ERP 품목 관리 시스템
+# ERP 품목 관리 시스템 — 영업부 + 구매부
 
-## 프로젝트 설명
-식품/유통 업체를 위한 AI 기반 ERP 품목 관리 시스템. 단일 HTML 파일(index.html)로 구성된 SPA.
+> **소속 부서**: 구매부(ERP, DB, 발주서) + 영업부(견적분석, 가격비교, 카탈로그, 전단지, 쇼케이스)
+> **상위 문서**: ../CLAUDE.md (전체 에이전트 시스템 총괄)
 
----
+식품/유통 업체를 위한 AI 기반 ERP 품목 관리 시스템.
 
 ## 기술 스택
-- **프론트엔드**: Vanilla HTML/CSS/JavaScript (프레임워크 없음)
-- **데이터베이스**: Supabase (클라우드) + localStorage (로컬)
-- **이미지 저장**: Supabase Storage (버킷: `product-images`)
-- **AI**: Claude API (claude-sonnet-4-20250514) - 견적서 분석용
-- **라이브러리**: SheetJS (엑셀 파싱/생성), Supabase JS Client v2, html2canvas (PNG 캡처)
-- **Supabase 프로젝트**: zsxmmhgrmysqauuojmir.supabase.co
-- **GitHub**: https://github.com/yeocheon2024-droid/introduce-products.git (public)
-- **배포 URL**: https://yeocheon2024-droid.github.io/introduce-products/
+| 구분 | 스택 |
+|------|------|
+| 메인 ERP | Vanilla HTML/CSS/JS (단일 파일 `index.html`) |
+| 관련 사이트 | Next.js 14 + TypeScript + Tailwind |
+| DB | Supabase (클라우드) + localStorage (로컬) |
+| 이미지 | Supabase Storage (`product-images` 버킷) |
+| AI | Claude API (`claude-sonnet-4-20250514`) |
+| 라이브러리 | SheetJS, Supabase JS v2, html2canvas |
+| 배포 | GitHub Pages (ERP), Cloudflare Pages (관련 사이트) |
 
----
-
-## 파일 구조
+## 폴더 구조
 ```
-index.html                    - 메인 앱 (HTML+CSS+JS, ~5500줄)
-default-products.js           - 기본 등록 품목 189개 (JSON, 판매단가 포함)
-CLAUDE.md                     - 이 파일 (프로젝트 문서)
-.gitignore                    - *.xlsx, *.xls, *.csv, *.png, *.jpg, *.txt, *.json 제외
-03 프로그램 초기세팅자료/       - 엑셀 원본 파일들
-02 이미지파일/                 - 품목 이미지 파일 (57개 PNG)
-01 디자인레퍼런스/             - 디자인 참고 자료
-08 발주서 예시파일/            - 발주고 발주서 엑셀 샘플 (260326.xlsx)
-product-catalog-price/        - 제품 카탈로그 사이트 (Next.js, Cloudflare Pages 배포)
-product-flyer/                - 전단지 생성기 (Next.js, Cloudflare Pages 배포)
-product-site/                 - 제품 소개 사이트 (Next.js, Cloudflare Pages 배포)
+index.html                    ← 메인 ERP앱 (~5500줄)
+default-products.js           ← 기본 품목 189개
+product-catalog-price/        ← 가격표 카탈로그 (Next.js)
+product-flyer/                ← 전단지 생성기 (Next.js)
+product-site/                 ← 제품 소개 (Next.js)
+08 발주서 예시파일/            ← 발주고 엑셀 샘플
 ```
 
-### 관련 사이트 (모두 같은 Supabase products 테이블 사용)
-- **product-catalog-price**: GitHub `yeocheon2024-droid/product-catalog-price` → Cloudflare Pages
-- **product-flyer**: GitHub `yeocheon2024-droid/product-flyer` → Cloudflare Pages
-- **product-site**: GitHub `yeocheon2024-droid/product-catalog` → Cloudflare Pages
-- 환경변수: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (.env.local)
+## 배포
+| 사이트 | GitHub 레포 | URL |
+|--------|-------------|-----|
+| 메인 ERP | yeocheon2024-droid/introduce-products | yeocheon2024-droid.github.io/introduce-products/ |
+| 가격표 카탈로그 | yeocheon2024-droid/product-catalog-price | product-catalog-price.pages.dev |
+| 전단지 생성기 | yeocheon2024-droid/product-flyer | product-flyer.pages.dev |
+| 제품 소개 | yeocheon2024-droid/product-catalog | product-catalog-4qg.pages.dev |
 
----
+## 핵심 규칙
+1. GitHub **public** 저장소 — API 키를 코드에 넣지 말 것 (Supabase anon key만 예외)
+2. **수정사항 반영 시 반드시 사이드바 버전 번호를 올릴 것** (예: v2.9 → v2.10)
+3. 자동 동기화는 **양방향 병합** — 로컬 품목을 Supabase에 자동 업로드 (유실 방지)
+4. 발주서 엑셀 업로드 시 **단가는 입력하지 않음** — 등록된 품목의 매입단가(cost)에서 자동 적용
+5. `default-products.js` 수정 시 localStorage 갱신 플래그(`price_updated_vN`) 버전업 필요
+6. 관련 사이트 `.env.local`에 Supabase 키 필요: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
-## 주요 기능 (탭 메뉴 12개)
+## 주요 기능 (12개 탭)
+대시보드 | 품목관리 | 매입처 | 분류체계 | 마진율 | 이미지관리 | 엑셀업로드 | 견적서분석 | ERP내보내기 | 가격비교 | 발주/견적기록 | Supabase설정
 
-### 1. 대시보드
-- 총 품목수, 자체매입/외부매입 수, 매입처 수 통계
-- 최근 등록 10개 품목 테이블
-
-### 2. 품목 관리
-- CRUD (등록/수정/삭제)
-- 검색 & 필터 (코드, 이름, 분류, 매입처 유형)
-- 50개 단위 페이지네이션
-- PC: 테이블뷰 / 모바일: 카드뷰 (반응형 자동 전환)
-- 이미지 썸네일 표시 (Supabase Storage 연동)
-- 컬럼: 이미지, 품목코드, 품목명, 규격, 대분류, 중분류, 과세, 매입처, 매입단가(VAT포함), 공급가액, 부가세, 판매단가, 관리
-
-### 3. 매입처
-- 매입처 등록/관리
-- 기본 매입처: JG(자체매입), WI(원일푸드), WD(왔다식품), HN(해농)
-
-### 4. 분류 체계
-- 대분류: 농산품(01), 수산품(02), 축산품(03), 공산품(04)
-- 중분류: 양곡/야채/청과/돈육/우육/계육/김치/소스/면 등
-
-### 5. 마진율 설정
-- 카테고리별 마진율 설정
-- 판매단가 수식:
-  - 과세: 매입단가 × (1 + 마진율/100) × 1.1
-  - 면세: 매입단가 × (1 + 마진율/100)
-- **판매단가 미설정 품목 목록** - 매입단가는 있고 판매단가 없는 품목 모아서 표시
-- 공급가액/부가세/판매단가 미리보기
-- "마진율 일괄 적용" 버튼
-
-### 6. 이미지 관리 (신규)
-- Supabase Storage에 품목 이미지 업로드/관리
-- 일괄 업로드 (드래그앤드롭, 여러 파일 동시)
-- 파일명 = 품목코드로 자동 매칭
-- 업로드된 이미지 목록 조회/검색
-- 이미지 URL: `{supabase_url}/storage/v1/object/public/product-images/{품목코드}.png`
-
-### 7. 엑셀 업로드
-- .xlsx, .xls, .csv 지원
-- 미리보기 후 일괄 등록
-
-### 8. 견적서 분석 (핵심 AI 기능)
-- 엑셀 또는 이미지 업로드 → Claude API가 분석
-- 매입처 기본 선택: 원일푸드(WI)
-- 추출 정보: 품명, 규격, 단위, 공급가, 부가세, 합계(VAT포함), 과세구분, 분류코드, 품목약어
-- **매입단가 = 부가세 포함 합계(totalPrice)** 로 저장
-- 견적서 유형 자동 감지:
-  - 공급가/부가세 분리된 견적서 → 그대로 추출
-  - 단가 하나만 있는 견적서 → 부가세 포함으로 인식, 역산 분리
-- 기존 품목과 비교: 신규/중복/단가변동
-- 전체 선택/전체 해제 버튼
-- 채택 시 무조건 매입단가 반영 (기존 판매단가 유지)
-- 응답 잘림 자동 이어받기 (최대 3회)
-
-### 9. ERP 내보내기
-- 발주고 형식 (39컬럼)
-- 경영박사 형식 (7컬럼)
-
-### 10. 가격 비교
-- 엑셀 업로드 → 네이버쇼핑 최저가와 비교
-
-### 11. 발주/견적 기록 (v2.9 신규)
-- 날짜별 발주서·견적서 CRUD 기록 관리
-- **엑셀 자동 등록**: 발주고 엑셀 파일 업로드 → 미리보기 → 저장 버튼 클릭 후 등록
-  - 파일명에서 날짜 자동 추출 (260326.xlsx → 2026-03-26)
-  - 품목코드로 등록된 매입단가(cost) 자동 적용 (엑셀에는 수량만 입력)
-  - 매입처 자동 인식 (F열 또는 품목코드 앞 2글자)
-- **수동 등록**: 유형/날짜/매입처 선택 → 품목 추가 → 저장
-  - 품목코드 입력 시 품목명/규격/단가 자동 채움
-- **기록 목록**: 날짜별 그룹핑, 유형/기간/매입처 필터, 엑셀 다운로드
-- **발주서 미리보기 & PNG 저장**: 발주서 버튼 → 실제 발주서 양식 모달
-  - 브라운 톤 헤더, 발주일자/납품요청일/발주처/발주회사/담당자/연락처
-  - 품목 테이블: 공급가액/VAT/합계(VAT포함) 분리 표시, 과세/면세 자동 구분
-  - 상단 툴바에서 발주회사/담당자/연락처 직접 입력 (실시간 반영)
-  - html2canvas로 PNG 이미지 다운로드, 엑셀(발주고 양식 20컬럼) 다운로드
-- **Supabase 연동**: order_records 테이블에 자동 동기화 (저장/수정/삭제 시 2초 디바운스)
-- localStorage 키: `erp_order_records`
-
-### 12. Supabase 설정 & 동기화
-- 로컬 ↔ 클라우드 양방향 병합 동기화 (v2.9 개선)
-- 페이지 로드 시 양방향 병합: 클라우드 데이터 + 로컬에만 있는 데이터 합침
-- 로컬에만 있는 품목은 자동으로 Supabase에 업로드 (품목 유실 방지)
-- 자동 연결 (키 내장)
-
----
-
-## 품목코드 규칙
-
-### 자체매입 (9자리 숫자)
-- 형식: `[매입처숫자][대분류코드][중분류코드][일련번호]`
-- 예시: `104003001` → 자체매입(1) + 공산품(04) + 소스(003) + 001번
-
-### 외부매입 (영문+숫자, 하이픈 없음)
-- 형식: `[매입처코드2글자][품목약어2~3글자][일련번호3자리]`
-- 예시: `WISOS001` → 원일푸드(WI) + 소스/장류(SOS) + 001번
-- 약어는 분류가 아니라 **품목명을 따라감** (AI가 자동 생성)
-- 같은 종류 품목은 매입처가 달라도 같은 약어 사용 (검색 편의)
-
-### 기존 약어 목록
-```
-CAN=참치캔류, DAS=다시/조미료, DMJ=단무지, KIM=김류, MDU=만두류,
-MSG=미원/조미료, NDL=당면/면류, SAU=마요네즈/케찹/소스류, SOP=국/탕류,
-SOS=고추장/된장/쌈장/장류, SOY=간장류, SPC=후추/겨자/향신료,
-SUG=설탕류, SYR=물엿/시럽류, OIL=식용유/기름, STR=전분류,
-FRY=튀김가루/부침가루, TFU=두부/떡류, HAM=햄/육가공, FRZ=냉동식품,
-PKG=포장재, BEF=우육, PRK=돈육, GRN=양곡/곡류
-```
-
----
-
-## 단가 구조
-
-### 매입단가 (cost)
-- **부가세 포함** 금액
-- 견적서에서 채택 시 totalPrice(합계)로 저장
-- 자체매입 품목은 cost = 0 (매입단가 없음)
-
-### 판매단가 (sell)
-- **부가세 포함** 최종 판매가
-- 자체매입: 엑셀(납품단가관리)에서 가져온 가격
-- 외부매입: 마진율 적용 계산 또는 직접 입력
-- 수식 (과세): 매입단가 × (1 + 마진율/100) × 1.1
-- 수식 (면세): 매입단가 × (1 + 마진율/100)
-
-### 표시 컬럼
-- 매입단가(VAT포함) | 공급가액 | 부가세 | 판매단가
-- 면세 품목은 부가세 = 0
-
----
-
-## 견적서 매칭 로직 (중복 감지)
-
-### 매칭 점수 시스템 (같은 매입처 품목만 비교)
-1. **100점**: 이름+규격 완전 일치
-2. **95점**: 이름+규격 합쳐서 일치 (대상-미원 + 2kg → 대상미원2kg)
-3. **90점**: 기존 품목명이 견적서 이름으로 시작 + 규격 일치
-4. **88점**: 견적서 이름이 기존 품목명으로 시작 + 규격 일치
-5. **80점**: 기존 품목명이 견적서 이름으로 시작
-6. **78점**: 견적서 이름이 기존 품목명으로 시작
-7. **75점**: 핵심 키워드(한글 2글자 이상) 전부 포함 + 규격 일치
-8. **70점**: 이름 완전 일치 (규격 다름)
-- 70점 미만은 매칭 안 함
-
-### 이름 정규화
-- 공백, 하이픈, 괄호, 따옴표, #, @, & 등 특수문자 전부 제거 후 비교
-
----
-
-## 데이터 구조
-
-### Product (품목)
-```
-code, name, spec, unit, majorCode, majorName, minorCode, minorName,
-tax(과세/면세), vendorCode, vendorName, vendorType(self/external),
-cost(매입단가 VAT포함), sell(판매단가 VAT포함), registeredAt
-```
-
-### Vendor (매입처)
-```
-code(2글자), name, type(self/external)
-```
-
-### Margins (마진율)
-```
-"majorCode-minorCode": 마진율(%)
-```
-
----
-
-## Supabase 구성
-
-### 테이블
-- `products` - 품목 마스터
-- `vendors` - 매입처 정보
-- `margins` - 마진율 설정
-- `order_records` - 발주/견적 기록 (id TEXT PK, type, date, vendor_code, vendor_name, memo, items JSONB, total_amount, created_at, updated_at)
-
-### Storage
-- 버킷: `product-images` (Public)
-- 정책: public read (SELECT), public upload (INSERT)
-
----
-
-## localStorage 키
-- `erp_products` - 품목 데이터
-- `erp_vendors` - 매입처 데이터
-- `erp_margins` - 마진율 설정
-- `supabase_url`, `supabase_key` - Supabase 연결 정보
-- `erp_order_records` - 발주/견적 기록
-- `erp_api_key` - Claude API 키
-- `price_updated_v6` - 가격 갱신 플래그
-
----
-
-## 모바일 최적화
-- 900px 이하: 사이드바 → 햄버거 메뉴, 품목 테이블 → 카드뷰
-- 400px 이하: 초소형 화면 추가 최적화
-- 검색바, 모달, 카드, 이미지 그리드 전부 반응형
-
----
-
-## 디자인 시스템
-- 따뜻한 브라운 톤 (#C8956C 액센트)
-- Inter 폰트
-- 카드 기반 레이아웃
-
----
-
-## 주의사항
-- GitHub이 **public** 저장소라 API 키를 코드에 넣으면 안 됨
-- Claude API 키는 브라우저 localStorage에 저장 (txt 메모장에 백업)
-- Supabase 키는 코드에 내장됨 (anon public key라 노출 무방)
-- `default-products.js` 수정 시 localStorage 갱신 플래그(price_updated_vN) 버전업 필요
-- 자동 동기화는 양방향 병합 방식 — 로컬에만 있는 품목을 Supabase에 자동 업로드하므로 품목 유실 없음
-- 발주서 엑셀 업로드 시 단가는 입력하지 않음 — 등록된 품목의 매입단가(cost)에서 자동 적용
-- **수정사항 반영 시 반드시 사이드바 버전 번호를 올릴 것** (예: v2.9 → v2.10) — 사용자가 새로고침으로 반영 여부를 확인할 수 있도록
+## 상세 문서
+- @.claude/database.md — DB 스키마, 동기화 패턴, 단가 구조, 품목코드 규칙
+- @.claude/api-design.md — Supabase REST 쿼리, Claude API, 견적서 매칭 로직
+- @.claude/ui-design.md — 디자인 시스템, 탭 구조, 관련 사이트 상세
+- @.claude/testing.md — 수동 테스트 체크리스트, 배포 전 확인사항
