@@ -5236,8 +5236,9 @@ function ohParseOrderExcel(rows, fileName) {
     const headerRow2 = rows[1] || [];
     let qtyCol = 6; // 기본값 (20컬럼 양식)
     for (let ci = 0; ci < headerRow2.length; ci++) {
-        const hv = String(headerRow2[ci] || '');
-        if (hv === '주문' || hv.includes('주문수량')) { qtyCol = ci; break; }
+        const hv = String(headerRow2[ci] || '').trim();
+        // 정확히 "주문"만 매칭 ("주문배달처" 등 제외)
+        if (hv === '주문' || hv === '주문수량') { qtyCol = ci; break; }
     }
 
     const items = [];
