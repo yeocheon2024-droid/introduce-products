@@ -947,7 +947,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.9</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.10</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -5230,9 +5230,15 @@ function ohParseOrderExcel(rows, fileName) {
     let vendorName = '';
     let vendorCode = '';
 
-    // Row 2는 컬럼 헤더, Row 3부터 데이터
-    // 컬럼: A=품목코드, B=품명, C=규격, D=단위, E=세금, F=매입처, G=주문수량
-    // H=상품, I=면세공급가액, J=과세공급가액, K=공급가액, L=부가세, M=합계금액
+    // Row 2 컬럼 헤더에서 수량 컬럼 위치 자동 감지
+    // 20컬럼 양식: G(6)=주문, M(12)=합계금액
+    // 19컬럼 양식: J(9)=주문, N(13)=합계금액
+    const headerRow2 = rows[1] || [];
+    let qtyCol = 6; // 기본값 (20컬럼 양식)
+    for (let ci = 0; ci < headerRow2.length; ci++) {
+        const hv = String(headerRow2[ci] || '');
+        if (hv === '주문' || hv.includes('주문수량')) { qtyCol = ci; break; }
+    }
 
     const items = [];
     for (let i = 2; i < rows.length; i++) {
@@ -5240,11 +5246,11 @@ function ohParseOrderExcel(rows, fileName) {
         const code = String(row[0] || '').trim();
         const name = String(row[1] || '').trim();
 
-        // 합계 행 스킵
-        if (code.includes('합 계') || code.includes('합계') || !name) continue;
+        // 합계 행 스킵 (< 합 계 >, 빈 이름, 코드 없음)
+        if (code.includes('합 계') || code.includes('합계') || !name || !code) continue;
 
         const spec = String(row[2] || '').trim();
-        const qty = parseInt(row[6]) || 0;
+        const qty = parseInt(row[qtyCol]) || 0;
 
         if (qty <= 0) continue;
 
