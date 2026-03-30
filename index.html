@@ -1144,7 +1144,7 @@
     <div class="card">
         <h3>카테고리별 마진율 설정</h3>
         <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:20px;">
-            외부매입 품목에 적용됩니다. 판매단가 = 매입원가 x (1 + 마진율/100) x 1.1 (부가세 포함)
+            외부매입 품목에 적용됩니다. 판매단가 = 매입원가 x (1 + 마진율/100) — 매입·판매 모두 VAT포함 기준
         </p>
         <div class="margin-grid" id="marginGrid"></div>
         <div style="margin-top:20px;text-align:right;">
@@ -2687,10 +2687,8 @@ function applyMarginToNoSell() {
         const key = (p.majorCode || '') + '-' + (p.minorCode || '');
         const rate = Number(margins[key]) || 0;
         if (rate > 0) {
-            const isTaxFree = p.tax === '면세';
-            const supply = Math.round(p.cost * (1 + rate / 100));
-            const vat = isTaxFree ? 0 : Math.round(supply * 0.1);
-            p.sell = roundUp100(supply + vat);
+            // cost, sell 모두 VAT 포함 금액이므로 마진율만 적용
+            p.sell = roundUp100(Math.round(p.cost * (1 + rate / 100)));
             applied++;
         } else {
             noMargin++;
