@@ -5363,8 +5363,20 @@ function ohShowUploadPreview(results) {
     });
 
     if (ohPendingRecords.length > 0) {
-        html += '<div style="display:flex;gap:10px;margin-top:12px;">';
-        html += '<button class="btn btn-primary" onclick="ohConfirmSave()">저장 (' + ohPendingRecords.length + '건)</button>';
+        // 품목 수동 추가 영역
+        html += '<div style="background:var(--bg-warm);border-radius:var(--radius-sm);padding:10px 14px;margin-top:8px;margin-bottom:8px;">';
+        html += '<strong style="font-size:0.82rem;">품목 추가</strong>';
+        html += '<div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap;">';
+        html += '<input type="text" id="ohAddCode" placeholder="품목코드" style="width:100px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:0.8rem;" oninput="ohAddCodeLookup()">';
+        html += '<input type="text" id="ohAddName" placeholder="품목명" style="width:140px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:0.8rem;">';
+        html += '<input type="text" id="ohAddSpec" placeholder="규격" style="width:80px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:0.8rem;">';
+        html += '<input type="number" id="ohAddQty" placeholder="수량" value="1" min="1" style="width:50px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:0.8rem;text-align:center;">';
+        html += '<input type="number" id="ohAddPrice" placeholder="단가" style="width:80px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:0.8rem;text-align:right;">';
+        html += '<button class="btn btn-sm" onclick="ohAddItemToPending()" style="padding:4px 10px;font-size:0.78rem;">+ 추가</button>';
+        html += '</div></div>';
+
+        html += '<div style="display:flex;gap:10px;margin-top:8px;">';
+        html += '<button class="btn btn-primary" onclick="ohConfirmSave()">저장</button>';
         html += '<button class="btn" onclick="ohCancelUpload()">취소</button>';
         html += '</div>';
     }
@@ -5384,6 +5396,46 @@ function ohConfirmSave() {
     const div = document.getElementById('ohUploadResult');
     div.innerHTML = '<div style="background:var(--success-light);border-radius:var(--radius-sm);padding:10px 14px;font-size:0.84rem;"><strong style="color:var(--success);">&#10003; ' + count + '건 저장 완료</strong></div>';
     ohRenderList();
+}
+
+function ohAddCodeLookup() {
+    const code = document.getElementById('ohAddCode').value.trim();
+    if (!code) return;
+    const p = products.find(pr => pr.code === code);
+    if (p) {
+        document.getElementById('ohAddName').value = p.name;
+        document.getElementById('ohAddSpec').value = p.spec || '';
+        document.getElementById('ohAddPrice').value = p.cost || 0;
+    }
+}
+
+function ohAddItemToPending() {
+    if (ohPendingRecords.length === 0) return;
+    const code = document.getElementById('ohAddCode').value.trim();
+    const name = document.getElementById('ohAddName').value.trim();
+    const spec = document.getElementById('ohAddSpec').value.trim();
+    const qty = parseInt(document.getElementById('ohAddQty').value) || 0;
+    const price = parseInt(document.getElementById('ohAddPrice').value) || 0;
+
+    if (!name || qty <= 0) { alert('품목명과 수량을 입력하세요.'); return; }
+
+    const item = { code, name, spec, qty, price, amount: qty * price };
+
+    // 첫 번째 pending record에 추가
+    ohPendingRecords[0].items.push(item);
+    ohPendingRecords[0].totalAmount += item.amount;
+
+    // 미리보기 갱신
+    ohShowUploadPreview([{
+        fileName: ohPendingRecords[0].memo.replace('엑셀 업로드: ', ''),
+        success: true,
+        date: ohPendingRecords[0].date,
+        vendorName: ohPendingRecords[0].vendorName,
+        type: ohPendingRecords[0].type,
+        itemCount: ohPendingRecords[0].items.length,
+        totalAmount: ohPendingRecords[0].totalAmount,
+        record: ohPendingRecords[0]
+    }]);
 }
 
 function ohCancelUpload() {
