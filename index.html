@@ -3846,11 +3846,13 @@ async function loadNoImageProducts() {
     el.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem;">이미지 목록 불러오는 중...</p>';
 
     try {
-        // 캐시가 있으면 재사용(삭제 직후 등), 없으면 Supabase에서 새로 조회
+        // R2 Worker에서 이미지 목록 조회
         let fileList = uploadedImageCache;
         if (fileList.length === 0) {
-            const { data } = await db.storage.from(IMAGE_BUCKET).list('', { limit: 1000 });
-            fileList = data || [];
+            const resp = await fetch(R2_WORKER_URL + '/list');
+            const result = await resp.json();
+            fileList = (result.files || []).map(f => ({ name: f.key }));
+            uploadedImageCache = fileList;
         }
         const uploaded = new Set(fileList.map(f => f.name.replace(/\.(png|jpg|jpeg|webp)$/i, '')));
         // Supabase Storage에 없어도 imageUrl 필드가 있으면 이미지 있는 것으로 처리
@@ -4054,27 +4056,22 @@ function loadProductModalImage(code) {
 }
 
 // Supabase Storage에 이미지 업로드
+var R2_WORKER_URL = 'https://r2-image-proxy.ljsgn5958.workers.dev';
+
 async function uploadImageToStorage(code, file) {
-    if (!db) return;
-    const ext = file.name.split('.').pop().toLowerCase();
     const path = code + '.png';
-
-    // 기존 파일 삭제 후 업로드
-    await db.storage.from(IMAGE_BUCKET).remove([path]);
-
-    // 파일을 PNG로 변환하여 업로드
-    const { error } = await db.storage.from(IMAGE_BUCKET).upload(path, file, {
-        contentType: file.type,
-        upsert: true
+    const resp = await fetch(R2_WORKER_URL + '/upload/' + path, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type || 'image/png' },
+        body: file
     });
-    if (error) throw error;
+    const result = await resp.json();
+    if (!result.success) throw new Error('R2 업로드 실패');
 }
 
-// Supabase Storage에서 이미지 삭제
 async function deleteImageFromStorage(code) {
-    if (!db) return;
     const path = code + '.png';
-    await db.storage.from(IMAGE_BUCKET).remove([path]);
+    await fetch(R2_WORKER_URL + '/delete/' + path, { method: 'DELETE' });
 }
 
 // 이미지 일괄 업로드 드래그앤드롭 초기화
@@ -4165,15 +4162,13 @@ async function handleImageFiles(files) {
 
 // 업로드된 이미지 목록 불러오기
 async function loadUploadedImages() {
-    if (!db) return;
     const grid = document.getElementById('uploadedImageGrid');
     grid.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem;grid-column:1/-1;text-align:center;padding:20px;">불러오는 중...</p>';
 
     try {
-        const { data, error } = await db.storage.from(IMAGE_BUCKET).list('', { limit: 500, sortBy: { column: 'name', order: 'asc' } });
-        if (error) throw error;
-
-        uploadedImageCache = (data || []).filter(f => !f.name.startsWith('.'));
+        const resp = await fetch(R2_WORKER_URL + '/list');
+        const result = await resp.json();
+        uploadedImageCache = (result.files || []).map(f => ({ name: f.key, size: f.size }));
 
         renderUploadedImages(uploadedImageCache);
         renderNaverSavedImages();
