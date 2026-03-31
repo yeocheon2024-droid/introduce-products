@@ -5603,22 +5603,12 @@ function ohRenderOrderDoc(rec) {
         return parts[0] + '. ' + parseInt(parts[1]) + '. ' + parseInt(parts[2]) + '.';
     }
 
-    // 품목별 공급가액/부가세 계산
-    let sumSupply = 0, sumVat = 0, sumTotal = 0;
+    // 품목별 금액 계산 (매입단가 = VAT포함이므로 분리 불필요)
+    let sumTotal = 0;
     const itemRows = rec.items.map((item, idx) => {
         const p = products.find(pr => pr.code === item.code);
-        const isTaxFree = p && p.tax === '면세';
+        const taxLabel = p ? (p.tax || '과세') : '과세';
         const total = item.amount;
-        let supply, vat;
-        if (isTaxFree) {
-            supply = total;
-            vat = 0;
-        } else {
-            supply = Math.round(total / 1.1);
-            vat = total - supply;
-        }
-        sumSupply += supply;
-        sumVat += vat;
         sumTotal += total;
 
         return '<tr>' +
@@ -5628,9 +5618,8 @@ function ohRenderOrderDoc(rec) {
             '<td style="text-align:center;padding:6px 4px;font-size:0.82rem;">' + (item.spec || '') + '</td>' +
             '<td style="text-align:center;padding:6px 4px;">' + (p ? (p.unit || 'EA') : 'EA') + '</td>' +
             '<td style="text-align:center;padding:6px 4px;font-weight:600;">' + item.qty + '</td>' +
-            '<td style="text-align:right;padding:6px 8px;">' + supply.toLocaleString() + '</td>' +
-            '<td style="text-align:center;padding:6px 4px;">' + (isTaxFree ? '면세' : '과세') + '</td>' +
-            '<td style="text-align:right;padding:6px 8px;">' + (vat > 0 ? vat.toLocaleString() : '-') + '</td>' +
+            '<td style="text-align:right;padding:6px 8px;">' + item.price.toLocaleString() + '</td>' +
+            '<td style="text-align:center;padding:6px 4px;">' + taxLabel + '</td>' +
             '<td style="text-align:right;padding:6px 8px;font-weight:700;">' + total.toLocaleString() + '</td>' +
             '<td style="padding:6px 4px;"></td>' +
             '</tr>';
@@ -5674,21 +5663,17 @@ function ohRenderOrderDoc(rec) {
                         <th style="padding:8px 4px;border:1px solid #c49464;width:90px;">규격</th>
                         <th style="padding:8px 4px;border:1px solid #c49464;width:40px;">단위</th>
                         <th style="padding:8px 4px;border:1px solid #c49464;width:45px;">수량</th>
-                        <th style="padding:8px 4px;border:1px solid #c49464;width:80px;">공급가액</th>
-                        <th style="padding:8px 4px;border:1px solid #c49464;width:45px;">VAT</th>
-                        <th style="padding:8px 4px;border:1px solid #c49464;width:70px;">VAT금액</th>
-                        <th style="padding:8px 4px;border:1px solid #c49464;width:85px;">합계(VAT포함)</th>
+                        <th style="padding:8px 4px;border:1px solid #c49464;width:80px;">단가</th>
+                        <th style="padding:8px 4px;border:1px solid #c49464;width:50px;">과세</th>
+                        <th style="padding:8px 4px;border:1px solid #c49464;width:85px;">금액</th>
                         <th style="padding:8px 4px;border:1px solid #c49464;width:45px;">비고</th>
                     </tr>
                 </thead>
                 <tbody>
                     ${itemRows}
                     <tr style="background:#f9f5f0;font-weight:700;">
-                        <td colspan="5" style="border:1px solid #ddd;"></td>
-                        <td style="text-align:center;padding:8px 4px;border:1px solid #ddd;">합계</td>
-                        <td style="text-align:right;padding:8px 8px;border:1px solid #ddd;">${sumSupply.toLocaleString()}</td>
+                        <td colspan="6" style="text-align:center;padding:8px 4px;border:1px solid #ddd;">합계</td>
                         <td style="text-align:center;padding:8px 4px;border:1px solid #ddd;">-</td>
-                        <td style="text-align:right;padding:8px 8px;border:1px solid #ddd;">${sumVat.toLocaleString()}</td>
                         <td style="text-align:right;padding:8px 8px;border:1px solid #ddd;">${sumTotal.toLocaleString()}</td>
                         <td style="border:1px solid #ddd;"></td>
                     </tr>
