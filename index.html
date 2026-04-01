@@ -4731,8 +4731,9 @@ async function imgModalGetBlob() {
 
 // 이미지를 최대 maxPx 크기로 리사이즈
 function resizeImageBlob(blob, maxPx) {
-    return new Promise(function(resolve) {
+    return new Promise(function(resolve, reject) {
         var img = new Image();
+        img.crossOrigin = 'anonymous';
         img.onload = function() {
             var w = img.width, h = img.height;
             if (w > maxPx || h > maxPx) {
@@ -4745,6 +4746,11 @@ function resizeImageBlob(blob, maxPx) {
             canvas.height = h;
             canvas.getContext('2d').drawImage(img, 0, 0, w, h);
             canvas.toBlob(function(b) { resolve(b); }, 'image/png');
+            URL.revokeObjectURL(img.src);
+        };
+        img.onerror = function() {
+            URL.revokeObjectURL(img.src);
+            reject(new Error('이미지 로드 실패'));
         };
         img.src = URL.createObjectURL(blob);
     });
@@ -4780,11 +4786,21 @@ function aiSetButtons(disabled) {
 async function aiRemoveBg() {
     const key = getStabilityKey();
     if (!key) return;
-    const blob = await imgModalGetBlob();
-    if (!blob) return;
+
+    aiSetStatus('이미지 준비 중...', 'var(--accent)');
+    aiSetButtons(true);
+
+    let blob;
+    try {
+        blob = await imgModalGetBlob();
+    } catch(e) {
+        aiSetStatus('이미지 로드 실패: ' + e.message, 'var(--danger)');
+        aiSetButtons(false);
+        return;
+    }
+    if (!blob) { aiSetButtons(false); return; }
 
     aiSetStatus('배경 제거 중...', 'var(--accent)');
-    aiSetButtons(true);
 
     try {
         const formData = new FormData();
@@ -4816,11 +4832,21 @@ async function aiRemoveBg() {
 async function aiUpscale() {
     const key = getStabilityKey();
     if (!key) return;
-    const blob = await imgModalGetBlob();
-    if (!blob) return;
+
+    aiSetStatus('이미지 준비 중...', 'var(--accent)');
+    aiSetButtons(true);
+
+    let blob;
+    try {
+        blob = await imgModalGetBlob();
+    } catch(e) {
+        aiSetStatus('이미지 로드 실패: ' + e.message, 'var(--danger)');
+        aiSetButtons(false);
+        return;
+    }
+    if (!blob) { aiSetButtons(false); return; }
 
     aiSetStatus('화질 개선 중... (10~30초 소요)', 'var(--accent)');
-    aiSetButtons(true);
 
     try {
         const formData = new FormData();
