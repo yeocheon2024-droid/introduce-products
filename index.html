@@ -4756,19 +4756,53 @@ async function imgModalGetBlob() {
         alert('이미지가 없습니다. 먼저 이미지를 등록해주세요.');
         return null;
     }
-    let url = preview.src;
-    let blob;
-    if (url.startsWith('blob:')) {
-        blob = await fetch(url).then(r => r.blob());
-    } else if (!url.startsWith('data:')) {
-        const proxyUrl = 'https://wsrv.nl/?url=' + encodeURIComponent(url) + '&output=png';
-        blob = await fetch(proxyUrl).then(r => r.blob());
-    } else {
-        blob = await fetch(url).then(r => r.blob());
-    }
-    // 항상 Canvas를 거쳐 순수 PNG로 변환 (webp/비표준 포맷 방지 + 10MB 제한)
-    blob = await resizeImageBlob(blob, 2048);
-    return blob;
+    // Canvas에 직접 그려서 PNG blob으로 변환 (CORS/포맷 문제 완전 회피)
+    return new Promise(function(resolve, reject) {
+        var img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = function() {
+            var maxPx = 2048;
+            var w = img.naturalWidth, h = img.naturalHeight;
+            if (w > maxPx || h > maxPx) {
+                var ratio = Math.min(maxPx / w, maxPx / h);
+                w = Math.round(w * ratio);
+                h = Math.round(h * ratio);
+            }
+            var canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            canvas.toBlob(function(b) {
+                if (b) resolve(b);
+                else reject(new Error('Canvas → Blob 변환 실패'));
+            }, 'image/png');
+        };
+        img.onerror = function() {
+            // 직접 로드 실패 시 wsrv.nl 프록시로 재시도
+            var proxyImg = new Image();
+            proxyImg.crossOrigin = 'anonymous';
+            proxyImg.onload = function() {
+                var maxPx = 2048;
+                var w = proxyImg.naturalWidth, h = proxyImg.naturalHeight;
+                if (w > maxPx || h > maxPx) {
+                    var ratio = Math.min(maxPx / w, maxPx / h);
+                    w = Math.round(w * ratio);
+                    h = Math.round(h * ratio);
+                }
+                var canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                canvas.getContext('2d').drawImage(proxyImg, 0, 0, w, h);
+                canvas.toBlob(function(b) {
+                    if (b) resolve(b);
+                    else reject(new Error('프록시 Canvas 변환 실패'));
+                }, 'image/png');
+            };
+            proxyImg.onerror = function() { reject(new Error('이미지 로드 실패')); };
+            proxyImg.src = 'https://wsrv.nl/?url=' + encodeURIComponent(preview.src) + '&output=png';
+        };
+        img.src = preview.src;
+    });
 }
 
 // 이미지를 최대 maxPx 크기로 리사이즈
