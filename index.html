@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.13</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.14</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1138,6 +1138,8 @@
             <option value="all">전체</option>
             <option value="self">자체매입</option>
             <option value="external">외부매입</option>
+            <option value="soldout">품절만</option>
+            <option value="available">판매중만</option>
         </select>
         <select id="majorFilter" onchange="onMajorFilterChange()">
             <option value="">대분류 전체</option>
@@ -2243,6 +2245,8 @@ function getFilteredProducts() {
     return products.filter(p => {
         if (filter === 'self' && p.vendorType !== 'self') return false;
         if (filter === 'external' && p.vendorType !== 'external') return false;
+        if (filter === 'soldout' && !p.soldOut) return false;
+        if (filter === 'available' && p.soldOut) return false;
         if (majorFilter && p.majorCode !== majorFilter) return false;
         if (minorFilter && p.minorCode !== minorFilter) return false;
         if (q) {
@@ -2275,7 +2279,7 @@ function renderProductList() {
             <td style="padding:8px 4px;"><input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleProductSelect('${esc(p.code)}', this.checked)"></td>
             <td>${getProductThumbHTML(p.code)}</td>
             <td style="font-weight:600;color:var(--accent);">${esc(p.code)}</td>
-            <td>${esc(p.name)}</td>
+            <td>${p.soldOut ? '<span style="color:var(--danger);font-weight:700;font-size:0.7rem;margin-right:3px;">[품절]</span>' : ''}${esc(p.name)}</td>
             <td style="color:var(--text-secondary);">${esc(p.spec || '')}</td>
             <td style="color:var(--text-secondary);">${esc(p.majorName || '')}</td>
             <td style="color:var(--text-secondary);">${esc(p.minorName || '')}</td>
@@ -2283,7 +2287,8 @@ function renderProductList() {
             <td><span class="badge ${p.vendorType === 'self' ? 'badge-self' : 'badge-external'}">${esc(p.vendorName || '')}</span></td>
             <td class="text-right" style="font-weight:500;">${p.cost ? Number(p.cost).toLocaleString() : '-'}</td>
             <td class="text-right" style="font-weight:600;">${sell ? sell.toLocaleString() : '-'}</td>
-            <td class="text-center">
+            <td class="text-center" style="white-space:nowrap;">
+                <button class="btn btn-sm" style="background:${p.soldOut ? 'var(--success)' : 'var(--danger)'};color:#fff;font-size:0.68rem;padding:3px 6px;" onclick="toggleSoldOut('${esc(p.code)}')">${p.soldOut ? '판매중' : '품절'}</button>
                 <button class="btn btn-outline btn-sm" onclick="editProduct('${esc(p.code)}')">수정</button>
                 <button class="btn btn-danger btn-sm" onclick="deleteProduct('${esc(p.code)}')">삭제</button>
             </td>
@@ -2304,7 +2309,7 @@ function renderProductList() {
                     <div class="m-product-top">
                         <img src="${imgUrl}" width="48" height="48" alt="${esc(p.name || '품목 이미지')}" style="object-fit:cover;border:1px solid var(--border-light);" onerror="this.style.display='none'">
                         <div class="m-product-info">
-                            <div class="m-product-name">${esc(p.name)}</div>
+                            <div class="m-product-name">${p.soldOut ? '<span style="color:var(--danger);font-weight:700;font-size:0.7rem;margin-right:3px;">[품절]</span>' : ''}${esc(p.name)}</div>
                             <div class="m-product-code">${esc(p.code)} · ${esc(p.spec || '')}</div>
                             <div class="m-product-meta">
                                 ${esc(p.majorName || '')} > ${esc(p.minorName || '')} ·
@@ -2331,6 +2336,7 @@ function renderProductList() {
                         <label style="display:flex;align-items:center;gap:5px;font-size:0.78rem;cursor:pointer;">
                             <input type="checkbox" ${selectedProductCodes.has(p.code) ? 'checked' : ''} onchange="toggleProductSelect('${esc(p.code)}', this.checked)"> 견적서 선택
                         </label>
+                        <button class="btn btn-sm" style="background:${p.soldOut ? 'var(--success)' : 'var(--danger)'};color:#fff;font-size:0.68rem;padding:3px 6px;" onclick="toggleSoldOut('${esc(p.code)}')">${p.soldOut ? '판매중' : '품절'}</button>
                         <button class="btn btn-outline btn-sm" onclick="editProduct('${esc(p.code)}')">수정</button>
                         <button class="btn btn-danger btn-sm" onclick="deleteProduct('${esc(p.code)}')">삭제</button>
                     </div>
@@ -2455,6 +2461,19 @@ function deleteProduct(code) {
     products = products.filter(p => p.code !== code);
     saveAll();
     renderProductList();
+}
+
+function toggleSoldOut(code) {
+    const p = products.find(pr => pr.code === code);
+    if (!p) return;
+    p.soldOut = !p.soldOut;
+    saveAll();
+    renderProductList();
+    // Supabase 즉시 반영
+    if (db) {
+        db.from('products').update({ sold_out: !!p.soldOut }).eq('code', code)
+            .then(function(res) { if (res.error) console.warn('품절 상태 동기화 실패:', res.error.message); });
+    }
 }
 
 function roundUp100(n) { return Math.ceil(n / 100) * 100; }
@@ -3768,7 +3787,8 @@ async function uploadToSupabase() {
                 cost: p.cost || 0,
                 sell: p.sell || 0,
                 registered_at: p.registeredAt || new Date().toISOString().split('T')[0],
-                display_name: p.displayName || null
+                display_name: p.displayName || null,
+                sold_out: !!p.soldOut
             }));
 
             const { error } = await db.from('products')
@@ -3894,7 +3914,8 @@ async function downloadFromSupabase() {
             sell: p.sell || 0,
             registeredAt: p.registered_at || '',
             imageUrl: p.image_url || '',
-            displayName: p.display_name || ''
+            displayName: p.display_name || '',
+            soldOut: !!p.sold_out
         }));
         syncLog(`품목 ${products.length}개 다운로드 완료`);
 
@@ -3964,7 +3985,8 @@ function autoSyncToSupabase() {
                 vendor_type: p.vendorType || 'self',
                 cost: p.cost || 0,
                 sell: p.sell || 0,
-                registered_at: p.registeredAt || new Date().toISOString().split('T')[0]
+                registered_at: p.registeredAt || new Date().toISOString().split('T')[0],
+                sold_out: !!p.soldOut
             }));
 
             // 50개씩 배치 upsert
@@ -5418,7 +5440,7 @@ async function autoSyncOnLoad() {
             vendorName: p.vendor_name || '', vendorType: p.vendor_type || 'self',
             cost: p.cost || 0, sell: p.sell || 0,
             registeredAt: p.registered_at || '', imageUrl: p.image_url || '',
-            displayName: p.display_name || ''
+            displayName: p.display_name || '', soldOut: !!p.sold_out
         }));
 
         // 클라우드에 있는 코드 목록
@@ -5440,7 +5462,8 @@ async function autoSyncOnLoad() {
                 vendor_name: p.vendorName || '', vendor_type: p.vendorType || 'self',
                 cost: p.cost || 0, sell: p.sell || 0,
                 registered_at: p.registeredAt || new Date().toISOString().split('T')[0],
-                display_name: p.displayName || null
+                display_name: p.displayName || null,
+                sold_out: !!p.soldOut
             }));
             for (let i = 0; i < batch.length; i += 50) {
                 await db.from('products').upsert(batch.slice(i, i + 50), { onConflict: 'code' });
