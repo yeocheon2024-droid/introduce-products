@@ -4690,12 +4690,16 @@ function saveStabilityKey() {
     const key = document.getElementById('stabilityApiKey').value.trim();
     if (!key) { alert('API 키를 입력해주세요.'); return; }
     localStorage.setItem('stability_api_key', key);
-    alert('Stability AI 키가 저장되었습니다.');
+    // 저장 확인
+    const saved = localStorage.getItem('stability_api_key');
+    alert(saved ? 'Stability AI 키가 저장되었습니다. (sk-...' + saved.slice(-4) + ')' : '저장 실패. 브라우저 설정을 확인해주세요.');
 }
 function initStabilityKey() {
-    const key = localStorage.getItem('stability_api_key') || '';
-    const el = document.getElementById('stabilityApiKey');
-    if (el) el.value = key;
+    setTimeout(function() {
+        const key = localStorage.getItem('stability_api_key') || '';
+        const el = document.getElementById('stabilityApiKey');
+        if (el) el.value = key;
+    }, 100);
 }
 function getStabilityKey() {
     const key = localStorage.getItem('stability_api_key');
