@@ -1113,13 +1113,20 @@
         </div>
     </div>
     <div class="card">
-        <h3>최근 등록 품목</h3>
-        <div class="table-wrap">
-            <table>
-                <thead><tr><th>품목코드</th><th>품목명</th><th>규격</th><th>분류</th><th>과세</th><th>등록일</th></tr></thead>
-                <tbody id="recentProducts"></tbody>
-            </table>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+            <h3 style="margin:0;padding:0;border:0;">신규 품목 타임라인</h3>
+            <div style="display:flex;gap:6px;align-items:center;">
+                <select id="dashRecentDays" onchange="renderDashboard()" style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.78rem;">
+                    <option value="7">최근 7일</option>
+                    <option value="14">최근 14일</option>
+                    <option value="30" selected>최근 30일</option>
+                    <option value="90">최근 90일</option>
+                    <option value="0">전체</option>
+                </select>
+                <span id="dashRecentCount" style="font-size:0.75rem;color:var(--text-muted);"></span>
+            </div>
         </div>
+        <div id="recentTimeline"></div>
     </div>
 </div>
 
@@ -2143,18 +2150,66 @@ function renderDashboard() {
     document.getElementById('statExternal').textContent = extCount.toLocaleString();
     document.getElementById('statVendors').textContent = vendors.filter(v => v.type === 'external').length;
 
-    const recent = [...products].sort((a, b) => (b.registeredAt || '').localeCompare(a.registeredAt || '')).slice(0, 10);
-    const tbody = document.getElementById('recentProducts');
-    tbody.innerHTML = recent.length === 0
-        ? '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:40px;">등록된 품목이 없습니다.<br><span style="font-size:0.8rem;">엑셀 업로드 탭에서 기존 데이터를 업로드하세요.</span></td></tr>'
-        : recent.map(p => `<tr>
-            <td style="font-weight:600;color:var(--accent);">${esc(p.code)}</td>
-            <td>${esc(p.name)}</td>
-            <td style="color:var(--text-secondary);">${esc(p.spec || '')}</td>
-            <td style="color:var(--text-secondary);">${esc(p.majorName || '')} > ${esc(p.minorName || '')}</td>
-            <td><span class="badge ${p.tax === '면세' ? 'badge-notax' : 'badge-tax'}">${esc(p.tax || '과세')}</span></td>
-            <td style="color:var(--text-muted);">${esc(p.registeredAt || '')}</td>
-        </tr>`).join('');
+    // 신규 품목 타임라인
+    const days = parseInt(document.getElementById('dashRecentDays')?.value || '30');
+    let cutoff = '';
+    if (days > 0) {
+        const d = new Date();
+        d.setDate(d.getDate() - days);
+        cutoff = d.toISOString().slice(0, 10);
+    }
+    const recent = [...products]
+        .filter(p => p.registeredAt && (days === 0 || p.registeredAt >= cutoff))
+        .sort((a, b) => (b.registeredAt || '').localeCompare(a.registeredAt || ''));
+
+    const countEl = document.getElementById('dashRecentCount');
+    if (countEl) countEl.textContent = recent.length + '개 품목';
+
+    const timeline = document.getElementById('recentTimeline');
+    if (!timeline) return;
+
+    if (recent.length === 0) {
+        timeline.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px;font-size:0.85rem;">해당 기간에 등록된 품목이 없습니다.</div>';
+        return;
+    }
+
+    // 날짜별 그룹
+    const groups = {};
+    recent.forEach(p => {
+        const date = p.registeredAt || '날짜없음';
+        if (!groups[date]) groups[date] = [];
+        groups[date].push(p);
+    });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+
+    timeline.innerHTML = Object.entries(groups).map(([date, items]) => {
+        let label = date;
+        if (date === today) label = '오늘 (' + date + ')';
+        else if (date === yesterday) label = '어제 (' + date + ')';
+
+        return '<div style="margin-bottom:16px;">'
+            + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+            + '<div style="width:10px;height:10px;border-radius:50%;background:var(--accent);flex-shrink:0;"></div>'
+            + '<div style="font-size:0.85rem;font-weight:700;color:var(--accent);">' + esc(label) + '</div>'
+            + '<div style="font-size:0.72rem;color:var(--text-muted);background:var(--bg-warm);padding:2px 8px;border-radius:10px;">' + items.length + '개</div>'
+            + '<div style="flex:1;height:1px;background:var(--border-light);"></div>'
+            + '</div>'
+            + '<div style="margin-left:18px;display:flex;flex-direction:column;gap:4px;">'
+            + items.map(p => {
+                const imgUrl = getProductImageUrl(p.code);
+                return '<div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:var(--bg-card);border:1px solid var(--border-light);border-radius:6px;cursor:pointer;" onclick="switchTab(\'products\');document.getElementById(\'productSearch\').value=\'' + esc(p.code) + '\';debounceSearch();">'
+                    + '<img src="' + esc(imgUrl) + '" style="width:32px;height:32px;border-radius:4px;object-fit:cover;background:#eee;border:1px solid var(--border-light);" onerror="this.style.display=\'none\'">'
+                    + '<div style="flex:1;min-width:0;">'
+                    + '<div style="font-size:0.82rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(p.name) + '</div>'
+                    + '<div style="font-size:0.7rem;color:var(--text-muted);">' + esc(p.code) + ' · ' + esc(p.spec || '') + ' · ' + esc(p.vendorName || '') + '</div>'
+                    + '</div>'
+                    + '<span class="badge ' + (p.tax === '면세' ? 'badge-notax' : 'badge-tax') + '" style="font-size:0.65rem;">' + esc(p.tax || '과세') + '</span>'
+                    + '</div>';
+            }).join('')
+            + '</div></div>';
+    }).join('');
 }
 
 // ============================================================
