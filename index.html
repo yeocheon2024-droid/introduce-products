@@ -4665,10 +4665,8 @@ async function imgModalGetBlob() {
     } else {
         blob = await fetch(url).then(r => r.blob());
     }
-    // 10MB 초과 시 Canvas로 리사이즈
-    if (blob.size > 8 * 1024 * 1024) {
-        blob = await resizeImageBlob(blob, 2048);
-    }
+    // 항상 Canvas를 거쳐 순수 PNG로 변환 (webp/비표준 포맷 방지 + 10MB 제한)
+    blob = await resizeImageBlob(blob, 2048);
     return blob;
 }
 
