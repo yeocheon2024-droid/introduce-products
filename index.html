@@ -571,6 +571,75 @@
             background: var(--accent-light);
             color: var(--accent);
         }
+        /* 이미지 관리 통합 그리드 */
+        .img-mgr-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+            gap: 10px;
+        }
+        .img-mgr-card {
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-light);
+            overflow: hidden;
+            background: var(--bg-card);
+            cursor: pointer;
+            transition: var(--transition);
+            position: relative;
+        }
+        .img-mgr-card:hover { border-color: var(--accent); box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+        .img-mgr-card.dragover { border-color: var(--accent); border-style: dashed; background: var(--accent-light); }
+        .img-mgr-card .img-mgr-thumb {
+            width: 100%;
+            height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            overflow: hidden;
+        }
+        .img-mgr-card .img-mgr-thumb img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        .img-mgr-card .img-mgr-noimg {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+        .img-mgr-card .img-mgr-noimg span { font-size: 1.5rem; }
+        .img-mgr-card .img-mgr-info {
+            padding: 7px 8px;
+            border-top: 1px solid var(--border-light);
+        }
+        .img-mgr-card .img-mgr-name {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .img-mgr-card .img-mgr-code {
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            margin-top: 1px;
+        }
+        .img-mgr-card .img-mgr-badge {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            font-size: 0.6rem;
+            font-weight: 700;
+            padding: 1px 5px;
+            border-radius: 10px;
+            background: var(--danger);
+            color: #fff;
+        }
+        /* 레거시 호환 */
         .image-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -886,6 +955,8 @@
             /* 이미지 관리 */
             .image-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
             .image-upload-zone { padding: 24px 12px; }
+            .img-mgr-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+            .img-mgr-card .img-mgr-thumb { height: 100px; }
 
             /* 마진율 그리드 */
             .margin-grid { gap: 8px; }
@@ -947,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.10</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.11</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1278,21 +1349,31 @@
     </div>
 </div>
 
-<!-- 이미지 관리 -->
+<!-- 이미지 관리 (통합 뷰) -->
 <div class="tab-content" id="tab-images">
-    <div class="card">
-        <h3>이미지 일괄 업로드</h3>
-        <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:16px;">
-            품목 이미지 파일을 선택하면 Supabase Storage에 업로드됩니다.<br>
-            파일명이 품목코드와 동일해야 자동 매칭됩니다. (예: WICAN001.png, 101000101.jpg)
-        </p>
-        <div class="image-upload-zone" id="imageUploadZone" onclick="document.getElementById('imageFileInput').click()">
-            <div style="font-size:2rem;margin-bottom:8px;">&#128247;</div>
-            <div style="font-size:0.9rem;font-weight:500;">클릭하거나 파일을 드래그하여 업로드</div>
-            <div style="font-size:0.78rem;margin-top:4px;">PNG, JPG, WEBP 지원 (여러 파일 선택 가능)</div>
-            <input type="file" id="imageFileInput" multiple accept="image/*" style="display:none" onchange="handleImageFiles(this.files)">
+    <!-- 상단 툴바 -->
+    <div class="card" style="margin-bottom:12px;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <input type="text" id="imgSearchInput" placeholder="품목명, 코드, 매입처 검색..." oninput="imgFilterChanged()"
+                style="flex:2;min-width:200px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;font-family:inherit;">
+            <select id="imgCategoryFilter" onchange="imgFilterChanged()" style="padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.82rem;">
+                <option value="">분류 전체</option>
+            </select>
+            <select id="imgStatusFilter" onchange="imgFilterChanged()" style="padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.82rem;">
+                <option value="">이미지 전체</option>
+                <option value="no">이미지 없음</option>
+                <option value="yes">이미지 있음</option>
+            </select>
+            <button class="btn btn-outline" onclick="document.getElementById('imgBulkFileInput').click()" title="여러 이미지 일괄 업로드 (파일명=품목코드)">
+                일괄 업로드
+            </button>
+            <input type="file" id="imgBulkFileInput" multiple accept="image/*" style="display:none" onchange="handleImageFiles(this.files)">
+            <div style="display:flex;align-items:center;gap:4px;margin-left:auto;">
+                <span id="imgResultCount" style="font-size:0.78rem;color:var(--text-muted);"></span>
+            </div>
         </div>
-        <div id="imageUploadProgress" style="display:none;">
+        <!-- 업로드 진행 바 -->
+        <div id="imageUploadProgress" style="display:none;margin-top:10px;">
             <div style="display:flex;justify-content:space-between;font-size:0.82rem;color:var(--text-secondary);margin-bottom:4px;">
                 <span id="imageUploadStatus">업로드 중...</span>
                 <span id="imageUploadCount">0/0</span>
@@ -1301,52 +1382,57 @@
                 <div class="upload-progress-bar" id="imageProgressBar" style="width:0%"></div>
             </div>
         </div>
-        <div class="image-grid" id="imagePreviewGrid"></div>
+        <!-- 네이버 API 설정 (접힘) -->
+        <details style="margin-top:10px;">
+            <summary style="font-size:0.78rem;color:var(--text-muted);cursor:pointer;user-select:none;">네이버 쇼핑 API 설정</summary>
+            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+                <input id="naverClientId" type="text" placeholder="Naver Client ID" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.78rem;flex:1;min-width:140px;">
+                <input id="naverClientSecret" type="password" placeholder="Naver Client Secret" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.78rem;flex:1;min-width:140px;">
+                <button class="btn btn-outline btn-sm" onclick="saveNaverKeys()">저장</button>
+            </div>
+        </details>
     </div>
-    <div class="card">
-        <h3>🔍 네이버 쇼핑 이미지 자동 검색</h3>
-        <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:14px;">이미지가 없는 품목을 네이버 쇼핑에서 검색해서 자동으로 업로드합니다.</p>
-        <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
-            <input id="naverClientId" type="text" placeholder="Naver Client ID" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.82rem;flex:1;min-width:160px;">
-            <input id="naverClientSecret" type="password" placeholder="Naver Client Secret" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.82rem;flex:1;min-width:160px;">
-            <button class="btn btn-outline" onclick="saveNaverKeys()">저장</button>
-        </div>
-        <button class="btn btn-primary" onclick="loadNoImageProducts()" style="margin-bottom:14px;">이미지 없는 품목 불러오기</button>
-        <div id="noImageProductList"></div>
+
+    <!-- 품목 이미지 그리드 -->
+    <div class="img-mgr-grid" id="imgMgrGrid">
+        <p style="color:var(--text-muted);font-size:0.82rem;grid-column:1/-1;text-align:center;padding:40px;">불러오는 중...</p>
     </div>
-    <div class="card" id="naverSavedSection" style="display:none;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
-            <h3 style="margin:0;">🔗 네이버 이미지 저장 목록</h3>
-            <button class="btn btn-outline" onclick="downloadNaverImagesZip()" id="naverZipBtn">&#128230; 전체 ZIP 다운로드</button>
-        </div>
-        <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:12px;">네이버 쇼핑에서 가져온 이미지입니다. (URL 방식 저장)</p>
-        <div class="image-grid" id="naverSavedGrid"></div>
-    </div>
-    <div class="card">
-        <h3>업로드된 이미지 목록</h3>
-        <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;">
-            <input type="text" id="imageSearchInput" placeholder="품목코드로 검색..." oninput="searchUploadedImages()" style="flex:1;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;font-family:inherit;">
-            <button class="btn btn-outline" onclick="loadUploadedImages()">새로고침</button>
-            <button class="btn btn-outline" onclick="downloadAllImages()" id="uploadedZipBtn">&#128230; ZIP 다운로드</button>
-        </div>
-        <div class="image-grid" id="uploadedImageGrid">
-            <p style="color:var(--text-muted);font-size:0.82rem;grid-column:1/-1;text-align:center;padding:20px;">탭을 열면 자동으로 불러옵니다.</p>
-        </div>
-    </div>
+
+    <!-- 페이지네이션 -->
+    <div style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:16px;" id="imgPagination"></div>
 </div>
 
-<!-- 네이버 이미지 검색 모달 -->
-<div class="modal-overlay" id="naverImageModal" onclick="if(event.target===this)closeModal('naverImageModal')">
-    <div class="modal" style="max-width:700px;width:96%;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+<!-- 이미지 변경 모달 -->
+<div class="modal-overlay" id="imgChangeModal" onclick="if(event.target===this)closeModal('imgChangeModal')">
+    <div class="modal" style="max-width:560px;width:96%;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">
             <div>
-                <div style="font-weight:700;font-size:1.05rem;">네이버 쇼핑 이미지 검색</div>
-                <div id="naverModalProductName" style="font-size:0.82rem;color:var(--text-secondary);margin-top:2px;"></div>
+                <div style="font-weight:700;font-size:1.05rem;" id="imgModalTitle">이미지 변경</div>
+                <div style="font-size:0.82rem;color:var(--text-secondary);margin-top:2px;" id="imgModalSub"></div>
             </div>
-            <button class="btn btn-outline" onclick="closeModal('naverImageModal')">닫기</button>
+            <button class="btn btn-outline btn-sm" onclick="closeModal('imgChangeModal')">닫기</button>
         </div>
-        <div id="naverImageResults" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;max-height:420px;overflow-y:auto;"></div>
-        <div id="naverImageStatus" style="text-align:center;padding:20px;color:var(--text-muted);font-size:0.85rem;"></div>
+        <!-- 현재 이미지 미리보기 -->
+        <div style="text-align:center;margin-bottom:14px;background:var(--bg-warm);border-radius:var(--radius);padding:16px;">
+            <img id="imgModalPreview" src="" style="max-width:200px;max-height:200px;object-fit:contain;border-radius:6px;" onerror="this.style.display='none'">
+            <div id="imgModalNoImg" style="color:var(--text-muted);font-size:0.85rem;padding:20px;display:none;">이미지 없음</div>
+        </div>
+        <!-- 파일 업로드 -->
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+            <button class="btn btn-primary" style="flex:1;" onclick="document.getElementById('imgModalFileInput').click()">파일에서 선택</button>
+            <button class="btn btn-outline" style="flex:1;" onclick="imgModalNaverSearch()">네이버 검색</button>
+            <input type="file" id="imgModalFileInput" accept="image/*" style="display:none" onchange="imgModalUploadFile(this.files[0])">
+        </div>
+        <div id="imgModalUploadStatus" style="font-size:0.8rem;color:var(--text-muted);text-align:center;min-height:20px;"></div>
+        <!-- 네이버 검색 결과 -->
+        <div id="imgModalNaverResults" style="display:none;margin-top:10px;">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;max-height:300px;overflow-y:auto;" id="imgModalNaverGrid"></div>
+            <div id="imgModalNaverStatus" style="text-align:center;padding:10px;color:var(--text-muted);font-size:0.82rem;"></div>
+        </div>
+        <!-- 삭제 버튼 -->
+        <div style="text-align:center;margin-top:10px;">
+            <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:transparent;" onclick="imgModalDelete()">이미지 삭제</button>
+        </div>
     </div>
 </div>
 
@@ -2022,7 +2108,7 @@ function switchTab(tabId) {
     if (tabId === 'categories') renderCategoryTree();
     if (tabId === 'margins') { renderMargins(); renderNoSellProducts(); }
     if (tabId === 'quote') { loadApiKey(); populateQuoteVendor(); }
-    if (tabId === 'images') { initImageUploadZone(); loadUploadedImages(); initNaverKeys(); }
+    if (tabId === 'images') { imgInitCategoryFilter(); loadUploadedImages(); initNaverKeys(); }
     if (tabId === 'export') { populateExportVendor(); }
     if (tabId === 'settings') { initSupabase(); }
     if (tabId === 'priceCompare') { initPriceCompare(); }
@@ -4109,18 +4195,6 @@ async function handleImageFiles(files) {
         return;
     }
 
-    // 미리보기 그리드 표시
-    const grid = document.getElementById('imagePreviewGrid');
-    grid.innerHTML = imageFiles.map((f, i) => {
-        const code = f.name.replace(/\.[^.]+$/, '');
-        const matched = products.find(p => p.code === code);
-        return '<div class="image-grid-item" id="imgItem' + i + '">' +
-            '<img src="' + URL.createObjectURL(f) + '">' +
-            '<div class="image-label" title="' + esc(f.name) + '">' + esc(code) + '</div>' +
-            '<div class="image-status" style="color:' + (matched ? 'var(--success)' : 'var(--text-muted)') + ';">' +
-            (matched ? esc(matched.name) : '매칭 품목 없음') + '</div></div>';
-    }).join('');
-
     // 업로드 진행
     const progressDiv = document.getElementById('imageUploadProgress');
     const statusEl = document.getElementById('imageUploadStatus');
@@ -4141,12 +4215,8 @@ async function handleImageFiles(files) {
         try {
             await uploadImageToStorage(code, f);
             success++;
-            const item = document.getElementById('imgItem' + i);
-            if (item) item.style.borderColor = 'var(--success)';
         } catch (err) {
             fail++;
-            const item = document.getElementById('imgItem' + i);
-            if (item) item.style.borderColor = 'var(--danger)';
             console.warn('이미지 업로드 실패:', code, err.message);
         }
     }
@@ -4155,47 +4225,25 @@ async function handleImageFiles(files) {
     // 캐시 갱신
     imageCacheBuster = Date.now();
     // 파일 입력 초기화
-    document.getElementById('imageFileInput').value = '';
+    var fi = document.getElementById('imageFileInput') || document.getElementById('imgBulkFileInput');
+    if (fi) fi.value = '';
     // 목록 갱신
     loadUploadedImages();
 }
 
 // 업로드된 이미지 목록 불러오기
 async function loadUploadedImages() {
-    const grid = document.getElementById('uploadedImageGrid');
-    grid.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem;grid-column:1/-1;text-align:center;padding:20px;">불러오는 중...</p>';
-
     try {
         const resp = await fetch(R2_WORKER_URL + '/list');
         const result = await resp.json();
         uploadedImageCache = (result.files || []).map(f => ({ name: f.key, size: f.size }));
-
-        renderUploadedImages(uploadedImageCache);
-        renderNaverSavedImages();
     } catch (err) {
-        grid.innerHTML = '<p style="color:var(--danger);font-size:0.82rem;grid-column:1/-1;text-align:center;padding:20px;">목록 불러오기 실패: ' + esc(err.message) + '</p>';
+        console.warn('이미지 목록 불러오기 실패:', err);
     }
+    imgRenderGrid();
 }
 
-function renderNaverSavedImages() {
-    const naverProducts = products.filter(p => p.imageUrl);
-    let el = document.getElementById('naverSavedGrid');
-    let section = document.getElementById('naverSavedSection');
-    if (!section) return;
-    if (naverProducts.length === 0) { section.style.display = 'none'; return; }
-    section.style.display = '';
-    el.innerHTML = naverProducts.map(p => {
-        return '<div class="image-grid-item">' +
-            '<img src="' + esc(p.imageUrl) + '" alt="' + esc(p.title || '네이버 상품') + '" loading="lazy" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22/>\'">' +
-            '<div class="image-label" title="' + esc(p.code) + '">' + esc(p.code) + '</div>' +
-            '<div class="image-status" style="color:var(--success);font-size:0.68rem;">' + esc(p.name) + '</div>' +
-            '<div style="display:flex;gap:4px;margin-top:4px;">' +
-            '<button onclick="downloadNaverImage(\'' + esc(p.code) + '\',\'' + encodeURIComponent(p.imageUrl) + '\')" style="flex:1;padding:3px 0;font-size:0.68rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);cursor:pointer;color:var(--text-secondary);">다운로드</button>' +
-            '<button onclick="removeNaverImage(\'' + esc(p.code) + '\')" style="flex:1;padding:3px 0;font-size:0.68rem;border:1px solid var(--danger);border-radius:4px;background:var(--bg-card);cursor:pointer;color:var(--danger);">삭제</button>' +
-            '</div>' +
-            '</div>';
-    }).join('');
-}
+function renderNaverSavedImages() { /* 통합 뷰로 이관 */ }
 
 async function downloadNaverImage(code, encodedUrl) {
     const imageUrl = decodeURIComponent(encodedUrl);
@@ -4268,29 +4316,7 @@ function removeNaverImage(code) {
     }
 }
 
-function renderUploadedImages(list) {
-    const grid = document.getElementById('uploadedImageGrid');
-    if (list.length === 0) {
-        grid.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem;grid-column:1/-1;text-align:center;padding:20px;">업로드된 이미지가 없습니다.</p>';
-        return;
-    }
-
-    grid.innerHTML = list.map(f => {
-        const code = f.name.replace(/\.[^.]+$/, '');
-        const url = getProductImageUrl(code);
-        const matched = products.find(p => p.code === code);
-        return '<div class="image-grid-item">' +
-            '<img src="' + url + '" alt="' + esc((matched ? matched.name : code) || '품목 이미지') + '" loading="lazy" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22/>\'">' +
-            '<div class="image-label" title="' + esc(code) + '">' + esc(code) + '</div>' +
-            '<div class="image-status" style="color:' + (matched ? 'var(--success)' : 'var(--text-muted)') + ';font-size:0.68rem;">' +
-            (matched ? esc(matched.name) : '매칭 없음') + '</div>' +
-            '<div style="display:flex;gap:4px;margin-top:4px;">' +
-            '<button onclick="downloadImage(\'' + url + '\',\'' + esc(f.name) + '\')" style="flex:1;padding:3px 0;font-size:0.68rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);cursor:pointer;color:var(--text-secondary);">다운로드</button>' +
-            '<button onclick="deleteUploadedImage(\'' + esc(f.name) + '\')" style="flex:1;padding:3px 0;font-size:0.68rem;border:1px solid var(--danger);border-radius:4px;background:var(--bg-card);cursor:pointer;color:var(--danger);">삭제</button>' +
-            '</div>' +
-            '</div>';
-    }).join('');
-}
+function renderUploadedImages(list) { /* 통합 뷰로 이관 */ }
 
 async function deleteUploadedImage(filename) {
     if (!confirm(filename + ' 을 삭제할까요?')) return;
@@ -4298,7 +4324,289 @@ async function deleteUploadedImage(filename) {
     const { error } = await db.storage.from(IMAGE_BUCKET).remove([filename]);
     if (error) { alert('삭제 실패: ' + error.message); return; }
     uploadedImageCache = uploadedImageCache.filter(f => f.name !== filename);
-    renderUploadedImages(uploadedImageCache);
+}
+
+// ============================================================
+// 이미지 관리 통합 뷰
+// ============================================================
+let imgPage = 1;
+const IMG_PER_PAGE = 24;
+let imgModalCode = '';
+
+function imgGetUploaded() {
+    return new Set(uploadedImageCache.map(f => f.name.replace(/\.(png|jpg|jpeg|webp)$/i, '')));
+}
+
+function imgHasImage(p) {
+    return imgGetUploaded().has(p.code) || !!p.imageUrl;
+}
+
+function imgGetFiltered() {
+    const q = (document.getElementById('imgSearchInput')?.value || '').trim().toLowerCase();
+    const cat = document.getElementById('imgCategoryFilter')?.value || '';
+    const status = document.getElementById('imgStatusFilter')?.value || '';
+    const uploaded = imgGetUploaded();
+
+    return products.filter(p => {
+        if (q) {
+            const match = (p.name || '').toLowerCase().includes(q)
+                || (p.code || '').toLowerCase().includes(q)
+                || (p.vendorName || '').toLowerCase().includes(q)
+                || (p.spec || '').toLowerCase().includes(q);
+            if (!match) return false;
+        }
+        if (cat && p.majorName !== cat) return false;
+        if (status === 'no' && (uploaded.has(p.code) || p.imageUrl)) return false;
+        if (status === 'yes' && !uploaded.has(p.code) && !p.imageUrl) return false;
+        return true;
+    });
+}
+
+function imgFilterChanged() {
+    imgPage = 1;
+    imgRenderGrid();
+}
+
+function imgRenderGrid() {
+    const grid = document.getElementById('imgMgrGrid');
+    const paginationEl = document.getElementById('imgPagination');
+    if (!grid) return;
+
+    const filtered = imgGetFiltered();
+    const totalPages = Math.max(1, Math.ceil(filtered.length / IMG_PER_PAGE));
+    if (imgPage > totalPages) imgPage = totalPages;
+    const start = (imgPage - 1) * IMG_PER_PAGE;
+    const pageItems = filtered.slice(start, start + IMG_PER_PAGE);
+    const uploaded = imgGetUploaded();
+
+    // 결과 수 표시
+    const countEl = document.getElementById('imgResultCount');
+    if (countEl) {
+        const noImgCount = products.filter(p => !uploaded.has(p.code) && !p.imageUrl).length;
+        countEl.textContent = filtered.length + '개 품목 · 이미지 없음 ' + noImgCount + '개';
+    }
+
+    if (pageItems.length === 0) {
+        grid.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;grid-column:1/-1;text-align:center;padding:40px;">검색 결과가 없습니다.</p>';
+        paginationEl.innerHTML = '';
+        return;
+    }
+
+    grid.innerHTML = pageItems.map(p => {
+        const hasImg = uploaded.has(p.code) || !!p.imageUrl;
+        let imgHtml;
+        if (hasImg) {
+            let src;
+            if (uploaded.has(p.code)) {
+                src = getProductImageUrl(p.code);
+            } else if (p.imageUrl) {
+                const isExt = p.imageUrl.startsWith('http') && !p.imageUrl.includes('supabase');
+                src = isExt ? 'https://wsrv.nl/?url=' + encodeURIComponent(p.imageUrl) + '&w=160&h=160&fit=contain&output=webp' : p.imageUrl;
+            }
+            imgHtml = '<img src="' + esc(src) + '" alt="' + esc(p.name) + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=img-mgr-noimg><span>&#128247;</span>로드실패</div>\'">';
+        } else {
+            imgHtml = '<div class="img-mgr-noimg"><span>&#128247;</span>이미지 없음</div>';
+        }
+        return '<div class="img-mgr-card" data-code="' + esc(p.code) + '" onclick="imgOpenModal(\'' + esc(p.code) + '\')" ondragover="event.preventDefault();this.classList.add(\'dragover\')" ondragleave="this.classList.remove(\'dragover\')" ondrop="imgDropOnCard(event,\'' + esc(p.code) + '\')">'
+            + (!hasImg ? '<div class="img-mgr-badge">없음</div>' : '')
+            + '<div class="img-mgr-thumb">' + imgHtml + '</div>'
+            + '<div class="img-mgr-info">'
+            + '<div class="img-mgr-name" title="' + esc(p.name) + '">' + esc(p.name) + '</div>'
+            + '<div class="img-mgr-code">' + esc(p.code) + (p.spec ? ' · ' + esc(p.spec) : '') + '</div>'
+            + '</div></div>';
+    }).join('');
+
+    // 페이지네이션
+    if (totalPages <= 1) { paginationEl.innerHTML = ''; return; }
+    let html = '<button class="btn btn-outline btn-sm" onclick="imgGoPage(' + (imgPage - 1) + ')" ' + (imgPage <= 1 ? 'disabled' : '') + '>&lt;</button>';
+    const maxShow = 5;
+    let startP = Math.max(1, imgPage - Math.floor(maxShow / 2));
+    let endP = Math.min(totalPages, startP + maxShow - 1);
+    if (endP - startP < maxShow - 1) startP = Math.max(1, endP - maxShow + 1);
+    if (startP > 1) html += '<span style="font-size:0.78rem;color:var(--text-muted);">1 ...</span>';
+    for (let i = startP; i <= endP; i++) {
+        html += '<button class="btn btn-sm" style="' + (i === imgPage ? 'background:var(--accent);color:#fff;' : 'background:var(--bg-card);') + '" onclick="imgGoPage(' + i + ')">' + i + '</button>';
+    }
+    if (endP < totalPages) html += '<span style="font-size:0.78rem;color:var(--text-muted);">... ' + totalPages + '</span>';
+    html += '<button class="btn btn-outline btn-sm" onclick="imgGoPage(' + (imgPage + 1) + ')" ' + (imgPage >= totalPages ? 'disabled' : '') + '>&gt;</button>';
+    paginationEl.innerHTML = html;
+}
+
+function imgGoPage(p) {
+    imgPage = p;
+    imgRenderGrid();
+    document.getElementById('tab-images')?.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// 카드에 드래그앤드롭
+async function imgDropOnCard(e, code) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('dragover');
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    if (!file.type.startsWith('image/')) { alert('이미지 파일만 가능합니다.'); return; }
+    try {
+        await uploadImageToStorage(code, file);
+        // R2 목록 갱신
+        if (!uploadedImageCache.find(f => f.name === code + '.png')) {
+            uploadedImageCache.push({ name: code + '.png', size: file.size });
+        }
+        imgRenderGrid();
+        alert(code + ' 이미지 업로드 완료');
+    } catch (err) {
+        alert('업로드 실패: ' + err.message);
+    }
+}
+
+// 이미지 변경 모달
+function imgOpenModal(code) {
+    imgModalCode = code;
+    const p = products.find(pr => pr.code === code);
+    if (!p) return;
+
+    document.getElementById('imgModalTitle').textContent = p.name;
+    document.getElementById('imgModalSub').textContent = p.code + (p.spec ? ' · ' + p.spec : '') + (p.vendorName ? ' · ' + p.vendorName : '');
+    document.getElementById('imgModalUploadStatus').textContent = '';
+    document.getElementById('imgModalNaverResults').style.display = 'none';
+
+    const preview = document.getElementById('imgModalPreview');
+    const noImg = document.getElementById('imgModalNoImg');
+    const uploaded = imgGetUploaded();
+    if (uploaded.has(code)) {
+        preview.src = getProductImageUrl(code) + '?t=' + Date.now();
+        preview.style.display = '';
+        noImg.style.display = 'none';
+    } else if (p.imageUrl) {
+        const isExt = p.imageUrl.startsWith('http') && !p.imageUrl.includes('supabase');
+        preview.src = isExt ? 'https://wsrv.nl/?url=' + encodeURIComponent(p.imageUrl) + '&output=webp' : p.imageUrl;
+        preview.style.display = '';
+        noImg.style.display = 'none';
+    } else {
+        preview.style.display = 'none';
+        noImg.style.display = '';
+    }
+
+    openModal('imgChangeModal');
+}
+
+async function imgModalUploadFile(file) {
+    if (!file) return;
+    const statusEl = document.getElementById('imgModalUploadStatus');
+    statusEl.textContent = '업로드 중...';
+    statusEl.style.color = 'var(--text-muted)';
+    try {
+        await uploadImageToStorage(imgModalCode, file);
+        if (!uploadedImageCache.find(f => f.name === imgModalCode + '.png')) {
+            uploadedImageCache.push({ name: imgModalCode + '.png', size: file.size });
+        }
+        statusEl.textContent = '업로드 완료!';
+        statusEl.style.color = 'var(--success)';
+        // 미리보기 갱신
+        const preview = document.getElementById('imgModalPreview');
+        preview.src = URL.createObjectURL(file);
+        preview.style.display = '';
+        document.getElementById('imgModalNoImg').style.display = 'none';
+        imgRenderGrid();
+        document.getElementById('imgModalFileInput').value = '';
+    } catch(err) {
+        statusEl.textContent = '실패: ' + err.message;
+        statusEl.style.color = 'var(--danger)';
+    }
+}
+
+async function imgModalNaverSearch() {
+    const clientId = localStorage.getItem('naver_client_id');
+    const clientSecret = localStorage.getItem('naver_client_secret');
+    if (!clientId || !clientSecret) { alert('네이버 API 키를 먼저 설정해주세요. (상단 툴바의 "네이버 쇼핑 API 설정")'); return; }
+
+    const p = products.find(pr => pr.code === imgModalCode);
+    if (!p) return;
+
+    const resultsDiv = document.getElementById('imgModalNaverResults');
+    const gridDiv = document.getElementById('imgModalNaverGrid');
+    const statusDiv = document.getElementById('imgModalNaverStatus');
+    resultsDiv.style.display = '';
+    gridDiv.innerHTML = '';
+    statusDiv.textContent = '검색 중...';
+
+    try {
+        const apiUrl = 'https://openapi.naver.com/v1/search/shop.json?query=' + encodeURIComponent(p.name) + '&display=8&sort=sim';
+        const data = await fetchNaverAPI(apiUrl, clientId, clientSecret);
+        const items = data.items || [];
+        if (items.length === 0) { statusDiv.textContent = '검색 결과가 없습니다.'; return; }
+        statusDiv.textContent = '';
+        gridDiv.innerHTML = items.map(item => {
+            const title = item.title.replace(/<[^>]+>/g, '');
+            return '<div style="cursor:pointer;border:2px solid transparent;border-radius:6px;overflow:hidden;transition:border 0.15s;" '
+                + 'onclick="imgModalSelectNaver(\'' + encodeURIComponent(item.image) + '\')" '
+                + 'onmouseover="this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.borderColor=\'transparent\'">'
+                + '<img src="' + esc(item.image) + '" style="width:100%;aspect-ratio:1;object-fit:cover;" onerror="this.parentElement.style.display=\'none\'">'
+                + '<div style="padding:3px 5px;font-size:0.65rem;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(title) + '</div>'
+                + '</div>';
+        }).join('');
+    } catch(e) {
+        statusDiv.textContent = '오류: ' + e.message;
+    }
+}
+
+async function imgModalSelectNaver(encodedUrl) {
+    const imageUrl = decodeURIComponent(encodedUrl);
+    const statusEl = document.getElementById('imgModalUploadStatus');
+    statusEl.textContent = '저장 중...';
+    statusEl.style.color = 'var(--text-muted)';
+
+    try {
+        const idx = products.findIndex(p => p.code === imgModalCode);
+        if (idx < 0) throw new Error('품목 없음');
+        products[idx].imageUrl = imageUrl;
+        localStorage.setItem('erp_products', JSON.stringify(products));
+        if (db) await db.from('products').update({ image_url: imageUrl }).eq('code', imgModalCode);
+
+        statusEl.textContent = '저장 완료!';
+        statusEl.style.color = 'var(--success)';
+        const preview = document.getElementById('imgModalPreview');
+        preview.src = 'https://wsrv.nl/?url=' + encodeURIComponent(imageUrl) + '&output=webp';
+        preview.style.display = '';
+        document.getElementById('imgModalNoImg').style.display = 'none';
+        document.getElementById('imgModalNaverResults').style.display = 'none';
+        imgRenderGrid();
+    } catch(e) {
+        statusEl.textContent = '실패: ' + e.message;
+        statusEl.style.color = 'var(--danger)';
+    }
+}
+
+async function imgModalDelete() {
+    if (!confirm(imgModalCode + ' 이미지를 삭제할까요?')) return;
+    const statusEl = document.getElementById('imgModalUploadStatus');
+    try {
+        // R2에서 삭제
+        await deleteImageFromStorage(imgModalCode);
+        uploadedImageCache = uploadedImageCache.filter(f => !f.name.startsWith(imgModalCode + '.'));
+        // imageUrl도 제거
+        const idx = products.findIndex(p => p.code === imgModalCode);
+        if (idx >= 0 && products[idx].imageUrl) {
+            delete products[idx].imageUrl;
+            localStorage.setItem('erp_products', JSON.stringify(products));
+            if (db) db.from('products').update({ image_url: null }).eq('code', imgModalCode);
+        }
+        statusEl.textContent = '삭제 완료';
+        statusEl.style.color = 'var(--success)';
+        document.getElementById('imgModalPreview').style.display = 'none';
+        document.getElementById('imgModalNoImg').style.display = '';
+        imgRenderGrid();
+    } catch(e) {
+        statusEl.textContent = '삭제 실패: ' + e.message;
+        statusEl.style.color = 'var(--danger)';
+    }
+}
+
+function imgInitCategoryFilter() {
+    const sel = document.getElementById('imgCategoryFilter');
+    if (!sel) return;
+    const cats = [...new Set(products.map(p => p.majorName).filter(Boolean))].sort();
+    sel.innerHTML = '<option value="">분류 전체</option>' + cats.map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('');
 }
 
 async function downloadImage(url, filename) {
@@ -4389,20 +4697,7 @@ function toggleShowAll() {
     renderProductList();
 }
 
-function searchUploadedImages() {
-    const q = (document.getElementById('imageSearchInput').value || '').trim().toLowerCase();
-    if (!q) {
-        renderUploadedImages(uploadedImageCache);
-        return;
-    }
-    const filtered = uploadedImageCache.filter(f => {
-        if (f.name.toLowerCase().includes(q)) return true;
-        const code = f.name.replace(/\.[^.]+$/, '');
-        const p = products.find(pr => pr.code === code);
-        return p && (p.name || '').toLowerCase().includes(q);
-    });
-    renderUploadedImages(filtered);
-}
+function searchUploadedImages() { imgFilterChanged(); }
 
 // ============================================================
 // 가격 비교
