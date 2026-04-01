@@ -4656,20 +4656,41 @@ async function imgModalGetBlob() {
         return null;
     }
     let url = preview.src;
-    // blob URL이면 직접 fetch
+    let blob;
     if (url.startsWith('blob:')) {
-        const resp = await fetch(url);
-        return await resp.blob();
-    }
-    // 외부 URL → 프록시 경유
-    if (!url.startsWith('data:')) {
+        blob = await fetch(url).then(r => r.blob());
+    } else if (!url.startsWith('data:')) {
         const proxyUrl = 'https://wsrv.nl/?url=' + encodeURIComponent(url) + '&output=png';
-        const resp = await fetch(proxyUrl);
-        return await resp.blob();
+        blob = await fetch(proxyUrl).then(r => r.blob());
+    } else {
+        blob = await fetch(url).then(r => r.blob());
     }
-    // data URL
-    const resp = await fetch(url);
-    return await resp.blob();
+    // 10MB 초과 시 Canvas로 리사이즈
+    if (blob.size > 8 * 1024 * 1024) {
+        blob = await resizeImageBlob(blob, 2048);
+    }
+    return blob;
+}
+
+// 이미지를 최대 maxPx 크기로 리사이즈
+function resizeImageBlob(blob, maxPx) {
+    return new Promise(function(resolve) {
+        var img = new Image();
+        img.onload = function() {
+            var w = img.width, h = img.height;
+            if (w > maxPx || h > maxPx) {
+                var ratio = Math.min(maxPx / w, maxPx / h);
+                w = Math.round(w * ratio);
+                h = Math.round(h * ratio);
+            }
+            var canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            canvas.toBlob(function(b) { resolve(b); }, 'image/png');
+        };
+        img.src = URL.createObjectURL(blob);
+    });
 }
 
 // AI 결과 이미지를 R2에 저장하고 모달/그리드 갱신
