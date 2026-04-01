@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.11</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.12</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1382,13 +1382,19 @@
                 <div class="upload-progress-bar" id="imageProgressBar" style="width:0%"></div>
             </div>
         </div>
-        <!-- 네이버 API 설정 (접힘) -->
+        <!-- API 설정 (접힘) -->
         <details style="margin-top:10px;">
-            <summary style="font-size:0.78rem;color:var(--text-muted);cursor:pointer;user-select:none;">네이버 쇼핑 API 설정</summary>
-            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+            <summary style="font-size:0.78rem;color:var(--text-muted);cursor:pointer;user-select:none;">API 키 설정 (네이버 쇼핑 / Stability AI)</summary>
+            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;">
+                <span style="font-size:0.72rem;font-weight:600;color:var(--text-secondary);flex-basis:100%;">네이버 쇼핑</span>
                 <input id="naverClientId" type="text" placeholder="Naver Client ID" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.78rem;flex:1;min-width:140px;">
                 <input id="naverClientSecret" type="password" placeholder="Naver Client Secret" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.78rem;flex:1;min-width:140px;">
                 <button class="btn btn-outline btn-sm" onclick="saveNaverKeys()">저장</button>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;">
+                <span style="font-size:0.72rem;font-weight:600;color:var(--text-secondary);flex-basis:100%;">Stability AI (배경제거/화질개선/AI생성)</span>
+                <input id="stabilityApiKey" type="password" placeholder="sk-..." style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.78rem;flex:1;min-width:240px;">
+                <button class="btn btn-outline btn-sm" onclick="saveStabilityKey()">저장</button>
             </div>
         </details>
     </div>
@@ -1428,6 +1434,16 @@
         <div id="imgModalNaverResults" style="display:none;margin-top:10px;">
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;max-height:300px;overflow-y:auto;" id="imgModalNaverGrid"></div>
             <div id="imgModalNaverStatus" style="text-align:center;padding:10px;color:var(--text-muted);font-size:0.82rem;"></div>
+        </div>
+        <!-- AI 도구 -->
+        <div style="border-top:1px solid var(--border-light);margin-top:12px;padding-top:12px;">
+            <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:8px;letter-spacing:0.5px;">AI 도구 (Stability AI)</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button class="btn btn-outline btn-sm" onclick="aiRemoveBg()" id="aiBtnBg" title="배경을 투명/흰색으로 제거">배경 제거</button>
+                <button class="btn btn-outline btn-sm" onclick="aiUpscale()" id="aiBtnUp" title="저해상도 이미지를 고화질로 업스케일">화질 개선</button>
+                <button class="btn btn-outline btn-sm" onclick="aiGenerate()" id="aiBtnGen" title="품목명으로 AI 상품 이미지 생성">AI 생성</button>
+            </div>
+            <div id="aiToolStatus" style="font-size:0.78rem;color:var(--text-muted);text-align:center;margin-top:6px;min-height:18px;"></div>
         </div>
         <!-- 삭제 버튼 -->
         <div style="text-align:center;margin-top:10px;">
@@ -2108,7 +2124,7 @@ function switchTab(tabId) {
     if (tabId === 'categories') renderCategoryTree();
     if (tabId === 'margins') { renderMargins(); renderNoSellProducts(); }
     if (tabId === 'quote') { loadApiKey(); populateQuoteVendor(); }
-    if (tabId === 'images') { imgInitCategoryFilter(); loadUploadedImages(); initNaverKeys(); }
+    if (tabId === 'images') { imgInitCategoryFilter(); loadUploadedImages(); initNaverKeys(); initStabilityKey(); }
     if (tabId === 'export') { populateExportVendor(); }
     if (tabId === 'settings') { initSupabase(); }
     if (tabId === 'priceCompare') { initPriceCompare(); }
@@ -3918,12 +3934,15 @@ function saveNaverKeys() {
 }
 
 function initNaverKeys() {
-    const id = localStorage.getItem('naver_client_id') || '';
-    const secret = localStorage.getItem('naver_client_secret') || '';
-    const idEl = document.getElementById('naverClientId');
-    const secEl = document.getElementById('naverClientSecret');
-    if (idEl) idEl.value = id;
-    if (secEl) secEl.value = secret;
+    // details 안의 input이므로 약간 지연 후 설정
+    setTimeout(function() {
+        const id = localStorage.getItem('naver_client_id') || '';
+        const secret = localStorage.getItem('naver_client_secret') || '';
+        const idEl = document.getElementById('naverClientId');
+        const secEl = document.getElementById('naverClientSecret');
+        if (idEl) idEl.value = id;
+        if (secEl) secEl.value = secret;
+    }, 100);
 }
 
 async function loadNoImageProducts() {
@@ -4607,6 +4626,222 @@ function imgInitCategoryFilter() {
     if (!sel) return;
     const cats = [...new Set(products.map(p => p.majorName).filter(Boolean))].sort();
     sel.innerHTML = '<option value="">분류 전체</option>' + cats.map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('');
+}
+
+// ============================================================
+// Stability AI 이미지 도구
+// ============================================================
+function saveStabilityKey() {
+    const key = document.getElementById('stabilityApiKey').value.trim();
+    if (!key) { alert('API 키를 입력해주세요.'); return; }
+    localStorage.setItem('stability_api_key', key);
+    alert('Stability AI 키가 저장되었습니다.');
+}
+function initStabilityKey() {
+    const key = localStorage.getItem('stability_api_key') || '';
+    const el = document.getElementById('stabilityApiKey');
+    if (el) el.value = key;
+}
+function getStabilityKey() {
+    const key = localStorage.getItem('stability_api_key');
+    if (!key) { alert('Stability AI API 키를 먼저 설정해주세요.\n(이미지 관리 탭 상단 → API 키 설정)'); return null; }
+    return key;
+}
+
+// 현재 모달 이미지를 Blob으로 가져오기
+async function imgModalGetBlob() {
+    const preview = document.getElementById('imgModalPreview');
+    if (!preview || !preview.src || preview.style.display === 'none') {
+        alert('이미지가 없습니다. 먼저 이미지를 등록해주세요.');
+        return null;
+    }
+    let url = preview.src;
+    // blob URL이면 직접 fetch
+    if (url.startsWith('blob:')) {
+        const resp = await fetch(url);
+        return await resp.blob();
+    }
+    // 외부 URL → 프록시 경유
+    if (!url.startsWith('data:')) {
+        const proxyUrl = 'https://wsrv.nl/?url=' + encodeURIComponent(url) + '&output=png';
+        const resp = await fetch(proxyUrl);
+        return await resp.blob();
+    }
+    // data URL
+    const resp = await fetch(url);
+    return await resp.blob();
+}
+
+// AI 결과 이미지를 R2에 저장하고 모달/그리드 갱신
+async function aiSaveResult(blob) {
+    const file = new File([blob], imgModalCode + '.png', { type: 'image/png' });
+    await uploadImageToStorage(imgModalCode, file);
+    if (!uploadedImageCache.find(f => f.name === imgModalCode + '.png')) {
+        uploadedImageCache.push({ name: imgModalCode + '.png', size: blob.size });
+    }
+    // 모달 미리보기 갱신
+    const preview = document.getElementById('imgModalPreview');
+    preview.src = URL.createObjectURL(blob);
+    preview.style.display = '';
+    document.getElementById('imgModalNoImg').style.display = 'none';
+    imgRenderGrid();
+}
+
+function aiSetStatus(msg, color) {
+    const el = document.getElementById('aiToolStatus');
+    if (el) { el.textContent = msg; el.style.color = color || 'var(--text-muted)'; }
+}
+function aiSetButtons(disabled) {
+    ['aiBtnBg', 'aiBtnUp', 'aiBtnGen'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.disabled = disabled;
+    });
+}
+
+// 1. 배경 제거
+async function aiRemoveBg() {
+    const key = getStabilityKey();
+    if (!key) return;
+    const blob = await imgModalGetBlob();
+    if (!blob) return;
+
+    aiSetStatus('배경 제거 중...', 'var(--accent)');
+    aiSetButtons(true);
+
+    try {
+        const formData = new FormData();
+        formData.append('image', blob, 'image.png');
+        formData.append('output_format', 'png');
+
+        const resp = await fetch('https://api.stability.ai/v2beta/stable-image/edit/remove-background', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + key, 'Accept': 'image/*' },
+            body: formData
+        });
+
+        if (!resp.ok) {
+            const errText = await resp.text();
+            throw new Error(resp.status + ': ' + errText.slice(0, 100));
+        }
+
+        const resultBlob = await resp.blob();
+        await aiSaveResult(resultBlob);
+        aiSetStatus('배경 제거 완료!', 'var(--success)');
+    } catch(e) {
+        aiSetStatus('실패: ' + e.message, 'var(--danger)');
+    } finally {
+        aiSetButtons(false);
+    }
+}
+
+// 2. 화질 개선 (Creative Upscale)
+async function aiUpscale() {
+    const key = getStabilityKey();
+    if (!key) return;
+    const blob = await imgModalGetBlob();
+    if (!blob) return;
+
+    aiSetStatus('화질 개선 중... (10~30초 소요)', 'var(--accent)');
+    aiSetButtons(true);
+
+    try {
+        const formData = new FormData();
+        formData.append('image', blob, 'image.png');
+        formData.append('output_format', 'png');
+        formData.append('prompt', 'high quality product photo, clean white background, sharp details');
+
+        const resp = await fetch('https://api.stability.ai/v2beta/stable-image/upscale/creative', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + key, 'Accept': 'application/json' },
+            body: formData
+        });
+
+        if (resp.status === 200) {
+            // 동기 응답
+            const json = await resp.json();
+            const resultBlob = await fetch('data:image/png;base64,' + json.image).then(r => r.blob());
+            await aiSaveResult(resultBlob);
+            aiSetStatus('화질 개선 완료!', 'var(--success)');
+        } else if (resp.status === 202) {
+            // 비동기 — 폴링
+            const json = await resp.json();
+            const generationId = json.id;
+            aiSetStatus('처리 중... (ID: ' + generationId.slice(0, 8) + ')', 'var(--accent)');
+
+            let attempts = 0;
+            const poll = async () => {
+                if (attempts++ > 30) { aiSetStatus('시간 초과', 'var(--danger)'); aiSetButtons(false); return; }
+                const r = await fetch('https://api.stability.ai/v2beta/stable-image/upscale/creative/result/' + generationId, {
+                    method: 'GET',
+                    headers: { 'Authorization': 'Bearer ' + key, 'Accept': 'application/json' }
+                });
+                if (r.status === 200) {
+                    const data = await r.json();
+                    const resultBlob = await fetch('data:image/png;base64,' + data.image).then(res => res.blob());
+                    await aiSaveResult(resultBlob);
+                    aiSetStatus('화질 개선 완료!', 'var(--success)');
+                    aiSetButtons(false);
+                } else if (r.status === 202) {
+                    aiSetStatus('처리 중... (' + attempts + '/30)', 'var(--accent)');
+                    setTimeout(poll, 3000);
+                } else {
+                    const t = await r.text();
+                    throw new Error(r.status + ': ' + t.slice(0, 100));
+                }
+            };
+            setTimeout(poll, 5000);
+            return; // buttons stay disabled until poll completes
+        } else {
+            const errText = await resp.text();
+            throw new Error(resp.status + ': ' + errText.slice(0, 100));
+        }
+    } catch(e) {
+        aiSetStatus('실패: ' + e.message, 'var(--danger)');
+    } finally {
+        aiSetButtons(false);
+    }
+}
+
+// 3. AI 이미지 생성
+async function aiGenerate() {
+    const key = getStabilityKey();
+    if (!key) return;
+
+    const p = products.find(pr => pr.code === imgModalCode);
+    if (!p) return;
+
+    const productName = p.name + (p.spec ? ' ' + p.spec : '');
+    const prompt = 'Korean food product package photo, "' + productName + '", professional studio lighting, clean white background, high resolution, food packaging, commercial product photography';
+
+    aiSetStatus('AI 이미지 생성 중... (10~20초 소요)', 'var(--accent)');
+    aiSetButtons(true);
+
+    try {
+        const formData = new FormData();
+        formData.append('prompt', prompt);
+        formData.append('output_format', 'png');
+        formData.append('aspect_ratio', '1:1');
+        formData.append('negative_prompt', 'blurry, low quality, text overlay, watermark, distorted');
+
+        const resp = await fetch('https://api.stability.ai/v2beta/stable-image/generate/sd3', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + key, 'Accept': 'image/*' },
+            body: formData
+        });
+
+        if (!resp.ok) {
+            const errText = await resp.text();
+            throw new Error(resp.status + ': ' + errText.slice(0, 100));
+        }
+
+        const resultBlob = await resp.blob();
+        await aiSaveResult(resultBlob);
+        aiSetStatus('AI 생성 완료! (' + productName + ')', 'var(--success)');
+    } catch(e) {
+        aiSetStatus('실패: ' + e.message, 'var(--danger)');
+    } finally {
+        aiSetButtons(false);
+    }
 }
 
 async function downloadImage(url, filename) {
