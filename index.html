@@ -4752,28 +4752,35 @@ async function imgModalDownload() {
         alert('다운로드할 이미지가 없습니다.');
         return;
     }
-    try {
-        const proxyUrl = 'https://wsrv.nl/?url=' + encodeURIComponent(preview.src) + '&output=png';
-        const resp = await fetch(proxyUrl);
-        const blob = await resp.blob();
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = imgModalCode + '.png';
-        a.click();
-        URL.revokeObjectURL(a.href);
-    } catch(e) {
-        // 프록시 실패 시 직접 시도
-        try {
-            const resp = await fetch(preview.src);
-            const blob = await resp.blob();
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = imgModalCode + '.png';
-            a.click();
-            URL.revokeObjectURL(a.href);
-        } catch(e2) {
-            window.open(preview.src, '_blank');
-        }
+    // Canvas에 그려서 PNG로 다운로드 (CORS 우회)
+    var img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = function() {
+        var canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        canvas.toBlob(function(blob) {
+            if (blob) {
+                var a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = imgModalCode + '.png';
+                a.click();
+                URL.revokeObjectURL(a.href);
+            }
+        }, 'image/png');
+    };
+    img.onerror = function() {
+        // Canvas 실패 시 새 탭으로 열기
+        window.open(getProductImageUrl(imgModalCode), '_blank');
+    };
+    // R2 URL 직접 사용
+    var r2Url = getProductImageUrl(imgModalCode);
+    var p = products.find(function(pr) { return pr.code === imgModalCode; });
+    if (p && p.imageUrl) {
+        img.src = 'https://wsrv.nl/?url=' + encodeURIComponent(p.imageUrl) + '&output=png';
+    } else {
+        img.src = r2Url;
     }
 }
 
