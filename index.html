@@ -2461,6 +2461,11 @@ function deleteProduct(code) {
     products = products.filter(p => p.code !== code);
     saveAll();
     renderProductList();
+    // Supabase에서도 즉시 삭제
+    if (db) {
+        db.from('products').delete().eq('code', code)
+            .then(function(res) { if (res.error) console.warn('Supabase 삭제 실패:', res.error.message); });
+    }
 }
 
 function toggleSoldOut(code) {
