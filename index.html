@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.14</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.15</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1072,6 +1072,9 @@
             </button>
             <button onclick="switchTab('displayName')">
                 <span class="nav-icon">&#9998;</span>표시명 관리
+            </button>
+            <button onclick="switchTab('priceSchedule')">
+                <span class="nav-icon">&#128197;</span>예약 가격
             </button>
         </div>
     </div>
@@ -1655,6 +1658,99 @@
     </div>
 </div>
 
+<!-- 예약 가격 변경 -->
+<div class="tab-content" id="tab-priceSchedule">
+    <div class="card">
+        <h3>예약 가격 변경 <span id="psStatusBadge" style="font-size:0.7rem;font-weight:400;color:var(--text-muted);margin-left:8px;"></span></h3>
+        <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:16px;">
+            품목별 판매단가를 <strong>미래 날짜</strong>에 자동 변경되도록 예약합니다.
+            적용일이 도래하면 ERP·카탈로그·전단지·쇼케이스 중 어느 사이트든 접속 시 자동 반영됩니다.
+            <br><strong style="color:var(--danger);">※ 품목당 예약은 1건만 가능</strong> — 새로 등록하면 기존 예약은 취소 처리됩니다.
+        </p>
+
+        <!-- 단건 예약 등록 -->
+        <div style="background:var(--bg);border-radius:8px;padding:14px;margin-bottom:16px;">
+            <h4 style="margin:0 0 10px 0;font-size:0.9rem;">단건 예약 등록</h4>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:end;">
+                <div style="flex:2;min-width:200px;">
+                    <label style="display:block;font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;">품목 검색</label>
+                    <input type="text" id="psProductSearch" placeholder="품목코드 또는 품목명 입력"
+                        oninput="psSearchProduct()" autocomplete="off"
+                        style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;">
+                    <div id="psSearchResults" style="display:none;position:absolute;background:#fff;border:1px solid var(--border);border-radius:6px;max-height:200px;overflow-y:auto;z-index:100;margin-top:2px;box-shadow:0 4px 12px rgba(0,0,0,0.1);"></div>
+                </div>
+                <div style="flex:1;min-width:120px;">
+                    <label style="display:block;font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;">현재 판매단가</label>
+                    <input type="text" id="psCurrentSell" readonly placeholder="품목 선택 필요"
+                        style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;background:#f5f5f5;">
+                </div>
+                <div style="flex:1;min-width:120px;">
+                    <label style="display:block;font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;">신규 판매단가</label>
+                    <input type="number" id="psNewSell" placeholder="0"
+                        style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;">
+                </div>
+                <div style="flex:1;min-width:140px;">
+                    <label style="display:block;font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;">적용일자</label>
+                    <input type="date" id="psApplyDate"
+                        style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;">
+                </div>
+                <button class="btn btn-primary" onclick="psRegisterSingle()" style="height:35px;">등록</button>
+            </div>
+            <input type="hidden" id="psSelectedCode" value="">
+            <input type="hidden" id="psSelectedName" value="">
+            <div style="margin-top:8px;">
+                <input type="text" id="psMemo" placeholder="메모 (선택) — 예: 원가 인상분 반영"
+                    style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem;">
+            </div>
+        </div>
+
+        <!-- 일괄 예약 업로드 -->
+        <div style="background:var(--bg);border-radius:8px;padding:14px;margin-bottom:16px;">
+            <h4 style="margin:0 0 10px 0;font-size:0.9rem;">일괄 예약 업로드 (엑셀)</h4>
+            <p style="color:var(--text-muted);font-size:0.78rem;margin-bottom:10px;">
+                엑셀 컬럼: <code>품목코드 | 신규판매단가 | 적용일자(YYYY-MM-DD) | 메모(선택)</code>
+            </p>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <button class="btn btn-outline btn-sm" onclick="psDownloadTemplate()">양식 다운로드</button>
+                <input type="file" id="psBulkFile" accept=".xlsx,.xls" style="display:none" onchange="psBulkUpload(event)">
+                <button class="btn btn-primary btn-sm" onclick="document.getElementById('psBulkFile').click()">엑셀 파일 선택</button>
+                <span id="psBulkResult" style="font-size:0.8rem;color:var(--text-muted);"></span>
+            </div>
+        </div>
+
+        <!-- 예약 목록 필터 -->
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+            <label style="font-size:0.82rem;">상태:</label>
+            <select id="psFilterStatus" onchange="renderPriceScheduleList()"
+                style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem;">
+                <option value="pending">대기</option>
+                <option value="applied">적용완료</option>
+                <option value="canceled">취소</option>
+                <option value="">전체</option>
+            </select>
+            <button class="btn btn-outline btn-sm" onclick="renderPriceScheduleList()">새로고침</button>
+            <button class="btn btn-outline btn-sm" onclick="checkAndApplyScheduledPrices(true)">지금 즉시 적용 체크</button>
+            <span style="flex:1;"></span>
+            <span id="psCountInfo" style="font-size:0.8rem;color:var(--text-muted);"></span>
+        </div>
+
+        <!-- 예약 목록 테이블 -->
+        <div style="overflow-x:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>상태</th><th>품목코드</th><th>품목명</th>
+                        <th class="text-right">변경 전</th><th class="text-right">변경 후</th>
+                        <th class="text-center">적용일</th><th>메모</th>
+                        <th class="text-center">등록일</th><th class="text-center">관리</th>
+                    </tr>
+                </thead>
+                <tbody id="psListBody"><tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:20px;">로딩 중...</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
 <!-- Supabase 설정 -->
 <div class="tab-content" id="tab-settings">
     <div class="card">
@@ -2126,7 +2222,8 @@ const PAGE_TITLES = {
     settings: 'Supabase 설정',
     priceCompare: '가격 비교',
     orderHistory: '발주/견적 기록',
-    displayName: '표시명 관리'
+    displayName: '표시명 관리',
+    priceSchedule: '예약 가격 변경'
 };
 
 function switchTab(tabId) {
@@ -2167,6 +2264,7 @@ function switchTab(tabId) {
     if (tabId === 'priceCompare') { initPriceCompare(); }
     if (tabId === 'orderHistory') { initOrderHistory(); }
     if (tabId === 'displayName') { initDisplayNameTab(); }
+    if (tabId === 'priceSchedule') { initPriceScheduleTab(); }
 }
 
 // ============================================================
@@ -6666,11 +6764,336 @@ async function aiGenerateDisplayNames() {
     setTimeout(() => { progress.style.display = 'none'; }, 5000);
 }
 
+// ============================================================
+// 예약 가격 변경 (price_schedule)
+// ============================================================
+
+function initPriceScheduleTab() {
+    // 오늘 날짜를 기본값으로 설정 (적용일 input)
+    var dateInput = document.getElementById('psApplyDate');
+    if (dateInput && !dateInput.value) {
+        var today = new Date();
+        today.setDate(today.getDate() + 1); // 기본: 내일
+        dateInput.value = today.toISOString().slice(0, 10);
+    }
+    renderPriceScheduleList();
+}
+
+// 품목 검색 (드롭다운)
+var psSearchTimer = null;
+function psSearchProduct() {
+    clearTimeout(psSearchTimer);
+    psSearchTimer = setTimeout(function() {
+        var q = document.getElementById('psProductSearch').value.trim().toLowerCase();
+        var resultsDiv = document.getElementById('psSearchResults');
+        if (!q) { resultsDiv.style.display = 'none'; return; }
+
+        var matches = products.filter(function(p) {
+            return (p.code || '').toLowerCase().includes(q) ||
+                   (p.name || '').toLowerCase().includes(q);
+        }).slice(0, 10);
+
+        if (matches.length === 0) {
+            resultsDiv.innerHTML = '<div style="padding:8px;color:var(--text-muted);font-size:0.82rem;">일치하는 품목 없음</div>';
+        } else {
+            resultsDiv.innerHTML = matches.map(function(p) {
+                var safeCode = (p.code || '').replace(/'/g, "\\'");
+                var safeName = (p.name || '').replace(/'/g, "\\'");
+                return '<div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid #eee;font-size:0.82rem;" ' +
+                       'onmouseover="this.style.background=\'#f5f5f5\'" onmouseout="this.style.background=\'#fff\'" ' +
+                       'onclick="psSelectProduct(\'' + safeCode + '\',\'' + safeName + '\',' + (p.sell || 0) + ')">' +
+                       '<strong>' + (p.code || '') + '</strong> · ' + (p.name || '') +
+                       ' <span style="color:var(--text-muted);">(' + (p.sell || 0).toLocaleString() + '원)</span></div>';
+            }).join('');
+        }
+        resultsDiv.style.display = 'block';
+    }, 200);
+}
+
+function psSelectProduct(code, name, sell) {
+    document.getElementById('psSelectedCode').value = code;
+    document.getElementById('psSelectedName').value = name;
+    document.getElementById('psProductSearch').value = code + ' · ' + name;
+    document.getElementById('psCurrentSell').value = (sell || 0).toLocaleString() + '원';
+    document.getElementById('psSearchResults').style.display = 'none';
+    document.getElementById('psNewSell').focus();
+}
+
+// 단건 예약 등록
+async function psRegisterSingle() {
+    if (!db) { alert('Supabase 연결이 필요합니다.'); return; }
+    var code = document.getElementById('psSelectedCode').value;
+    var name = document.getElementById('psSelectedName').value;
+    var newSell = parseInt(document.getElementById('psNewSell').value || '0');
+    var applyDate = document.getElementById('psApplyDate').value;
+    var memo = document.getElementById('psMemo').value.trim();
+
+    if (!code) { alert('품목을 선택해주세요.'); return; }
+    if (!newSell || newSell <= 0) { alert('신규 판매단가를 입력해주세요.'); return; }
+    if (!applyDate) { alert('적용일자를 선택해주세요.'); return; }
+
+    var today = new Date().toISOString().slice(0, 10);
+    if (applyDate < today) { alert('과거 날짜는 예약할 수 없습니다.'); return; }
+
+    var product = products.find(function(p) { return p.code === code; });
+    var oldSell = product ? (product.sell || 0) : 0;
+
+    try {
+        // 기존 pending 건 취소 처리 (품목당 1건 정책)
+        await db.from('price_schedule')
+            .update({ status: 'canceled' })
+            .eq('product_code', code)
+            .eq('status', 'pending');
+
+        // 새 예약 등록
+        var { error } = await db.from('price_schedule').insert({
+            product_code: code,
+            product_name: name,
+            old_sell: oldSell,
+            new_sell: newSell,
+            apply_date: applyDate,
+            status: 'pending',
+            memo: memo || null
+        });
+        if (error) throw error;
+
+        alert('예약이 등록되었습니다.');
+        // 입력 초기화
+        document.getElementById('psSelectedCode').value = '';
+        document.getElementById('psSelectedName').value = '';
+        document.getElementById('psProductSearch').value = '';
+        document.getElementById('psCurrentSell').value = '';
+        document.getElementById('psNewSell').value = '';
+        document.getElementById('psMemo').value = '';
+        renderPriceScheduleList();
+    } catch (err) {
+        alert('등록 실패: ' + err.message);
+    }
+}
+
+// 예약 목록 렌더링
+async function renderPriceScheduleList() {
+    if (!db) {
+        document.getElementById('psListBody').innerHTML =
+            '<tr><td colspan="9" style="text-align:center;color:var(--danger);padding:20px;">Supabase 연결 필요</td></tr>';
+        return;
+    }
+    var status = document.getElementById('psFilterStatus').value;
+    try {
+        var query = db.from('price_schedule').select('*').order('apply_date', { ascending: true });
+        if (status) query = query.eq('status', status);
+        var { data, error } = await query;
+        if (error) throw error;
+
+        document.getElementById('psCountInfo').textContent = '총 ' + data.length + '건';
+        if (data.length === 0) {
+            document.getElementById('psListBody').innerHTML =
+                '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:20px;">예약 내역이 없습니다.</td></tr>';
+            return;
+        }
+
+        var today = new Date().toISOString().slice(0, 10);
+        var html = data.map(function(r) {
+            var statusLabel = {pending:'대기', applied:'적용완료', canceled:'취소'}[r.status] || r.status;
+            var statusColor = {pending:'#FF9800', applied:'#4CAF50', canceled:'#9E9E9E'}[r.status] || '#666';
+            var overdue = (r.status === 'pending' && r.apply_date <= today);
+            var createdAt = r.created_at ? r.created_at.slice(0, 10) : '';
+            var actionBtn = r.status === 'pending' ?
+                '<button class="btn btn-outline btn-sm" onclick="psCancelSchedule(' + r.id + ')">취소</button>' :
+                '<button class="btn btn-outline btn-sm" onclick="psDeleteSchedule(' + r.id + ')">삭제</button>';
+            return '<tr>' +
+                '<td><span style="background:' + statusColor + ';color:#fff;padding:2px 8px;border-radius:4px;font-size:0.72rem;">' + statusLabel + '</span>' +
+                (overdue ? ' <span style="color:var(--danger);font-size:0.7rem;">⏰</span>' : '') + '</td>' +
+                '<td>' + r.product_code + '</td>' +
+                '<td>' + (r.product_name || '') + '</td>' +
+                '<td class="text-right">' + (r.old_sell || 0).toLocaleString() + '</td>' +
+                '<td class="text-right"><strong>' + r.new_sell.toLocaleString() + '</strong></td>' +
+                '<td class="text-center">' + r.apply_date + '</td>' +
+                '<td style="font-size:0.78rem;color:var(--text-muted);">' + (r.memo || '') + '</td>' +
+                '<td class="text-center" style="font-size:0.78rem;">' + createdAt + '</td>' +
+                '<td class="text-center">' + actionBtn + '</td>' +
+                '</tr>';
+        }).join('');
+        document.getElementById('psListBody').innerHTML = html;
+    } catch (err) {
+        document.getElementById('psListBody').innerHTML =
+            '<tr><td colspan="9" style="text-align:center;color:var(--danger);padding:20px;">' + err.message + '</td></tr>';
+    }
+}
+
+async function psCancelSchedule(id) {
+    if (!confirm('이 예약을 취소하시겠습니까?')) return;
+    try {
+        var { error } = await db.from('price_schedule').update({ status: 'canceled' }).eq('id', id);
+        if (error) throw error;
+        renderPriceScheduleList();
+    } catch (err) { alert('취소 실패: ' + err.message); }
+}
+
+async function psDeleteSchedule(id) {
+    if (!confirm('기록을 완전히 삭제하시겠습니까?')) return;
+    try {
+        var { error } = await db.from('price_schedule').delete().eq('id', id);
+        if (error) throw error;
+        renderPriceScheduleList();
+    } catch (err) { alert('삭제 실패: ' + err.message); }
+}
+
+// 엑셀 일괄 업로드
+function psDownloadTemplate() {
+    var ws = XLSX.utils.aoa_to_sheet([
+        ['품목코드', '신규판매단가', '적용일자', '메모'],
+        ['P001', 12000, '2026-04-15', '원가 인상분'],
+        ['P002', 8500, '2026-05-01', '']
+    ]);
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '예약가격');
+    XLSX.writeFile(wb, '예약가격_양식.xlsx');
+}
+
+async function psBulkUpload(event) {
+    var file = event.target.files[0];
+    if (!file || !db) return;
+    var resultEl = document.getElementById('psBulkResult');
+    resultEl.textContent = '읽는 중...';
+    resultEl.style.color = 'var(--text-muted)';
+
+    try {
+        var reader = new FileReader();
+        reader.onload = async function(e) {
+            var wb = XLSX.read(e.target.result, { type: 'array' });
+            var ws = wb.Sheets[wb.SheetNames[0]];
+            var rows = XLSX.utils.sheet_to_json(ws);
+            var today = new Date().toISOString().slice(0, 10);
+            var success = 0, skipped = 0, errors = [];
+
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i];
+                var code = String(r['품목코드'] || '').trim();
+                var newSell = parseInt(r['신규판매단가'] || 0);
+                var applyDate = r['적용일자'];
+                if (applyDate instanceof Date) applyDate = applyDate.toISOString().slice(0, 10);
+                else applyDate = String(applyDate || '').trim();
+                var memo = String(r['메모'] || '').trim();
+
+                if (!code || !newSell || !applyDate) { skipped++; continue; }
+                if (applyDate < today) { errors.push(code + ' (과거 날짜)'); continue; }
+
+                var product = products.find(function(p) { return p.code === code; });
+                if (!product) { errors.push(code + ' (품목없음)'); continue; }
+
+                try {
+                    await db.from('price_schedule').update({ status: 'canceled' })
+                        .eq('product_code', code).eq('status', 'pending');
+                    await db.from('price_schedule').insert({
+                        product_code: code,
+                        product_name: product.name,
+                        old_sell: product.sell || 0,
+                        new_sell: newSell,
+                        apply_date: applyDate,
+                        status: 'pending',
+                        memo: memo || null
+                    });
+                    success++;
+                } catch (err) { errors.push(code + ' (' + err.message + ')'); }
+            }
+
+            resultEl.textContent = '✅ 성공 ' + success + '건 / 건너뜀 ' + skipped + '건 / 오류 ' + errors.length + '건' +
+                (errors.length > 0 ? ' — ' + errors.slice(0, 3).join(', ') + (errors.length > 3 ? ' 외' : '') : '');
+            resultEl.style.color = success > 0 ? 'var(--success)' : 'var(--danger)';
+            renderPriceScheduleList();
+            event.target.value = '';
+        };
+        reader.readAsArrayBuffer(file);
+    } catch (err) {
+        resultEl.textContent = '업로드 실패: ' + err.message;
+        resultEl.style.color = 'var(--danger)';
+    }
+}
+
+// ============================================================
+// 자동 적용 체크 — 모든 사이트 공통 모듈
+// 적용일 도래한 pending 건을 products.sell에 반영하고 applied 처리
+// ============================================================
+async function checkAndApplyScheduledPrices(verbose) {
+    if (!db) return { applied: 0 };
+    try {
+        var today = new Date().toISOString().slice(0, 10);
+        var { data: pending, error } = await db.from('price_schedule')
+            .select('*')
+            .eq('status', 'pending')
+            .lte('apply_date', today);
+        if (error) throw error;
+        if (!pending || pending.length === 0) {
+            if (verbose) alert('적용할 예약이 없습니다.');
+            return { applied: 0 };
+        }
+
+        var applied = [];
+        var nowIso = new Date().toISOString();
+
+        for (var i = 0; i < pending.length; i++) {
+            var s = pending[i];
+            // 낙관적 락: status=pending 조건 걸어 applied로 변경 (동시성 방어)
+            var { data: lockRows, error: lockErr } = await db.from('price_schedule')
+                .update({ status: 'applied', applied_at: nowIso })
+                .eq('id', s.id)
+                .eq('status', 'pending')
+                .select();
+            if (lockErr || !lockRows || lockRows.length === 0) continue; // 다른 클라이언트가 먼저 적용
+
+            // products.sell 업데이트
+            var { error: upErr } = await db.from('products')
+                .update({ sell: s.new_sell })
+                .eq('code', s.product_code);
+            if (upErr) {
+                // 롤백
+                await db.from('price_schedule')
+                    .update({ status: 'pending', applied_at: null })
+                    .eq('id', s.id);
+                continue;
+            }
+
+            // 로컬 products 배열도 업데이트
+            var local = products.find(function(p) { return p.code === s.product_code; });
+            if (local) local.sell = s.new_sell;
+            applied.push(s);
+        }
+
+        if (applied.length > 0) {
+            saveAll();
+            // 사용자에게 알림
+            var msg = '📢 예약 가격이 자동 반영되었습니다 (' + applied.length + '건)\n\n' +
+                applied.slice(0, 5).map(function(s) {
+                    return '• ' + (s.product_name || s.product_code) + ': ' +
+                           (s.old_sell || 0).toLocaleString() + ' → ' + s.new_sell.toLocaleString() + '원';
+                }).join('\n') +
+                (applied.length > 5 ? '\n...외 ' + (applied.length - 5) + '건' : '');
+            alert(msg);
+            // 목록 갱신 (탭이 열려있을 때)
+            if (document.getElementById('tab-priceSchedule') &&
+                document.getElementById('tab-priceSchedule').classList.contains('active')) {
+                renderPriceScheduleList();
+            }
+            // 품목 관리 갱신
+            if (typeof renderProductList === 'function') renderProductList();
+        } else if (verbose) {
+            alert('적용할 예약이 없습니다.');
+        }
+        return { applied: applied.length };
+    } catch (err) {
+        console.error('예약 가격 적용 오류:', err);
+        return { applied: 0, error: err.message };
+    }
+}
+
 // 초기화
 initSupabase();
 initDragDrop();
 renderDashboard();
 autoSyncOnLoad();
+// ERP 접속 시 예약 가격 자동 체크 (Supabase 연결 후 1초 뒤)
+setTimeout(function() { checkAndApplyScheduledPrices(false); }, 1500);
 </script>
 
 <!-- 발주서 미리보기 모달 -->
