@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.18</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.19</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -6806,13 +6806,19 @@ async function aiGenerateDisplayNames() {
 // 예약 가격 변경 (price_schedule)
 // ============================================================
 
+// KST(한국시간) 기준 YYYY-MM-DD 반환
+function getKstDate(offsetDays) {
+    offsetDays = offsetDays || 0;
+    // UTC + 9시간 = KST
+    var d = new Date(Date.now() + 9 * 3600 * 1000 + offsetDays * 86400 * 1000);
+    return d.toISOString().slice(0, 10);
+}
+
 function initPriceScheduleTab() {
     // 오늘 날짜를 기본값으로 설정 (적용일 input)
     var dateInput = document.getElementById('psApplyDate');
     if (dateInput && !dateInput.value) {
-        var today = new Date();
-        today.setDate(today.getDate() + 1); // 기본: 내일
-        dateInput.value = today.toISOString().slice(0, 10);
+        dateInput.value = getKstDate(1); // 기본: 내일 (KST)
     }
     renderPriceScheduleList();
 }
@@ -6870,7 +6876,7 @@ async function psRegisterSingle() {
     if (!newSell || newSell <= 0) { alert('신규 판매단가를 입력해주세요.'); return; }
     if (!applyDate) { alert('적용일자를 선택해주세요.'); return; }
 
-    var today = new Date().toISOString().slice(0, 10);
+    var today = getKstDate();
     if (applyDate < today) { alert('과거 날짜는 예약할 수 없습니다.'); return; }
 
     var product = products.find(function(p) { return p.code === code; });
@@ -6930,7 +6936,7 @@ async function renderPriceScheduleList() {
             return;
         }
 
-        var today = new Date().toISOString().slice(0, 10);
+        var today = getKstDate();
         var html = data.map(function(r) {
             var statusLabel = {pending:'대기', applied:'적용완료', canceled:'취소'}[r.status] || r.status;
             var statusColor = {pending:'#FF9800', applied:'#4CAF50', canceled:'#9E9E9E'}[r.status] || '#666';
@@ -7002,7 +7008,7 @@ async function psBulkUpload(event) {
             var wb = XLSX.read(e.target.result, { type: 'array' });
             var ws = wb.Sheets[wb.SheetNames[0]];
             var rows = XLSX.utils.sheet_to_json(ws);
-            var today = new Date().toISOString().slice(0, 10);
+            var today = getKstDate();
             var success = 0, skipped = 0, errors = [];
 
             for (var i = 0; i < rows.length; i++) {
@@ -7062,10 +7068,8 @@ async function renderTodayAppliedSchedule() {
         return;
     }
     try {
-        var today = new Date().toISOString().slice(0, 10);
-        var tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        var tomorrowIso = tomorrow.toISOString().slice(0, 10);
+        var today = getKstDate();
+        var tomorrowIso = getKstDate(1);
 
         var { data, error } = await db.from('price_schedule')
             .select('product_code,product_name,old_sell,new_sell,applied_at')
@@ -7110,7 +7114,7 @@ async function renderTodayAppliedSchedule() {
 async function checkAndApplyScheduledPrices(verbose) {
     if (!db) return { applied: 0 };
     try {
-        var today = new Date().toISOString().slice(0, 10);
+        var today = getKstDate();
         var { data: pending, error } = await db.from('price_schedule')
             .select('*')
             .eq('status', 'pending')
