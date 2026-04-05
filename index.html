@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.22</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.23</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1075,6 +1075,9 @@
             </button>
             <button onclick="switchTab('priceSchedule')">
                 <span class="nav-icon">&#128197;</span>예약 가격
+            </button>
+            <button onclick="switchTab('sortOrder')">
+                <span class="nav-icon">&#8645;</span>정렬 관리
             </button>
         </div>
     </div>
@@ -1761,6 +1764,63 @@
     </div>
 </div>
 
+<!-- 정렬 관리 -->
+<div class="tab-content" id="tab-sortOrder">
+    <div class="card">
+        <h3>정렬 관리 <span style="font-size:0.78rem;font-weight:400;color:var(--text-muted);margin-left:8px;">카탈로그·전단지·쇼케이스 표시 순서 조정</span></h3>
+        <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:16px;">
+            왼쪽에서 <strong>중분류 순서</strong>를 조정하면, 모든 고객 사이트에 즉시 반영됩니다.
+            오른쪽에서 중분류를 선택하면 <strong>해당 분류의 품목들</strong>을 하나씩 맨 앞/뒤로 보낼 수 있습니다.
+        </p>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;">
+            <!-- 중분류 순서 관리 -->
+            <div style="flex:1;min-width:320px;">
+                <h4 style="margin:0 0 10px 0;font-size:0.9rem;">1️⃣ 중분류(카테고리) 순서</h4>
+                <div style="background:var(--bg);border-radius:8px;padding:10px;">
+                    <table style="width:100%;font-size:0.82rem;">
+                        <thead>
+                            <tr style="border-bottom:1px solid var(--border);">
+                                <th style="text-align:left;padding:6px;">순서</th>
+                                <th style="text-align:left;padding:6px;">중분류</th>
+                                <th style="text-align:right;padding:6px;">품목수</th>
+                                <th style="text-align:center;padding:6px;width:90px;">이동</th>
+                            </tr>
+                        </thead>
+                        <tbody id="soMinorListBody"><tr><td colspan="4" style="text-align:center;padding:12px;color:var(--text-muted);">로딩 중...</td></tr></tbody>
+                    </table>
+                </div>
+                <div style="margin-top:8px;">
+                    <button class="btn btn-primary btn-sm" onclick="soSaveMinorOrder()">순서 저장</button>
+                    <button class="btn btn-outline btn-sm" onclick="soLoadMinors()">새로고침</button>
+                    <span id="soMinorSaveStatus" style="font-size:0.78rem;color:var(--text-muted);margin-left:8px;"></span>
+                </div>
+            </div>
+
+            <!-- 품목 순서 관리 -->
+            <div style="flex:1;min-width:320px;">
+                <h4 style="margin:0 0 10px 0;font-size:0.9rem;">2️⃣ 품목 순서 (선택한 중분류)</h4>
+                <select id="soPickMinor" onchange="soLoadProducts()" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;margin-bottom:8px;">
+                    <option value="">중분류 선택...</option>
+                </select>
+                <div style="background:var(--bg);border-radius:8px;padding:10px;max-height:500px;overflow-y:auto;">
+                    <table style="width:100%;font-size:0.82rem;">
+                        <thead>
+                            <tr style="border-bottom:1px solid var(--border);">
+                                <th style="text-align:left;padding:6px;">품목</th>
+                                <th style="text-align:center;padding:6px;width:140px;">이동</th>
+                            </tr>
+                        </thead>
+                        <tbody id="soProductListBody"><tr><td colspan="2" style="text-align:center;padding:12px;color:var(--text-muted);">중분류를 먼저 선택하세요</td></tr></tbody>
+                    </table>
+                </div>
+                <div style="margin-top:8px;">
+                    <span id="soProductSaveStatus" style="font-size:0.78rem;color:var(--text-muted);"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Supabase 설정 -->
 <div class="tab-content" id="tab-settings">
     <div class="card">
@@ -2234,7 +2294,8 @@ const PAGE_TITLES = {
     priceCompare: '가격 비교',
     orderHistory: '발주/견적 기록',
     displayName: '표시명 관리',
-    priceSchedule: '예약 가격 변경'
+    priceSchedule: '예약 가격 변경',
+    sortOrder: '정렬 관리 (카테고리·품목 순서)'
 };
 
 function switchTab(tabId) {
@@ -2276,6 +2337,7 @@ function switchTab(tabId) {
     if (tabId === 'orderHistory') { initOrderHistory(); }
     if (tabId === 'displayName') { initDisplayNameTab(); }
     if (tabId === 'priceSchedule') { initPriceScheduleTab(); }
+    if (tabId === 'sortOrder') { initSortOrderTab(); }
 }
 
 // ============================================================
@@ -7361,6 +7423,197 @@ async function renderTodayAppliedSchedule() {
     } catch (err) {
         countEl.textContent = '';
         listEl.innerHTML = '<div style="text-align:center;padding:16px;color:var(--danger);font-size:0.85rem;">불러오기 실패: ' + err.message + '</div>';
+    }
+}
+
+// ============================================================
+// 정렬 관리 (category_order + products.sort_order)
+// ============================================================
+var soMinorList = []; // [{minor_name, major_name, count, sort_order}]
+var soCurrentProducts = []; // 현재 선택된 중분류의 품목 목록
+
+function initSortOrderTab() { soLoadMinors(); }
+
+async function soLoadMinors() {
+    var body = document.getElementById('soMinorListBody');
+    if (!db) { body.innerHTML = '<tr><td colspan="4" style="color:var(--danger);text-align:center;padding:12px;">Supabase 연결 필요</td></tr>'; return; }
+    body.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:12px;color:var(--text-muted);">로딩 중...</td></tr>';
+    try {
+        // 중분류 목록 추출 (products 테이블 기준)
+        var { data: prodData, error: prodErr } = await db.from('products')
+            .select('minor_name,major_name')
+            .not('minor_name', 'is', null);
+        if (prodErr) throw prodErr;
+        var counts = {};
+        var majors = {};
+        prodData.forEach(function(p) {
+            if (!p.minor_name) return;
+            counts[p.minor_name] = (counts[p.minor_name] || 0) + 1;
+            majors[p.minor_name] = p.major_name || '';
+        });
+        // category_order 조회
+        var { data: orderData } = await db.from('category_order').select('*');
+        var orderMap = {};
+        (orderData || []).forEach(function(r) { orderMap[r.minor_name] = r.sort_order; });
+
+        soMinorList = Object.keys(counts).map(function(name) {
+            return {
+                minor_name: name,
+                major_name: majors[name],
+                count: counts[name],
+                sort_order: orderMap[name] !== undefined ? orderMap[name] : 999
+            };
+        });
+        soMinorList.sort(function(a, b) {
+            if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+            return a.minor_name.localeCompare(b.minor_name, 'ko');
+        });
+        // 연속 번호 재할당 (1, 2, 3...)
+        soMinorList.forEach(function(m, i) { m.sort_order = i + 1; });
+
+        soRenderMinorList();
+        soPopulateMinorSelect();
+    } catch (err) {
+        body.innerHTML = '<tr><td colspan="4" style="color:var(--danger);text-align:center;padding:12px;">오류: ' + err.message + '</td></tr>';
+    }
+}
+
+function soRenderMinorList() {
+    var body = document.getElementById('soMinorListBody');
+    body.innerHTML = soMinorList.map(function(m, i) {
+        var upDisabled = i === 0 ? 'disabled' : '';
+        var downDisabled = i === soMinorList.length - 1 ? 'disabled' : '';
+        return '<tr style="border-bottom:1px solid var(--border);">' +
+            '<td style="padding:6px;font-weight:600;color:var(--primary);">' + m.sort_order + '</td>' +
+            '<td style="padding:6px;">' + m.minor_name + ' <span style="color:var(--text-muted);font-size:0.72rem;">(' + m.major_name + ')</span></td>' +
+            '<td style="padding:6px;text-align:right;color:var(--text-muted);">' + m.count + '</td>' +
+            '<td style="padding:6px;text-align:center;">' +
+            '<button onclick="soMoveMinor(' + i + ',-1)" ' + upDisabled + ' style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 6px;cursor:pointer;">⬆</button> ' +
+            '<button onclick="soMoveMinor(' + i + ',1)" ' + downDisabled + ' style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 6px;cursor:pointer;">⬇</button>' +
+            '</td></tr>';
+    }).join('');
+}
+
+function soMoveMinor(idx, delta) {
+    var j = idx + delta;
+    if (j < 0 || j >= soMinorList.length) return;
+    var tmp = soMinorList[idx];
+    soMinorList[idx] = soMinorList[j];
+    soMinorList[j] = tmp;
+    soMinorList.forEach(function(m, i) { m.sort_order = i + 1; });
+    soRenderMinorList();
+    document.getElementById('soMinorSaveStatus').textContent = '변경됨 - 저장 버튼을 눌러주세요';
+    document.getElementById('soMinorSaveStatus').style.color = 'var(--warning)';
+}
+
+async function soSaveMinorOrder() {
+    if (!db) return;
+    var status = document.getElementById('soMinorSaveStatus');
+    status.textContent = '저장 중...';
+    status.style.color = 'var(--text-muted)';
+    try {
+        var rows = soMinorList.map(function(m) {
+            return {
+                minor_name: m.minor_name,
+                major_name: m.major_name,
+                sort_order: m.sort_order,
+                updated_at: new Date().toISOString()
+            };
+        });
+        var { error } = await db.from('category_order').upsert(rows, { onConflict: 'minor_name' });
+        if (error) throw error;
+        status.textContent = '✓ 저장 완료 (' + rows.length + '건)';
+        status.style.color = 'var(--success)';
+    } catch (err) {
+        status.textContent = '저장 실패: ' + err.message;
+        status.style.color = 'var(--danger)';
+    }
+}
+
+function soPopulateMinorSelect() {
+    var sel = document.getElementById('soPickMinor');
+    sel.innerHTML = '<option value="">중분류 선택...</option>' +
+        soMinorList.map(function(m) {
+            return '<option value="' + m.minor_name + '">' + m.minor_name + ' (' + m.count + ')</option>';
+        }).join('');
+}
+
+async function soLoadProducts() {
+    var minorName = document.getElementById('soPickMinor').value;
+    var body = document.getElementById('soProductListBody');
+    if (!minorName) {
+        body.innerHTML = '<tr><td colspan="2" style="text-align:center;padding:12px;color:var(--text-muted);">중분류를 먼저 선택하세요</td></tr>';
+        return;
+    }
+    if (!db) return;
+    try {
+        var { data, error } = await db.from('products')
+            .select('code,name,spec,sort_order')
+            .eq('minor_name', minorName)
+            .order('sort_order', { ascending: true })
+            .order('name', { ascending: true });
+        if (error) throw error;
+        soCurrentProducts = data || [];
+        soRenderProductList();
+    } catch (err) {
+        body.innerHTML = '<tr><td colspan="2" style="color:var(--danger);text-align:center;padding:12px;">오류: ' + err.message + '</td></tr>';
+    }
+}
+
+function soRenderProductList() {
+    var body = document.getElementById('soProductListBody');
+    if (soCurrentProducts.length === 0) {
+        body.innerHTML = '<tr><td colspan="2" style="text-align:center;padding:12px;color:var(--text-muted);">품목 없음</td></tr>';
+        return;
+    }
+    body.innerHTML = soCurrentProducts.map(function(p, i) {
+        var upDisabled = i === 0 ? 'disabled' : '';
+        var downDisabled = i === soCurrentProducts.length - 1 ? 'disabled' : '';
+        var safeCode = String(p.code).replace(/'/g, "\\'");
+        return '<tr style="border-bottom:1px solid var(--border);">' +
+            '<td style="padding:6px;">' + (p.name || '') + ' <span style="color:var(--text-muted);font-size:0.72rem;">(' + (p.spec || '-') + ')</span></td>' +
+            '<td style="padding:6px;text-align:center;">' +
+            '<button onclick="soMoveProduct(\'' + safeCode + '\',\'top\')" style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 5px;cursor:pointer;font-size:0.7rem;" title="맨 위로">⏫</button> ' +
+            '<button onclick="soMoveProduct(\'' + safeCode + '\',\'up\')" ' + upDisabled + ' style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 5px;cursor:pointer;font-size:0.7rem;">⬆</button> ' +
+            '<button onclick="soMoveProduct(\'' + safeCode + '\',\'down\')" ' + downDisabled + ' style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 5px;cursor:pointer;font-size:0.7rem;">⬇</button> ' +
+            '<button onclick="soMoveProduct(\'' + safeCode + '\',\'bottom\')" style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 5px;cursor:pointer;font-size:0.7rem;" title="맨 뒤로">⏬</button>' +
+            '</td></tr>';
+    }).join('');
+}
+
+async function soMoveProduct(code, action) {
+    var idx = soCurrentProducts.findIndex(function(p){ return p.code === code; });
+    if (idx === -1) return;
+    var item = soCurrentProducts[idx];
+    soCurrentProducts.splice(idx, 1);
+    if (action === 'top') soCurrentProducts.unshift(item);
+    else if (action === 'up') soCurrentProducts.splice(idx - 1, 0, item);
+    else if (action === 'down') soCurrentProducts.splice(idx + 1, 0, item);
+    else if (action === 'bottom') soCurrentProducts.push(item);
+
+    // 재정렬 후 sort_order 재할당
+    soCurrentProducts.forEach(function(p, i) { p.sort_order = i + 1; });
+    soRenderProductList();
+
+    // DB 즉시 반영 (변경된 품목만)
+    var status = document.getElementById('soProductSaveStatus');
+    status.textContent = '저장 중...';
+    status.style.color = 'var(--text-muted)';
+    try {
+        // 전체 재설정 (batch upsert)
+        var rows = soCurrentProducts.map(function(p) {
+            return { code: p.code, sort_order: p.sort_order };
+        });
+        // upsert는 모든 필드 필요할 수 있어서 update 반복이 안전
+        for (var i = 0; i < rows.length; i++) {
+            var r = rows[i];
+            await db.from('products').update({ sort_order: r.sort_order }).eq('code', r.code);
+        }
+        status.textContent = '✓ 저장됨 (' + new Date().toLocaleTimeString('ko-KR') + ')';
+        status.style.color = 'var(--success)';
+    } catch (err) {
+        status.textContent = '저장 실패: ' + err.message;
+        status.style.color = 'var(--danger)';
     }
 }
 
