@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.20</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.21</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -2097,9 +2097,10 @@
             </div>
         </div>
         <div class="form-row">
-            <div class="form-group" style="flex:2">
-                <label>품목명 *</label>
-                <input type="text" id="pmName" placeholder="품목명">
+            <div class="form-group" style="flex:2;position:relative;">
+                <label>품목명 * <span id="pmNameHint" style="font-size:0.72rem;color:var(--text-muted);font-weight:400;margin-left:4px;"></span></label>
+                <input type="text" id="pmName" placeholder="품목명 (2글자 이상 입력 시 분류 추천)" oninput="pmSuggestFromName()" autocomplete="off">
+                <div id="pmSuggestBox" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:6px;max-height:180px;overflow-y:auto;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,0.1);margin-top:2px;"></div>
             </div>
             <div class="form-group" style="flex:1">
                 <label>규격</label>
@@ -2482,6 +2483,134 @@ function renderProductList() {
     updateQuoteBtn();
 }
 
+// 품목명 실시간 유사도 검색 (분류 추천 + 중복 경고)
+function pmNormalizeText(s) {
+    return String(s || '').replace(/[\s()（）#.\-_/\[\]]/g, '').toLowerCase();
+}
+
+function pmSuggestFromName() {
+    var nameInput = document.getElementById('pmName');
+    var box = document.getElementById('pmSuggestBox');
+    var hint = document.getElementById('pmNameHint');
+    if (!nameInput || !box) return;
+    var q = nameInput.value.trim();
+
+    if (q.length < 2) {
+        box.style.display = 'none';
+        if (hint) hint.textContent = '';
+        return;
+    }
+
+    var qn = pmNormalizeText(q);
+    // 품목명에서 2자 이상 토큰 추출 (한글/영문/숫자 연속)
+    var qTokens = q.toLowerCase().match(/[가-힣a-z0-9]{2,}/g) || [];
+
+    var scored = [];
+    for (var i = 0; i < products.length; i++) {
+        var p = products[i];
+        var pn = pmNormalizeText(p.name);
+        if (!pn) continue;
+        var score = 0;
+        if (pn.indexOf(qn) !== -1 || qn.indexOf(pn) !== -1) score += 10;
+        for (var j = 0; j < qTokens.length; j++) {
+            if (pn.indexOf(pmNormalizeText(qTokens[j])) !== -1) score += 2;
+        }
+        if (score > 0) scored.push({ p: p, score: score });
+    }
+    scored.sort(function(a, b) { return b.score - a.score; });
+    var top = scored.slice(0, 8);
+
+    if (top.length === 0) {
+        box.style.display = 'none';
+        if (hint) { hint.textContent = '(기존 유사 품목 없음)'; hint.style.color = 'var(--text-muted)'; }
+        return;
+    }
+
+    // 분류 빈도 집계 → 대/중분류 자동 추천
+    var majorCount = {}, minorCount = {};
+    top.forEach(function(s) {
+        var p = s.p;
+        if (p.majorCode) majorCount[p.majorCode] = (majorCount[p.majorCode] || 0) + s.score;
+        if (p.majorCode && p.minorCode) {
+            var key = p.majorCode + '|' + p.minorCode;
+            minorCount[key] = (minorCount[key] || 0) + s.score;
+        }
+    });
+    var bestMajor = Object.keys(majorCount).sort(function(a,b){return majorCount[b]-majorCount[a];})[0];
+    var bestMinorKey = Object.keys(minorCount).sort(function(a,b){return minorCount[b]-minorCount[a];})[0];
+
+    // 기존 값이 비어있을 때만 자동 세팅
+    var majorSel = document.getElementById('pmMajor');
+    var minorSel = document.getElementById('pmMinor');
+    if (majorSel && bestMajor && !majorSel.value) {
+        majorSel.value = bestMajor;
+        if (typeof updateMinorOptions === 'function') updateMinorOptions();
+        if (minorSel && bestMinorKey) {
+            var parts = bestMinorKey.split('|');
+            if (parts[0] === bestMajor) {
+                // DOM 업데이트 후 설정
+                setTimeout(function() { minorSel.value = parts[1]; }, 0);
+            }
+        }
+    }
+
+    // 드롭다운 렌더
+    box.innerHTML = top.map(function(s) {
+        var p = s.p;
+        var cls = (p.majorName || '') + (p.minorName ? ' / ' + p.minorName : '');
+        var safeCode = String(p.code || '').replace(/'/g, "\\'");
+        return '<div style="padding:7px 10px;cursor:pointer;border-bottom:1px solid #eee;font-size:0.8rem;" ' +
+               'onmouseover="this.style.background=\'#f5f5f5\'" onmouseout="this.style.background=\'#fff\'" ' +
+               'onclick="pmSelectSuggestion(\'' + safeCode + '\')">' +
+               '<strong>' + (p.code || '') + '</strong> · ' + (p.name || '') +
+               ' <span style="color:var(--text-muted);">(' + (p.spec || '-') + ')</span>' +
+               '<div style="font-size:0.72rem;color:var(--primary);margin-top:2px;">' + cls + '</div></div>';
+    }).join('');
+    box.style.display = 'block';
+
+    // 중복 경고 힌트
+    if (hint) {
+        var exactDup = top.filter(function(s) {
+            return pmNormalizeText(s.p.name) === qn;
+        }).length;
+        if (exactDup > 0) {
+            hint.textContent = '⚠️ 동일명 품목 ' + exactDup + '건 존재';
+            hint.style.color = 'var(--danger)';
+        } else {
+            hint.textContent = '유사 품목 ' + top.length + '건 (분류 자동 추천됨)';
+            hint.style.color = 'var(--primary)';
+        }
+    }
+}
+
+function pmSelectSuggestion(code) {
+    var p = products.find(function(x){ return x.code === code; });
+    if (!p) return;
+    var majorSel = document.getElementById('pmMajor');
+    var minorSel = document.getElementById('pmMinor');
+    if (majorSel && p.majorCode) {
+        majorSel.value = p.majorCode;
+        if (typeof updateMinorOptions === 'function') updateMinorOptions();
+        if (minorSel && p.minorCode) {
+            setTimeout(function() { minorSel.value = p.minorCode; }, 0);
+        }
+    }
+    if (!document.getElementById('pmSpec').value && p.spec) {
+        document.getElementById('pmSpec').value = p.spec;
+    }
+    document.getElementById('pmSuggestBox').style.display = 'none';
+}
+
+// 드롭다운 외부 클릭 시 닫기
+document.addEventListener('click', function(e) {
+    var box = document.getElementById('pmSuggestBox');
+    var input = document.getElementById('pmName');
+    if (!box || box.style.display === 'none') return;
+    if (e.target !== input && !box.contains(e.target)) {
+        box.style.display = 'none';
+    }
+});
+
 function openAddProductModal() {
     editingProductCode = null;
     document.getElementById('productModalTitle').textContent = '품목 추가';
@@ -2494,6 +2623,9 @@ function openAddProductModal() {
     populateVendorSelect();
     populateMajorSelect();
     loadProductModalImage(null);
+    // 추천 드롭다운/힌트 리셋
+    var sb = document.getElementById('pmSuggestBox'); if (sb) sb.style.display = 'none';
+    var ht = document.getElementById('pmNameHint'); if (ht) ht.textContent = '';
     openModal('productModal');
 }
 
