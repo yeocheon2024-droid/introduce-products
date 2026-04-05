@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.25</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.26</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1802,15 +1802,26 @@
                 <select id="soPickMinor" onchange="soLoadProducts()" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;margin-bottom:8px;">
                     <option value="">중분류 선택...</option>
                 </select>
+                <!-- 다중 선택 툴바 (선택 시에만 표시) -->
+                <div id="soBulkToolbar" style="display:none;background:#fff8e1;border:1px solid #ffc107;border-radius:6px;padding:6px 10px;margin-bottom:6px;font-size:0.78rem;">
+                    <strong id="soBulkCount">0</strong>건 선택됨 ·
+                    <button class="btn btn-outline btn-sm" onclick="soBulkMove('top')" style="padding:2px 8px;">⏫ 맨 위로</button>
+                    <button class="btn btn-outline btn-sm" onclick="soBulkMove('up')" style="padding:2px 8px;">⬆ 위로</button>
+                    <button class="btn btn-outline btn-sm" onclick="soBulkMove('down')" style="padding:2px 8px;">⬇ 아래로</button>
+                    <button class="btn btn-outline btn-sm" onclick="soBulkMove('bottom')" style="padding:2px 8px;">⏬ 맨 뒤로</button>
+                    <button class="btn btn-outline btn-sm" onclick="soClearSelection()" style="padding:2px 8px;margin-left:8px;">선택 해제</button>
+                    <span style="color:var(--text-muted);margin-left:8px;">💡 선택된 행을 드래그하면 한꺼번에 이동</span>
+                </div>
                 <div style="background:var(--bg);border-radius:8px;padding:8px;">
                     <table style="width:100%;font-size:0.78rem;">
                         <thead>
                             <tr style="border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);">
+                                <th style="width:28px;padding:4px 6px;"><input type="checkbox" id="soCheckAll" onchange="soToggleAll(this.checked)"></th>
                                 <th style="text-align:left;padding:4px 6px;">품목</th>
                                 <th style="text-align:center;padding:4px 6px;width:140px;">이동</th>
                             </tr>
                         </thead>
-                        <tbody id="soProductListBody"><tr><td colspan="2" style="text-align:center;padding:12px;color:var(--text-muted);">중분류를 먼저 선택하세요</td></tr></tbody>
+                        <tbody id="soProductListBody"><tr><td colspan="3" style="text-align:center;padding:12px;color:var(--text-muted);">중분류를 먼저 선택하세요</td></tr></tbody>
                     </table>
                 </div>
                 <div style="margin-top:8px;">
@@ -7431,6 +7442,7 @@ async function renderTodayAppliedSchedule() {
 // ============================================================
 var soMinorList = []; // [{minor_name, major_name, count, sort_order}]
 var soCurrentProducts = []; // 현재 선택된 중분류의 품목 목록
+var soSelectedCodes = new Set(); // 다중 선택된 품목코드
 
 function initSortOrderTab() { soLoadMinors(); }
 
@@ -7536,8 +7548,23 @@ function soDrop(e, type, toIdx) {
         var st = document.getElementById('soMinorSaveStatus');
         if (st) { st.textContent = '변경됨 - 저장 버튼을 눌러주세요'; st.style.color = 'var(--warning)'; }
     } else if (type === 'product') {
-        var pItem = soCurrentProducts.splice(fromIdx, 1)[0];
-        soCurrentProducts.splice(toIdx, 0, pItem);
+        var draggedCode = soCurrentProducts[fromIdx] && soCurrentProducts[fromIdx].code;
+        // 드래그한 행이 선택된 상태면 선택된 모든 품목을 함께 이동
+        if (draggedCode && soSelectedCodes.has(draggedCode) && soSelectedCodes.size > 1) {
+            var targetCode = soCurrentProducts[toIdx] && soCurrentProducts[toIdx].code;
+            if (targetCode && soSelectedCodes.has(targetCode)) return; // 선택된 것 위로는 불가
+            var selectedItems = soCurrentProducts.filter(function(p){ return soSelectedCodes.has(p.code); });
+            var rest = soCurrentProducts.filter(function(p){ return !soSelectedCodes.has(p.code); });
+            var insertIdx = rest.findIndex(function(p){ return p.code === targetCode; });
+            if (insertIdx === -1) insertIdx = rest.length;
+            // 드롭 방향 보정: 아래로 드래그 시 타겟 뒤에 삽입
+            if (fromIdx < toIdx) insertIdx++;
+            rest.splice(insertIdx, 0, ...selectedItems);
+            soCurrentProducts = rest;
+        } else {
+            var pItem = soCurrentProducts.splice(fromIdx, 1)[0];
+            soCurrentProducts.splice(toIdx, 0, pItem);
+        }
         soCurrentProducts.forEach(function(p, i) { p.sort_order = i + 1; });
         soRenderProductList();
         // 즉시 DB 저장
@@ -7594,7 +7621,8 @@ async function soLoadProducts() {
     var minorName = document.getElementById('soPickMinor').value;
     var body = document.getElementById('soProductListBody');
     if (!minorName) {
-        body.innerHTML = '<tr><td colspan="2" style="text-align:center;padding:12px;color:var(--text-muted);">중분류를 먼저 선택하세요</td></tr>';
+        body.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:12px;color:var(--text-muted);">중분류를 먼저 선택하세요</td></tr>';
+        soClearSelection();
         return;
     }
     if (!db) return;
@@ -7606,29 +7634,33 @@ async function soLoadProducts() {
             .order('name', { ascending: true });
         if (error) throw error;
         soCurrentProducts = data || [];
+        soClearSelection();
         soRenderProductList();
     } catch (err) {
-        body.innerHTML = '<tr><td colspan="2" style="color:var(--danger);text-align:center;padding:12px;">오류: ' + err.message + '</td></tr>';
+        body.innerHTML = '<tr><td colspan="3" style="color:var(--danger);text-align:center;padding:12px;">오류: ' + err.message + '</td></tr>';
     }
 }
 
 function soRenderProductList() {
     var body = document.getElementById('soProductListBody');
     if (soCurrentProducts.length === 0) {
-        body.innerHTML = '<tr><td colspan="2" style="text-align:center;padding:12px;color:var(--text-muted);">품목 없음</td></tr>';
+        body.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:12px;color:var(--text-muted);">품목 없음</td></tr>';
         return;
     }
     body.innerHTML = soCurrentProducts.map(function(p, i) {
         var upDisabled = i === 0 ? 'disabled' : '';
         var downDisabled = i === soCurrentProducts.length - 1 ? 'disabled' : '';
         var safeCode = String(p.code).replace(/'/g, "\\'");
+        var checked = soSelectedCodes.has(p.code) ? 'checked' : '';
+        var rowBg = soSelectedCodes.has(p.code) ? 'background:#fff8e1;' : '';
         return '<tr draggable="true" ' +
             'ondragstart="soDragStart(event,\'product\',' + i + ')" ' +
             'ondragover="soDragOver(event)" ' +
             'ondragleave="soDragLeave(event)" ' +
             'ondrop="soDrop(event,\'product\',' + i + ')" ' +
             'ondragend="soDragEnd(event)" ' +
-            'style="border-bottom:1px solid var(--border);cursor:move;">' +
+            'style="border-bottom:1px solid var(--border);cursor:move;' + rowBg + '">' +
+            '<td style="padding:3px 6px;text-align:center;"><input type="checkbox" ' + checked + ' onchange="soToggleSelect(\'' + safeCode + '\',this.checked)" onclick="event.stopPropagation()"></td>' +
             '<td style="padding:3px 6px;"><span style="color:var(--text-muted);margin-right:4px;">⋮⋮</span>' + (p.name || '') + ' <span style="color:var(--text-muted);font-size:0.7rem;">(' + (p.spec || '-') + ')</span></td>' +
             '<td style="padding:3px 6px;text-align:center;">' +
             '<button onclick="soMoveProduct(\'' + safeCode + '\',\'top\')" style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 5px;cursor:pointer;font-size:0.7rem;" title="맨 위로">⏫</button> ' +
@@ -7637,6 +7669,75 @@ function soRenderProductList() {
             '<button onclick="soMoveProduct(\'' + safeCode + '\',\'bottom\')" style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 5px;cursor:pointer;font-size:0.7rem;" title="맨 뒤로">⏬</button>' +
             '</td></tr>';
     }).join('');
+    soUpdateBulkToolbar();
+}
+
+// 다중 선택 관리
+function soToggleSelect(code, checked) {
+    if (checked) soSelectedCodes.add(code);
+    else soSelectedCodes.delete(code);
+    soRenderProductList();
+}
+function soToggleAll(checked) {
+    soSelectedCodes.clear();
+    if (checked) {
+        soCurrentProducts.forEach(function(p){ soSelectedCodes.add(p.code); });
+    }
+    soRenderProductList();
+}
+function soClearSelection() {
+    soSelectedCodes.clear();
+    var checkAll = document.getElementById('soCheckAll');
+    if (checkAll) checkAll.checked = false;
+    soUpdateBulkToolbar();
+}
+function soUpdateBulkToolbar() {
+    var bar = document.getElementById('soBulkToolbar');
+    var cnt = document.getElementById('soBulkCount');
+    var checkAll = document.getElementById('soCheckAll');
+    if (!bar) return;
+    if (soSelectedCodes.size > 0) {
+        bar.style.display = 'block';
+        if (cnt) cnt.textContent = soSelectedCodes.size;
+    } else {
+        bar.style.display = 'none';
+    }
+    if (checkAll) {
+        checkAll.checked = soCurrentProducts.length > 0 && soSelectedCodes.size === soCurrentProducts.length;
+    }
+}
+
+// 선택 품목 일괄 이동
+async function soBulkMove(action) {
+    if (soSelectedCodes.size === 0) return;
+    // 선택된 품목을 원래 순서대로 추출
+    var selectedItems = soCurrentProducts.filter(function(p){ return soSelectedCodes.has(p.code); });
+    var rest = soCurrentProducts.filter(function(p){ return !soSelectedCodes.has(p.code); });
+
+    if (action === 'top') {
+        soCurrentProducts = selectedItems.concat(rest);
+    } else if (action === 'bottom') {
+        soCurrentProducts = rest.concat(selectedItems);
+    } else if (action === 'up' || action === 'down') {
+        // 선택된 블록의 상대 위치 한 칸 이동
+        var firstIdx = soCurrentProducts.findIndex(function(p){ return soSelectedCodes.has(p.code); });
+        var lastIdx = -1;
+        for (var i = soCurrentProducts.length - 1; i >= 0; i--) {
+            if (soSelectedCodes.has(soCurrentProducts[i].code)) { lastIdx = i; break; }
+        }
+        if (action === 'up' && firstIdx > 0) {
+            // 블록 바로 위 1건을 블록 뒤로 이동
+            var above = soCurrentProducts.splice(firstIdx - 1, 1)[0];
+            soCurrentProducts.splice(lastIdx, 0, above);
+        } else if (action === 'down' && lastIdx < soCurrentProducts.length - 1) {
+            // 블록 바로 아래 1건을 블록 앞으로 이동
+            var below = soCurrentProducts.splice(lastIdx + 1, 1)[0];
+            soCurrentProducts.splice(firstIdx, 0, below);
+        }
+    }
+    soCurrentProducts.forEach(function(p, i){ p.sort_order = i + 1; });
+    soRenderProductList();
+    await soSaveProductOrder();
 }
 
 async function soSaveProductOrder() {
