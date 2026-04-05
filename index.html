@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.17</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.18</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -2577,13 +2577,17 @@ function saveProduct() {
 
 function deleteProduct(code) {
     if (!confirm(`품목 [${code}]를 삭제하시겠습니까?`)) return;
+    var target = products.find(function(p){ return p.code === code; });
+    var name = target ? target.name : '';
     products = products.filter(p => p.code !== code);
     saveAll();
     renderProductList();
-    // Supabase에서도 즉시 삭제
+    // Supabase에서도 즉시 삭제 + 삭제 로그 기록
     if (db) {
         db.from('products').delete().eq('code', code)
             .then(function(res) { if (res.error) console.warn('Supabase 삭제 실패:', res.error.message); });
+        db.from('deleted_products').upsert({ code: code, product_name: name, deleted_at: new Date().toISOString() }, { onConflict: 'code' })
+            .then(function(res) { if (res.error) console.warn('삭제 로그 기록 실패:', res.error.message); });
     }
 }
 
@@ -5663,6 +5667,21 @@ function toggleSidebar() {
 async function autoSyncOnLoad() {
     if (!db) return;
     try {
+        // 0) 삭제 로그 먼저 조회 → 로컬에서 해당 품목 제거 (삭제 전파)
+        try {
+            const { data: delLog } = await db.from('deleted_products').select('code');
+            if (delLog && delLog.length > 0) {
+                const deletedSet = new Set(delLog.map(function(r){ return r.code; }));
+                const beforeCount = products.length;
+                products = products.filter(function(p){ return !deletedSet.has(p.code); });
+                const removed = beforeCount - products.length;
+                if (removed > 0) {
+                    console.log('[동기화] 삭제 로그에 따라 로컬에서 ' + removed + '건 제거');
+                    saveAll();
+                }
+            }
+        } catch (e) { console.warn('삭제 로그 조회 실패:', e.message); }
+
         // 1) 품목 양방향 병합
         const { data: productData, error: productErr } = await db
             .from('products').select('*').order('code');
@@ -5681,8 +5700,14 @@ async function autoSyncOnLoad() {
 
         // 클라우드에 있는 코드 목록
         const cloudCodes = new Set(cloudProducts.map(p => p.code));
-        // 로컬에만 있는 품목 (아직 업로드 안 된 것)
-        const localOnly = products.filter(p => !cloudCodes.has(p.code));
+        // 삭제 로그 재조회 (업로드 전 필터링용)
+        var deletedSet2 = new Set();
+        try {
+            const { data: delLog2 } = await db.from('deleted_products').select('code');
+            if (delLog2) delLog2.forEach(function(r){ deletedSet2.add(r.code); });
+        } catch (e) {}
+        // 로컬에만 있는 품목 (아직 업로드 안 된 것) — 삭제 목록 제외
+        const localOnly = products.filter(p => !cloudCodes.has(p.code) && !deletedSet2.has(p.code));
 
         // 병합: 클라우드 데이터 + 로컬에만 있는 품목
         products = [...cloudProducts, ...localOnly];
