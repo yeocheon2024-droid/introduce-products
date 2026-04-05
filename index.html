@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.24</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.25</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1802,12 +1802,12 @@
                 <select id="soPickMinor" onchange="soLoadProducts()" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;margin-bottom:8px;">
                     <option value="">중분류 선택...</option>
                 </select>
-                <div style="background:var(--bg);border-radius:8px;padding:10px;max-height:500px;overflow-y:auto;">
-                    <table style="width:100%;font-size:0.82rem;">
+                <div style="background:var(--bg);border-radius:8px;padding:8px;">
+                    <table style="width:100%;font-size:0.78rem;">
                         <thead>
-                            <tr style="border-bottom:1px solid var(--border);">
-                                <th style="text-align:left;padding:6px;">품목</th>
-                                <th style="text-align:center;padding:6px;width:140px;">이동</th>
+                            <tr style="border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);">
+                                <th style="text-align:left;padding:4px 6px;">품목</th>
+                                <th style="text-align:center;padding:4px 6px;width:140px;">이동</th>
                             </tr>
                         </thead>
                         <tbody id="soProductListBody"><tr><td colspan="2" style="text-align:center;padding:12px;color:var(--text-muted);">중분류를 먼저 선택하세요</td></tr></tbody>
@@ -7629,8 +7629,8 @@ function soRenderProductList() {
             'ondrop="soDrop(event,\'product\',' + i + ')" ' +
             'ondragend="soDragEnd(event)" ' +
             'style="border-bottom:1px solid var(--border);cursor:move;">' +
-            '<td style="padding:6px;"><span style="color:var(--text-muted);margin-right:4px;">⋮⋮</span>' + (p.name || '') + ' <span style="color:var(--text-muted);font-size:0.72rem;">(' + (p.spec || '-') + ')</span></td>' +
-            '<td style="padding:6px;text-align:center;">' +
+            '<td style="padding:3px 6px;"><span style="color:var(--text-muted);margin-right:4px;">⋮⋮</span>' + (p.name || '') + ' <span style="color:var(--text-muted);font-size:0.7rem;">(' + (p.spec || '-') + ')</span></td>' +
+            '<td style="padding:3px 6px;text-align:center;">' +
             '<button onclick="soMoveProduct(\'' + safeCode + '\',\'top\')" style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 5px;cursor:pointer;font-size:0.7rem;" title="맨 위로">⏫</button> ' +
             '<button onclick="soMoveProduct(\'' + safeCode + '\',\'up\')" ' + upDisabled + ' style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 5px;cursor:pointer;font-size:0.7rem;">⬆</button> ' +
             '<button onclick="soMoveProduct(\'' + safeCode + '\',\'down\')" ' + downDisabled + ' style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 5px;cursor:pointer;font-size:0.7rem;">⬇</button> ' +
