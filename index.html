@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.15</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.16</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1115,6 +1115,16 @@
             <div class="stat-label">매입처</div>
         </div>
     </div>
+
+    <!-- 오늘 반영된 예약 가격 위젯 -->
+    <div class="card" id="dashPriceScheduleCard" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+            <h3 style="margin:0;padding:0;border:0;">📅 오늘 자동 반영된 예약 가격 <span id="dashPsCount" style="color:var(--primary);"></span></h3>
+            <button class="btn btn-outline btn-sm" onclick="switchTab('priceSchedule')">예약 가격 관리 →</button>
+        </div>
+        <div id="dashPsList" style="font-size:0.85rem;"></div>
+    </div>
+
     <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
             <h3 style="margin:0;padding:0;border:0;">신규 품목 타임라인</h3>
@@ -2277,6 +2287,9 @@ function renderDashboard() {
     document.getElementById('statSelf').textContent = selfCount.toLocaleString();
     document.getElementById('statExternal').textContent = extCount.toLocaleString();
     document.getElementById('statVendors').textContent = vendors.filter(v => v.type === 'external').length;
+
+    // 오늘 반영된 예약 가격 위젯 (비동기)
+    renderTodayAppliedSchedule();
 
     // 신규 품목 타임라인
     const days = parseInt(document.getElementById('dashRecentDays')?.value || '30');
@@ -7011,6 +7024,47 @@ async function psBulkUpload(event) {
     }
 }
 
+// 오늘 자동 반영된 예약 가격 위젯 (대시보드용)
+async function renderTodayAppliedSchedule() {
+    var card = document.getElementById('dashPriceScheduleCard');
+    if (!card || !db) { if (card) card.style.display = 'none'; return; }
+    try {
+        var today = new Date().toISOString().slice(0, 10);
+        var tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        var tomorrowIso = tomorrow.toISOString().slice(0, 10);
+
+        var { data, error } = await db.from('price_schedule')
+            .select('product_code,product_name,old_sell,new_sell,applied_at')
+            .eq('status', 'applied')
+            .gte('applied_at', today)
+            .lt('applied_at', tomorrowIso)
+            .order('applied_at', { ascending: false });
+        if (error) { card.style.display = 'none'; return; }
+        if (!data || data.length === 0) { card.style.display = 'none'; return; }
+
+        card.style.display = 'block';
+        document.getElementById('dashPsCount').textContent = '(' + data.length + '건)';
+        var rows = data.slice(0, 10).map(function(r) {
+            var diff = r.new_sell - (r.old_sell || 0);
+            var diffColor = diff > 0 ? 'var(--danger)' : (diff < 0 ? 'var(--success)' : 'var(--text-muted)');
+            var arrow = diff > 0 ? '▲' : (diff < 0 ? '▼' : '-');
+            var time = r.applied_at ? r.applied_at.slice(11, 16) : '';
+            return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);">' +
+                '<span><strong>' + (r.product_name || r.product_code) + '</strong> <span style="color:var(--text-muted);font-size:0.78rem;">· ' + r.product_code + '</span></span>' +
+                '<span style="color:var(--text-muted);">' +
+                (r.old_sell || 0).toLocaleString() + ' → <strong style="color:var(--text);">' + r.new_sell.toLocaleString() + '원</strong> ' +
+                '<span style="color:' + diffColor + ';font-size:0.78rem;">' + arrow + Math.abs(diff).toLocaleString() + '</span> ' +
+                '<span style="color:var(--text-muted);font-size:0.75rem;">' + time + '</span>' +
+                '</span></div>';
+        }).join('');
+        if (data.length > 10) rows += '<div style="text-align:center;padding:8px;color:var(--text-muted);font-size:0.78rem;">외 ' + (data.length - 10) + '건</div>';
+        document.getElementById('dashPsList').innerHTML = rows;
+    } catch (err) {
+        card.style.display = 'none';
+    }
+}
+
 // ============================================================
 // 자동 적용 체크 — 모든 사이트 공통 모듈
 // 적용일 도래한 pending 건을 products.sell에 반영하고 applied 처리
@@ -7077,6 +7131,8 @@ async function checkAndApplyScheduledPrices(verbose) {
             }
             // 품목 관리 갱신
             if (typeof renderProductList === 'function') renderProductList();
+            // 대시보드 위젯 갱신
+            if (typeof renderTodayAppliedSchedule === 'function') renderTodayAppliedSchedule();
         } else if (verbose) {
             alert('적용할 예약이 없습니다.');
         }
