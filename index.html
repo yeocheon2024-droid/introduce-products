@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.21</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.22</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -2088,8 +2088,8 @@
         <h2 id="productModalTitle">품목 추가</h2>
         <div class="form-row">
             <div class="form-group" style="flex:1">
-                <label>품목코드 *</label>
-                <input type="text" id="pmCode" placeholder="자동 생성 또는 직접 입력">
+                <label>품목코드 * <span id="pmCodeHint" style="font-size:0.72rem;font-weight:400;margin-left:4px;"></span></label>
+                <input type="text" id="pmCode" placeholder="자동 생성 또는 직접 입력" oninput="pmCheckCodeDuplicate()">
             </div>
             <div class="form-group" style="flex:1">
                 <label>매입처 *</label>
@@ -2626,6 +2626,7 @@ function openAddProductModal() {
     // 추천 드롭다운/힌트 리셋
     var sb = document.getElementById('pmSuggestBox'); if (sb) sb.style.display = 'none';
     var ht = document.getElementById('pmNameHint'); if (ht) ht.textContent = '';
+    var ch = document.getElementById('pmCodeHint'); if (ch) ch.textContent = '';
     openModal('productModal');
 }
 
@@ -2651,7 +2652,28 @@ function editProduct(code) {
     openModal('productModal');
 }
 
-function saveProduct() {
+// 품목코드 실시간 중복 체크 (로컬)
+function pmCheckCodeDuplicate() {
+    var codeInput = document.getElementById('pmCode');
+    var hint = document.getElementById('pmCodeHint');
+    if (!codeInput || !hint) return;
+    var code = codeInput.value.trim();
+    if (!code) { hint.textContent = ''; return; }
+    // 수정 모드에서 자기 자신은 제외
+    if (editingProductCode && code === editingProductCode) {
+        hint.textContent = '(수정 중)'; hint.style.color = 'var(--text-muted)'; return;
+    }
+    var dup = products.find(function(p){ return p.code === code; });
+    if (dup) {
+        hint.textContent = '⚠️ 이미 사용 중: ' + (dup.name || '').slice(0, 15);
+        hint.style.color = 'var(--danger)';
+    } else {
+        hint.textContent = '✓ 사용 가능';
+        hint.style.color = 'var(--success)';
+    }
+}
+
+async function saveProduct() {
     const code = document.getElementById('pmCode').value.trim();
     const name = document.getElementById('pmName').value.trim();
     if (!code || !name) { alert('품목코드와 품목명은 필수입니다.'); return; }
@@ -2659,6 +2681,29 @@ function saveProduct() {
     if (!editingProductCode && products.find(p => p.code === code)) {
         alert('이미 존재하는 품목코드입니다: ' + code);
         return;
+    }
+
+    // 저장 직전 DB + 삭제로그 재검증 (신규 등록일 때만)
+    if (!editingProductCode && db) {
+        try {
+            const [resProd, resDel] = await Promise.all([
+                db.from('products').select('code,name').eq('code', code).maybeSingle(),
+                db.from('deleted_products').select('code').eq('code', code).maybeSingle()
+            ]);
+            if (resProd.data) {
+                alert('DB에 이미 존재하는 품목코드입니다: ' + code + '\n(' + (resProd.data.name || '') + ')\n\n다른 코드를 사용해주세요.');
+                return;
+            }
+            if (resDel.data) {
+                if (!confirm('이 코드는 과거에 삭제된 품목의 코드입니다: ' + code + '\n\n재사용하면 삭제 로그가 제거됩니다. 계속하시겠습니까?')) {
+                    return;
+                }
+                // 재사용 승인 시 deleted_products에서 제거
+                await db.from('deleted_products').delete().eq('code', code);
+            }
+        } catch (e) {
+            console.warn('DB 중복 재검증 실패(스킵):', e.message);
+        }
     }
 
     const vendorSelect = document.getElementById('pmVendor');
