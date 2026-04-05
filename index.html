@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.26</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.27</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1156,6 +1156,9 @@
             <option value="external">외부매입</option>
             <option value="soldout">품절만</option>
             <option value="available">판매중만</option>
+            <option value="hidden">숨김만</option>
+            <option value="visible">표시만</option>
+            <option value="noimage">이미지없음만</option>
         </select>
         <select id="majorFilter" onchange="onMajorFilterChange()">
             <option value="">대분류 전체</option>
@@ -2440,6 +2443,9 @@ function getFilteredProducts() {
         if (filter === 'external' && p.vendorType !== 'external') return false;
         if (filter === 'soldout' && !p.soldOut) return false;
         if (filter === 'available' && p.soldOut) return false;
+        if (filter === 'hidden' && !p.hidden) return false;
+        if (filter === 'visible' && p.hidden) return false;
+        if (filter === 'noimage' && (p.imageUrl && p.imageUrl.trim() !== '')) return false;
         if (majorFilter && p.majorCode !== majorFilter) return false;
         if (minorFilter && p.minorCode !== minorFilter) return false;
         if (q) {
@@ -2482,6 +2488,7 @@ function renderProductList() {
             <td class="text-right" style="font-weight:600;">${sell ? sell.toLocaleString() : '-'}</td>
             <td class="text-center" style="white-space:nowrap;">
                 <button class="btn btn-sm" style="background:${p.soldOut ? 'var(--success)' : 'var(--danger)'};color:#fff;font-size:0.68rem;padding:3px 6px;" onclick="toggleSoldOut('${esc(p.code)}')">${p.soldOut ? '판매중' : '품절'}</button>
+                <button class="btn btn-sm" style="background:${p.hidden ? '#6c757d' : '#ffc107'};color:${p.hidden ? '#fff' : '#000'};font-size:0.68rem;padding:3px 6px;" onclick="toggleHidden('${esc(p.code)}')" title="${p.hidden ? '고객 사이트에서 숨김 중' : '고객 사이트에 표시 중'}">${p.hidden ? '숨김' : '표시'}</button>
                 <button class="btn btn-outline btn-sm" onclick="editProduct('${esc(p.code)}')">수정</button>
                 <button class="btn btn-danger btn-sm" onclick="deleteProduct('${esc(p.code)}')">삭제</button>
             </td>
@@ -2530,6 +2537,7 @@ function renderProductList() {
                             <input type="checkbox" ${selectedProductCodes.has(p.code) ? 'checked' : ''} onchange="toggleProductSelect('${esc(p.code)}', this.checked)"> 견적서 선택
                         </label>
                         <button class="btn btn-sm" style="background:${p.soldOut ? 'var(--success)' : 'var(--danger)'};color:#fff;font-size:0.68rem;padding:3px 6px;" onclick="toggleSoldOut('${esc(p.code)}')">${p.soldOut ? '판매중' : '품절'}</button>
+                        <button class="btn btn-sm" style="background:${p.hidden ? '#6c757d' : '#ffc107'};color:${p.hidden ? '#fff' : '#000'};font-size:0.68rem;padding:3px 6px;" onclick="toggleHidden('${esc(p.code)}')">${p.hidden ? '숨김' : '표시'}</button>
                         <button class="btn btn-outline btn-sm" onclick="editProduct('${esc(p.code)}')">수정</button>
                         <button class="btn btn-danger btn-sm" onclick="deleteProduct('${esc(p.code)}')">삭제</button>
                     </div>
@@ -2851,6 +2859,19 @@ function toggleSoldOut(code) {
     if (db) {
         db.from('products').update({ sold_out: !!p.soldOut }).eq('code', code)
             .then(function(res) { if (res.error) console.warn('품절 상태 동기화 실패:', res.error.message); });
+    }
+}
+
+function toggleHidden(code) {
+    const p = products.find(pr => pr.code === code);
+    if (!p) return;
+    p.hidden = !p.hidden;
+    saveAll();
+    renderProductList();
+    // Supabase 즉시 반영
+    if (db) {
+        db.from('products').update({ hidden: !!p.hidden }).eq('code', code)
+            .then(function(res) { if (res.error) console.warn('숨김 상태 동기화 실패:', res.error.message); });
     }
 }
 
@@ -4277,7 +4298,8 @@ async function uploadToSupabase() {
                 sell: p.sell || 0,
                 registered_at: p.registeredAt || new Date().toISOString().split('T')[0],
                 display_name: p.displayName || null,
-                sold_out: !!p.soldOut
+                sold_out: !!p.soldOut,
+                hidden: !!p.hidden
             }));
 
             const { error } = await db.from('products')
@@ -4404,7 +4426,7 @@ async function downloadFromSupabase() {
             registeredAt: p.registered_at || '',
             imageUrl: p.image_url || '',
             displayName: p.display_name || '',
-            soldOut: !!p.sold_out
+            soldOut: !!p.sold_out, hidden: !!p.hidden
         }));
         syncLog(`품목 ${products.length}개 다운로드 완료`);
 
@@ -4475,7 +4497,8 @@ function autoSyncToSupabase() {
                 cost: p.cost || 0,
                 sell: p.sell || 0,
                 registered_at: p.registeredAt || new Date().toISOString().split('T')[0],
-                sold_out: !!p.soldOut
+                sold_out: !!p.soldOut,
+                hidden: !!p.hidden
             }));
 
             // 50개씩 배치 upsert
@@ -6025,7 +6048,7 @@ async function autoSyncOnLoad() {
             vendorName: p.vendor_name || '', vendorType: p.vendor_type || 'self',
             cost: p.cost || 0, sell: p.sell || 0,
             registeredAt: p.registered_at || '', imageUrl: p.image_url || '',
-            displayName: p.display_name || '', soldOut: !!p.sold_out
+            displayName: p.display_name || '', soldOut: !!p.sold_out, hidden: !!p.hidden
         }));
 
         // 클라우드에 있는 코드 목록
@@ -6054,7 +6077,8 @@ async function autoSyncOnLoad() {
                 cost: p.cost || 0, sell: p.sell || 0,
                 registered_at: p.registeredAt || new Date().toISOString().split('T')[0],
                 display_name: p.displayName || null,
-                sold_out: !!p.soldOut
+                sold_out: !!p.soldOut,
+                hidden: !!p.hidden
             }));
             for (let i = 0; i < batch.length; i += 50) {
                 await db.from('products').upsert(batch.slice(i, i + 50), { onConflict: 'code' });
