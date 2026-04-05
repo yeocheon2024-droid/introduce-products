@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.23</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.24</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -7483,8 +7483,14 @@ function soRenderMinorList() {
     body.innerHTML = soMinorList.map(function(m, i) {
         var upDisabled = i === 0 ? 'disabled' : '';
         var downDisabled = i === soMinorList.length - 1 ? 'disabled' : '';
-        return '<tr style="border-bottom:1px solid var(--border);">' +
-            '<td style="padding:6px;font-weight:600;color:var(--primary);">' + m.sort_order + '</td>' +
+        return '<tr draggable="true" data-idx="' + i + '" ' +
+            'ondragstart="soDragStart(event,\'minor\',' + i + ')" ' +
+            'ondragover="soDragOver(event)" ' +
+            'ondragleave="soDragLeave(event)" ' +
+            'ondrop="soDrop(event,\'minor\',' + i + ')" ' +
+            'ondragend="soDragEnd(event)" ' +
+            'style="border-bottom:1px solid var(--border);cursor:move;">' +
+            '<td style="padding:6px;font-weight:600;color:var(--primary);"><span style="color:var(--text-muted);margin-right:4px;">⋮⋮</span>' + m.sort_order + '</td>' +
             '<td style="padding:6px;">' + m.minor_name + ' <span style="color:var(--text-muted);font-size:0.72rem;">(' + m.major_name + ')</span></td>' +
             '<td style="padding:6px;text-align:right;color:var(--text-muted);">' + m.count + '</td>' +
             '<td style="padding:6px;text-align:center;">' +
@@ -7492,6 +7498,52 @@ function soRenderMinorList() {
             '<button onclick="soMoveMinor(' + i + ',1)" ' + downDisabled + ' style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 6px;cursor:pointer;">⬇</button>' +
             '</td></tr>';
     }).join('');
+}
+
+// 드래그 앤 드롭 공통 핸들러
+var soDragState = { type: null, fromIdx: -1 };
+function soDragStart(e, type, idx) {
+    soDragState.type = type;
+    soDragState.fromIdx = idx;
+    e.dataTransfer.effectAllowed = 'move';
+    if (e.currentTarget) e.currentTarget.style.opacity = '0.4';
+}
+function soDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (e.currentTarget) e.currentTarget.style.background = '#fff8e1';
+}
+function soDragLeave(e) {
+    if (e.currentTarget) e.currentTarget.style.background = '';
+}
+function soDragEnd(e) {
+    if (e.currentTarget) e.currentTarget.style.opacity = '';
+    // 모든 행의 하이라이트 제거
+    document.querySelectorAll('#soMinorListBody tr, #soProductListBody tr').forEach(function(tr) {
+        tr.style.background = '';
+    });
+}
+function soDrop(e, type, toIdx) {
+    e.preventDefault();
+    if (e.currentTarget) e.currentTarget.style.background = '';
+    if (soDragState.type !== type || soDragState.fromIdx === toIdx) return;
+    var fromIdx = soDragState.fromIdx;
+    if (type === 'minor') {
+        var item = soMinorList.splice(fromIdx, 1)[0];
+        soMinorList.splice(toIdx, 0, item);
+        soMinorList.forEach(function(m, i) { m.sort_order = i + 1; });
+        soRenderMinorList();
+        var st = document.getElementById('soMinorSaveStatus');
+        if (st) { st.textContent = '변경됨 - 저장 버튼을 눌러주세요'; st.style.color = 'var(--warning)'; }
+    } else if (type === 'product') {
+        var pItem = soCurrentProducts.splice(fromIdx, 1)[0];
+        soCurrentProducts.splice(toIdx, 0, pItem);
+        soCurrentProducts.forEach(function(p, i) { p.sort_order = i + 1; });
+        soRenderProductList();
+        // 즉시 DB 저장
+        soSaveProductOrder();
+    }
+    soDragState = { type: null, fromIdx: -1 };
 }
 
 function soMoveMinor(idx, delta) {
@@ -7570,8 +7622,14 @@ function soRenderProductList() {
         var upDisabled = i === 0 ? 'disabled' : '';
         var downDisabled = i === soCurrentProducts.length - 1 ? 'disabled' : '';
         var safeCode = String(p.code).replace(/'/g, "\\'");
-        return '<tr style="border-bottom:1px solid var(--border);">' +
-            '<td style="padding:6px;">' + (p.name || '') + ' <span style="color:var(--text-muted);font-size:0.72rem;">(' + (p.spec || '-') + ')</span></td>' +
+        return '<tr draggable="true" ' +
+            'ondragstart="soDragStart(event,\'product\',' + i + ')" ' +
+            'ondragover="soDragOver(event)" ' +
+            'ondragleave="soDragLeave(event)" ' +
+            'ondrop="soDrop(event,\'product\',' + i + ')" ' +
+            'ondragend="soDragEnd(event)" ' +
+            'style="border-bottom:1px solid var(--border);cursor:move;">' +
+            '<td style="padding:6px;"><span style="color:var(--text-muted);margin-right:4px;">⋮⋮</span>' + (p.name || '') + ' <span style="color:var(--text-muted);font-size:0.72rem;">(' + (p.spec || '-') + ')</span></td>' +
             '<td style="padding:6px;text-align:center;">' +
             '<button onclick="soMoveProduct(\'' + safeCode + '\',\'top\')" style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 5px;cursor:pointer;font-size:0.7rem;" title="맨 위로">⏫</button> ' +
             '<button onclick="soMoveProduct(\'' + safeCode + '\',\'up\')" ' + upDisabled + ' style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 5px;cursor:pointer;font-size:0.7rem;">⬆</button> ' +
@@ -7579,6 +7637,24 @@ function soRenderProductList() {
             '<button onclick="soMoveProduct(\'' + safeCode + '\',\'bottom\')" style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 5px;cursor:pointer;font-size:0.7rem;" title="맨 뒤로">⏬</button>' +
             '</td></tr>';
     }).join('');
+}
+
+async function soSaveProductOrder() {
+    var status = document.getElementById('soProductSaveStatus');
+    if (!status || !db) return;
+    status.textContent = '저장 중...';
+    status.style.color = 'var(--text-muted)';
+    try {
+        for (var i = 0; i < soCurrentProducts.length; i++) {
+            var p = soCurrentProducts[i];
+            await db.from('products').update({ sort_order: p.sort_order }).eq('code', p.code);
+        }
+        status.textContent = '✓ 저장됨 (' + new Date().toLocaleTimeString('ko-KR') + ')';
+        status.style.color = 'var(--success)';
+    } catch (err) {
+        status.textContent = '저장 실패: ' + err.message;
+        status.style.color = 'var(--danger)';
+    }
 }
 
 async function soMoveProduct(code, action) {
@@ -7594,27 +7670,7 @@ async function soMoveProduct(code, action) {
     // 재정렬 후 sort_order 재할당
     soCurrentProducts.forEach(function(p, i) { p.sort_order = i + 1; });
     soRenderProductList();
-
-    // DB 즉시 반영 (변경된 품목만)
-    var status = document.getElementById('soProductSaveStatus');
-    status.textContent = '저장 중...';
-    status.style.color = 'var(--text-muted)';
-    try {
-        // 전체 재설정 (batch upsert)
-        var rows = soCurrentProducts.map(function(p) {
-            return { code: p.code, sort_order: p.sort_order };
-        });
-        // upsert는 모든 필드 필요할 수 있어서 update 반복이 안전
-        for (var i = 0; i < rows.length; i++) {
-            var r = rows[i];
-            await db.from('products').update({ sort_order: r.sort_order }).eq('code', r.code);
-        }
-        status.textContent = '✓ 저장됨 (' + new Date().toLocaleTimeString('ko-KR') + ')';
-        status.style.color = 'var(--success)';
-    } catch (err) {
-        status.textContent = '저장 실패: ' + err.message;
-        status.style.color = 'var(--danger)';
-    }
+    await soSaveProductOrder();
 }
 
 // ============================================================
