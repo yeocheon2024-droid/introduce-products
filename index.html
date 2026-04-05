@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.16</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.17</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1117,7 +1117,7 @@
     </div>
 
     <!-- 오늘 반영된 예약 가격 위젯 -->
-    <div class="card" id="dashPriceScheduleCard" style="display:none;">
+    <div class="card" id="dashPriceScheduleCard">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
             <h3 style="margin:0;padding:0;border:0;">📅 오늘 자동 반영된 예약 가격 <span id="dashPsCount" style="color:var(--primary);"></span></h3>
             <button class="btn btn-outline btn-sm" onclick="switchTab('priceSchedule')">예약 가격 관리 →</button>
@@ -7027,7 +7027,15 @@ async function psBulkUpload(event) {
 // 오늘 자동 반영된 예약 가격 위젯 (대시보드용)
 async function renderTodayAppliedSchedule() {
     var card = document.getElementById('dashPriceScheduleCard');
-    if (!card || !db) { if (card) card.style.display = 'none'; return; }
+    if (!card) return;
+    var countEl = document.getElementById('dashPsCount');
+    var listEl = document.getElementById('dashPsList');
+
+    if (!db) {
+        countEl.textContent = '';
+        listEl.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-muted);font-size:0.85rem;">Supabase 연결 필요</div>';
+        return;
+    }
     try {
         var today = new Date().toISOString().slice(0, 10);
         var tomorrow = new Date();
@@ -7040,11 +7048,15 @@ async function renderTodayAppliedSchedule() {
             .gte('applied_at', today)
             .lt('applied_at', tomorrowIso)
             .order('applied_at', { ascending: false });
-        if (error) { card.style.display = 'none'; return; }
-        if (!data || data.length === 0) { card.style.display = 'none'; return; }
+        if (error) throw error;
 
-        card.style.display = 'block';
-        document.getElementById('dashPsCount').textContent = '(' + data.length + '건)';
+        if (!data || data.length === 0) {
+            countEl.textContent = '(0건)';
+            listEl.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-muted);font-size:0.85rem;">오늘 자동 반영된 예약 가격이 없습니다.</div>';
+            return;
+        }
+
+        countEl.textContent = '(' + data.length + '건)';
         var rows = data.slice(0, 10).map(function(r) {
             var diff = r.new_sell - (r.old_sell || 0);
             var diffColor = diff > 0 ? 'var(--danger)' : (diff < 0 ? 'var(--success)' : 'var(--text-muted)');
@@ -7059,9 +7071,10 @@ async function renderTodayAppliedSchedule() {
                 '</span></div>';
         }).join('');
         if (data.length > 10) rows += '<div style="text-align:center;padding:8px;color:var(--text-muted);font-size:0.78rem;">외 ' + (data.length - 10) + '건</div>';
-        document.getElementById('dashPsList').innerHTML = rows;
+        listEl.innerHTML = rows;
     } catch (err) {
-        card.style.display = 'none';
+        countEl.textContent = '';
+        listEl.innerHTML = '<div style="text-align:center;padding:16px;color:var(--danger);font-size:0.85rem;">불러오기 실패: ' + err.message + '</div>';
     }
 }
 
