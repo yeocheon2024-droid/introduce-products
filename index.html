@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.19</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.20</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1365,7 +1365,7 @@
                 <button class="btn btn-outline" onclick="selectAllQuoteItems(true)">전체 선택</button>
                 <button class="btn btn-outline" onclick="selectAllQuoteItems(false)">전체 해제</button>
                 <button class="btn btn-outline" onclick="clearQuoteResult()">초기화</button>
-                <button class="btn btn-primary" onclick="applyQuoteItems()">선택 품목 등록</button>
+                <button id="applyQuoteBtn" class="btn btn-primary" onclick="applyQuoteItems()">선택 품목 등록</button>
             </div>
         </div>
     </div>
@@ -3692,9 +3692,78 @@ function selectAllQuoteItems(checked) {
     renderQuoteResult();
 }
 
-function applyQuoteItems() {
+async function applyQuoteItems() {
     const selected = quoteItems.filter(q => q.selected);
     if (selected.length === 0) { alert('선택된 품목이 없습니다.'); return; }
+
+    // 중복 클릭 방지
+    var btn = document.getElementById('applyQuoteBtn');
+    if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '검증 중...'; }
+    try {
+    // [하이브리드 검증] 신규(new) 품목만 DB 중복 재검증
+    const reissued = [];
+    if (db) {
+        const newItems = selected.filter(q => q.status === 'new');
+        if (newItems.length > 0) {
+            try {
+                const codes = newItems.map(q => q.code);
+                const [resProd, resDel] = await Promise.all([
+                    db.from('products').select('code').in('code', codes),
+                    db.from('deleted_products').select('code').in('code', codes)
+                ]);
+                const conflicts = new Set();
+                (resProd.data || []).forEach(r => conflicts.add(r.code));
+                (resDel.data || []).forEach(r => conflicts.add(r.code));
+
+                // 충돌된 prefix별로 DB 최대 번호 조회
+                if (conflicts.size > 0) {
+                    const prefixMaxCache = {};
+                    for (const q of newItems) {
+                        if (!conflicts.has(q.code)) continue;
+                        // prefix 추출: 코드 뒤 3자리 숫자 떼어내기
+                        const m = q.code.match(/^(.+?)(\d{3})$/);
+                        if (!m) continue;
+                        const prefix = m[1];
+
+                        if (!(prefix in prefixMaxCache)) {
+                            // DB + 삭제로그에서 같은 prefix 최대 번호 조회
+                            const [dbMax, delMax] = await Promise.all([
+                                db.from('products').select('code').like('code', prefix + '%'),
+                                db.from('deleted_products').select('code').like('code', prefix + '%')
+                            ]);
+                            let maxNum = 0;
+                            [...(dbMax.data||[]), ...(delMax.data||[])].forEach(r => {
+                                const mm = r.code.match(new RegExp('^' + prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d{3})$'));
+                                if (mm) { const n = parseInt(mm[1], 10); if (n > maxNum) maxNum = n; }
+                            });
+                            // 로컬 products + 다른 quoteItems도 체크
+                            products.forEach(p => {
+                                if (p.code && p.code.startsWith(prefix)) {
+                                    const mm = p.code.substring(prefix.length);
+                                    const n = parseInt(mm, 10);
+                                    if (!isNaN(n) && n > maxNum) maxNum = n;
+                                }
+                            });
+                            quoteItems.forEach(qi => {
+                                if (qi.code && qi.code.startsWith(prefix)) {
+                                    const mm = qi.code.substring(prefix.length);
+                                    const n = parseInt(mm, 10);
+                                    if (!isNaN(n) && n > maxNum) maxNum = n;
+                                }
+                            });
+                            prefixMaxCache[prefix] = maxNum;
+                        }
+                        prefixMaxCache[prefix]++;
+                        const newCode = prefix + String(prefixMaxCache[prefix]).padStart(3, '0');
+                        reissued.push({ old: q.code, new: newCode, name: q.name });
+                        q.code = newCode;
+                    }
+                }
+            } catch (e) {
+                console.warn('DB 중복 재검증 실패(스킵):', e.message);
+            }
+        }
+    }
 
     let added = 0, updated = 0;
 
@@ -3734,8 +3803,19 @@ function applyQuoteItems() {
     });
 
     saveAll();
-    alert(`${added}개 신규 등록, ${updated}개 단가 업데이트 완료`);
+    var msg = added + '개 신규 등록, ' + updated + '개 단가 업데이트 완료';
+    if (reissued.length > 0) {
+        msg += '\n\n⚠️ ' + reissued.length + '건의 품목코드가 중복으로 자동 재발급되었습니다:\n';
+        msg += reissued.slice(0, 5).map(function(r) {
+            return '  • ' + r.name + ': ' + r.old + ' → ' + r.new;
+        }).join('\n');
+        if (reissued.length > 5) msg += '\n  ...외 ' + (reissued.length - 5) + '건';
+    }
+    alert(msg);
     clearQuoteResult();
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '선택 품목 등록'; }
+    }
 }
 
 function clearQuoteResult() {
