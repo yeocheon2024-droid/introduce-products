@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.29</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.30</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -7057,6 +7057,21 @@ function onDisplayNameChange(input) {
     if (product) {
         product.displayName = input.value.trim();
     }
+}
+
+function showToast(message) {
+    // 간단한 토스트: 화면 하단에 3초간 표시
+    let toast = document.getElementById('erpToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'erpToast';
+        toast.style.cssText = 'position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:rgba(45,106,79,0.95);color:#fff;padding:12px 24px;border-radius:8px;font-size:0.95rem;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.2);z-index:10000;opacity:0;transition:opacity 0.3s;';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.style.opacity = '1';
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(function() { toast.style.opacity = '0'; }, 3000);
 }
 
 function saveAllDisplayNames() {
