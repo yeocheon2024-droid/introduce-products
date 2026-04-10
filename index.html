@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.30</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.31</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -4498,7 +4498,8 @@ function autoSyncToSupabase() {
                 sell: p.sell || 0,
                 registered_at: p.registeredAt || new Date().toISOString().split('T')[0],
                 sold_out: !!p.soldOut,
-                hidden: !!p.hidden
+                hidden: !!p.hidden,
+                display_name: p.displayName || null
             }));
 
             // 50개씩 배치 upsert
