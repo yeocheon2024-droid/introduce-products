@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.32</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.31</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -4773,56 +4773,20 @@ function loadProductModalImage(code) {
 // Supabase Storage에 이미지 업로드
 var R2_WORKER_URL = 'https://r2-image-proxy.ljsgn5958.workers.dev';
 
-// 이미지를 WebP(1000x1000, 품질 0.92)로 변환 후 업로드
-// 기존 PNG 대비 5~8배 용량 감소, 모바일 로딩 체감 크게 개선
 async function uploadImageToStorage(code, file) {
-    const webpBlob = await convertToWebP(file, 1000, 0.92);
-    const path = code + '.webp';
+    const path = code + '.png';
     const resp = await fetch(R2_WORKER_URL + '/upload/' + path, {
         method: 'PUT',
-        headers: { 'Content-Type': 'image/webp' },
-        body: webpBlob
+        headers: { 'Content-Type': file.type || 'image/png' },
+        body: file
     });
     const result = await resp.json();
     if (!result.success) throw new Error('R2 업로드 실패');
 }
 
-// File/Blob을 WebP로 변환 (정사각형 캔버스에 contain 방식, 흰 배경)
-function convertToWebP(file, maxSize, quality) {
-    return new Promise(function(resolve, reject) {
-        const img = new Image();
-        const url = URL.createObjectURL(file);
-        img.onload = function() {
-            URL.revokeObjectURL(url);
-            // 원본이 maxSize보다 작으면 원본 크기 유지, 크면 maxSize로 축소
-            const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
-            const w = Math.round(img.width * scale);
-            const h = Math.round(img.height * scale);
-            const canvas = document.createElement('canvas');
-            canvas.width = w;
-            canvas.height = h;
-            const ctx = canvas.getContext('2d');
-            // 흰 배경 (투명도 제거)
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, w, h);
-            ctx.drawImage(img, 0, 0, w, h);
-            canvas.toBlob(function(blob) {
-                if (blob) resolve(blob);
-                else reject(new Error('WebP 변환 실패'));
-            }, 'image/webp', quality);
-        };
-        img.onerror = function() {
-            URL.revokeObjectURL(url);
-            reject(new Error('이미지 로드 실패'));
-        };
-        img.src = url;
-    });
-}
-
 async function deleteImageFromStorage(code) {
-    // 신규 .webp + 레거시 .png 둘 다 삭제 시도 (어느 쪽만 있어도 OK)
-    await fetch(R2_WORKER_URL + '/delete/' + code + '.webp', { method: 'DELETE' }).catch(function() {});
-    await fetch(R2_WORKER_URL + '/delete/' + code + '.png', { method: 'DELETE' }).catch(function() {});
+    const path = code + '.png';
+    await fetch(R2_WORKER_URL + '/delete/' + path, { method: 'DELETE' });
 }
 
 // 이미지 일괄 업로드 드래그앤드롭 초기화
