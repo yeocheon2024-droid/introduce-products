@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.27</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.29</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -7105,7 +7105,7 @@ async function aiGenerateDisplayNames() {
 
     for (let i = 0; i < targets.length; i += batchSize) {
         const batch = targets.slice(i, i + batchSize);
-        const itemList = batch.map(p => p.code + '|' + p.name + '|' + (p.spec || '') + '|' + (p.vendorName || '')).join('\n');
+        const itemList = batch.map(p => p.code + '|' + p.name + '|' + (p.vendorName || '')).join('\n');
 
         try {
             const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -7121,7 +7121,7 @@ async function aiGenerateDisplayNames() {
                     max_tokens: 4096,
                     messages: [{
                         role: 'user',
-                        content: '아래는 식자재 품목 목록입니다. 각 품목의 매입처 내부 이름을 고객에게 보여줄 깔끔한 표시명으로 변환해주세요.\n\n규칙:\n- 매입처 접두사 제거 (예: "왔다)" "원일)" 등)\n- 불필요한 기호, 괄호 정리\n- 핵심 품목명 + 용량/규격만 남기기\n- 너무 짧거나 이미 깔끔한 이름은 그대로 유지\n- 결과는 반드시 "품목코드|표시명" 형식으로 한 줄씩 출력\n- 다른 설명 없이 결과만 출력\n\n품목 목록 (코드|이름|규격|매입처):\n' + itemList
+                        content: '아래는 식자재 품목 목록입니다. 각 품목의 매입처 내부 이름을 고객에게 보여줄 깔끔한 표시명으로 변환해주세요.\n\n규칙:\n- 매입처 접두사 제거 (예: "왔다)" "원일)" 등)\n- 불필요한 기호, 괄호 정리\n- **규격/용량/수량은 반드시 모두 제거**: 숫자+단위 패턴은 전부 삭제 (예: 1kg, 500g, 1.8L, 500ml, 10입, 20매, 1박스, 100개, 30cm, 2호 등)\n- **포장/단위 표현도 제거**: 박스, BOX, EA, 팩, PACK, 봉, 봉지, 통, 병, 캔, 포, 묶음, 낱개 등\n- **브랜드명은 유지**: 품목명에 브랜드(예: 풀무원, CJ, 동원, 오뚜기, 샘표, 하림, 청정원 등 제조사/브랜드)가 포함돼 있으면 표시명 앞에 그대로 남김\n- 핵심 품목명만 남기기 (브랜드 + 품목명)\n- 너무 짧거나 이미 깔끔한 이름은 그대로 유지\n- 결과는 반드시 "품목코드|표시명" 형식으로 한 줄씩 출력\n- 다른 설명 없이 결과만 출력\n\n예시:\n- "왔다)풀무원 두부 300g" → "풀무원 두부"\n- "원일)대파 1박스 10kg" → "대파"\n- "CJ 백설 설탕 3kg" → "CJ 백설 설탕"\n- "하림 닭가슴살 1kg x 10팩" → "하림 닭가슴살"\n\n품목 목록 (코드|이름|매입처):\n' + itemList
                     }]
                 })
             });
