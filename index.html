@@ -1018,7 +1018,7 @@
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.33</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.34</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1180,7 +1180,7 @@
                         <th style="width:24px;padding:8px 4px;"><input type="checkbox" id="selectAllCheck" onclick="toggleSelectAll(this.checked)" title="전체 선택"></th>
                         <th style="width:40px;">이미지</th><th>품목코드</th><th>품목명</th><th>규격</th><th>대분류</th><th>중분류</th>
                         <th>과세</th><th>매입처</th><th class="text-right">매입단가</th>
-                        <th class="text-right">판매단가</th><th class="text-center">관리</th>
+                        <th class="text-right">판매단가</th><th class="text-right">마진율</th><th class="text-center">관리</th>
                     </tr>
                 </thead>
                 <tbody id="productTableBody"></tbody>
@@ -2467,12 +2467,21 @@ function renderProductList() {
 
     const tbody = document.getElementById('productTableBody');
     tbody.innerHTML = pageData.length === 0
-        ? '<tr><td colspan="14" style="text-align:center;color:var(--text-muted);padding:40px;">품목이 없습니다.</td></tr>'
+        ? '<tr><td colspan="15" style="text-align:center;color:var(--text-muted);padding:40px;">품목이 없습니다.</td></tr>'
         : pageData.map(p => {
             const sell = Number(p.sell) || 0;
+            const cost = Number(p.cost) || 0;
             const isTaxFree = p.tax === '면세';
             const supply = sell ? (isTaxFree ? sell : Math.round(sell / 1.1)) : 0;
             const vat = (sell && !isTaxFree) ? sell - supply : 0;
+            // 마진율 = (판매단가 - 매입단가) / 판매단가 × 100 (둘 다 VAT포함이라 상쇄됨)
+            const marginRate = (sell > 0 && cost > 0) ? ((sell - cost) / sell * 100) : null;
+            const marginColor = marginRate === null ? 'var(--text-muted)'
+                : marginRate < 0 ? 'var(--danger)'
+                : marginRate < 10 ? '#e67e22'
+                : marginRate < 20 ? '#2d6a4f'
+                : 'var(--accent)';
+            const marginText = marginRate === null ? '-' : marginRate.toFixed(1) + '%';
             const isChecked = selectedProductCodes.has(p.code);
             return `<tr>
             <td style="padding:8px 4px;"><input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleProductSelect('${esc(p.code)}', this.checked)"></td>
@@ -2486,6 +2495,7 @@ function renderProductList() {
             <td><span class="badge ${p.vendorType === 'self' ? 'badge-self' : 'badge-external'}">${esc(p.vendorName || '')}</span></td>
             <td class="text-right" style="font-weight:500;">${p.cost ? Number(p.cost).toLocaleString() : '-'}</td>
             <td class="text-right" style="font-weight:600;">${sell ? sell.toLocaleString() : '-'}</td>
+            <td class="text-right" style="font-weight:600;color:${marginColor};">${marginText}</td>
             <td class="text-center" style="white-space:nowrap;">
                 <button class="btn btn-sm" style="background:${p.soldOut ? 'var(--success)' : 'var(--danger)'};color:#fff;font-size:0.68rem;padding:3px 6px;" onclick="toggleSoldOut('${esc(p.code)}')">${p.soldOut ? '판매중' : '품절'}</button>
                 <button class="btn btn-sm" style="background:${p.hidden ? '#6c757d' : '#ffc107'};color:${p.hidden ? '#fff' : '#000'};font-size:0.68rem;padding:3px 6px;" onclick="toggleHidden('${esc(p.code)}')" title="${p.hidden ? '고객 사이트에서 숨김 중' : '고객 사이트에 표시 중'}">${p.hidden ? '숨김' : '표시'}</button>
@@ -2501,9 +2511,17 @@ function renderProductList() {
             ? '<div style="text-align:center;color:var(--text-muted);padding:40px;">품목이 없습니다.</div>'
             : pageData.map(p => {
                 const sell = Number(p.sell) || 0;
+                const cost = Number(p.cost) || 0;
                 const isTaxFree = p.tax === '면세';
                 const supply = sell ? (isTaxFree ? sell : Math.round(sell / 1.1)) : 0;
                 const vat = (sell && !isTaxFree) ? sell - supply : 0;
+                const marginRate = (sell > 0 && cost > 0) ? ((sell - cost) / sell * 100) : null;
+                const marginColor = marginRate === null ? 'var(--text-muted)'
+                    : marginRate < 0 ? 'var(--danger)'
+                    : marginRate < 10 ? '#e67e22'
+                    : marginRate < 20 ? '#2d6a4f'
+                    : 'var(--accent)';
+                const marginText = marginRate === null ? '-' : marginRate.toFixed(1) + '%';
                 const imgUrl = getProductImageUrl(p.code);
                 return `<div class="m-product-card">
                     <div class="m-product-top">
@@ -2530,6 +2548,10 @@ function renderProductList() {
                         <div class="m-price-box" style="background:var(--accent-light);">
                             <div class="m-price-label">판매단가</div>
                             <div class="m-price-value" style="color:var(--accent);">${sell ? sell.toLocaleString() : '-'}</div>
+                        </div>
+                        <div class="m-price-box">
+                            <div class="m-price-label">마진율</div>
+                            <div class="m-price-value" style="color:${marginColor};">${marginText}</div>
                         </div>
                     </div>
                     <div class="m-product-actions">
