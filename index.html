@@ -2909,7 +2909,26 @@ async function saveProduct() {
 
     // 이미지 처리 (비동기)
     if (pendingImageFile === 'DELETE') {
-        deleteImageFromStorage(code).catch(err => console.warn('이미지 삭제 실패:', err.message));
+        // 1) R2에서 삭제
+        deleteImageFromStorage(code)
+            .then(function() {
+                // 캐시에서 제거
+                if (typeof uploadedImageCache !== 'undefined') {
+                    uploadedImageCache = uploadedImageCache.filter(function(f) { return f.name !== code + '.png'; });
+                }
+                renderProductList();
+            })
+            .catch(err => console.warn('R2 이미지 삭제 실패:', err.message));
+        // 2) Supabase image_url도 제거 (네이버 URL 저장된 경우)
+        const idx2 = products.findIndex(p => p.code === code);
+        if (idx2 >= 0 && products[idx2].imageUrl) {
+            delete products[idx2].imageUrl;
+            localStorage.setItem('erp_products', JSON.stringify(products));
+        }
+        if (db) {
+            db.from('products').update({ image_url: null }).eq('code', code)
+                .then(function(res) { if (res.error) console.warn('image_url 삭제 실패:', res.error.message); });
+        }
     } else if (pendingImageFile && pendingImageFile !== 'DELETE') {
         uploadImageToStorage(code, pendingImageFile)
             .then(() => { renderProductList(); })
@@ -4871,7 +4890,9 @@ async function uploadImageToStorage(code, file) {
 
 async function deleteImageFromStorage(code) {
     const path = code + '.png';
-    await fetch(R2_WORKER_URL + '/delete/' + path, { method: 'DELETE' });
+    const resp = await fetch(R2_WORKER_URL + '/delete/' + path, { method: 'DELETE' });
+    if (!resp.ok) throw new Error('R2 삭제 HTTP ' + resp.status);
+    imageCacheBuster = Date.now();
 }
 
 // 이미지 일괄 업로드 드래그앤드롭 초기화
