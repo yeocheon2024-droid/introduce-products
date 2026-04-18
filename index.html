@@ -2903,6 +2903,14 @@ async function saveProduct() {
         products.push(data);
     }
 
+    // 이미지 삭제 플래그면 저장 전에 imageUrl 먼저 제거 (saveAll이 null로 업로드하도록)
+    if (pendingImageFile === 'DELETE') {
+        const pIdx = products.findIndex(p => p.code === code);
+        if (pIdx >= 0) {
+            delete products[pIdx].imageUrl;
+        }
+    }
+
     saveAll();
     renderProductList();
     closeModal('productModal');
@@ -2912,26 +2920,21 @@ async function saveProduct() {
         // 1) R2에서 삭제
         deleteImageFromStorage(code)
             .then(function() {
-                // 캐시에서 제거
                 if (typeof uploadedImageCache !== 'undefined') {
                     uploadedImageCache = uploadedImageCache.filter(function(f) { return f.name !== code + '.png'; });
                 }
+                imageCacheBuster = Date.now();
                 renderProductList();
             })
             .catch(err => console.warn('R2 이미지 삭제 실패:', err.message));
-        // 2) Supabase image_url도 제거 (네이버 URL 저장된 경우)
-        const idx2 = products.findIndex(p => p.code === code);
-        if (idx2 >= 0 && products[idx2].imageUrl) {
-            delete products[idx2].imageUrl;
-            localStorage.setItem('erp_products', JSON.stringify(products));
-        }
+        // 2) Supabase image_url도 명시적으로 null 업데이트
         if (db) {
             db.from('products').update({ image_url: null }).eq('code', code)
                 .then(function(res) { if (res.error) console.warn('image_url 삭제 실패:', res.error.message); });
         }
     } else if (pendingImageFile && pendingImageFile !== 'DELETE') {
         uploadImageToStorage(code, pendingImageFile)
-            .then(() => { renderProductList(); })
+            .then(() => { imageCacheBuster = Date.now(); renderProductList(); })
             .catch(err => console.warn('이미지 업로드 실패:', err.message));
     }
     pendingImageFile = null;
@@ -4794,7 +4797,7 @@ async function fetchNaverAPI(apiUrl, clientId, clientSecret) {
 var imageCacheBuster = Date.now();
 var R2_PUBLIC_URL = 'https://pub-b2fb7e97bfae4e7f96db58f188aa1ce7.r2.dev';
 function getProductImageUrl(code) {
-    return R2_PUBLIC_URL + '/' + code + '.png';
+    return R2_PUBLIC_URL + '/' + code + '.png?t=' + imageCacheBuster;
 }
 
 function getProductThumbHTML(code) {
