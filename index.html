@@ -1093,7 +1093,7 @@ function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.38</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.39</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -2221,9 +2221,8 @@ function erpLogout() {
                         <th style="border:1px solid #999;padding:6px 8px;text-align:center;width:80px;">규격</th>
                         <th style="border:1px solid #999;padding:6px 8px;text-align:center;width:45px;">단위</th>
                         <th style="border:1px solid #999;padding:6px 8px;text-align:center;width:50px;">과세</th>
-                        <th style="border:1px solid #999;padding:6px 8px;text-align:right;width:90px;">공급가액</th>
-                        <th style="border:1px solid #999;padding:6px 8px;text-align:right;width:70px;">부가세</th>
-                        <th style="border:1px solid #999;padding:6px 8px;text-align:right;width:90px;">납품단가</th>
+                        <th style="border:1px solid #999;padding:6px 8px;text-align:right;width:80px;">부가세</th>
+                        <th style="border:1px solid #999;padding:6px 8px;text-align:right;width:110px;">납품단가</th>
                     </tr>
                 </thead>
                 <tbody id="productQuoteTableBody"></tbody>
@@ -3079,20 +3078,18 @@ function renderQuoteTable() {
         <td style="${S}text-align:center;">${esc(r.p.spec || '')}</td>
         <td style="${S}text-align:center;">${esc(r.p.unit || '')}</td>
         <td style="${S}text-align:center;">${esc(r.p.tax || '과세')}</td>
-        <td style="${S}text-align:right;">${r.supply ? r.supply.toLocaleString() : '-'}</td>
         <td style="${S}text-align:right;">${r.vat ? r.vat.toLocaleString() : '-'}</td>
         <td style="${S}text-align:right;font-weight:700;padding:2px 4px;">
             <input type="number" class="quote-sell-input" min="0" step="100"
                    value="${r.sell || ''}"
                    onchange="updateQuoteSell('${esc(r.p.code)}', this.value)"
                    onclick="this.select()"
-                   style="width:88px;text-align:right;font-weight:700;border:1px solid #d4d4d8;border-radius:4px;padding:4px 6px;font-family:inherit;font-size:0.82rem;background:#fffbeb;">
+                   style="width:100px;text-align:right;font-weight:700;border:1px solid #d4d4d8;border-radius:4px;padding:4px 6px;font-family:inherit;font-size:0.82rem;background:#fffbeb;">
         </td>
     </tr>`).join('');
 
     tfoot.innerHTML = `<tr style="background:#f5f5f5;font-weight:700;">
         <td colspan="5" style="border:1px solid #999;padding:6px 8px;text-align:center;">합 계</td>
-        <td style="border:1px solid #999;padding:6px 8px;text-align:right;">${totalSupply.toLocaleString()}</td>
         <td style="border:1px solid #999;padding:6px 8px;text-align:right;">${totalVat.toLocaleString()}</td>
         <td style="border:1px solid #999;padding:6px 8px;text-align:right;">${totalSell.toLocaleString()}</td>
     </tr>`;
@@ -3261,8 +3258,8 @@ function downloadQuoteExcel() {
     const rows = buildQuoteRows();
     if (rows.length === 0) { alert('선택된 품목이 없습니다.'); return; }
     const recipient = (document.getElementById('quoteRecipient').value || '').trim();
-    const headers = ['No', '품목명', '규격', '단위', '과세구분', '공급가액', '부가세', '납품단가(VAT포함)'];
-    const data = rows.map((r, i) => [i + 1, r.p.name, r.p.spec || '', r.p.unit || '', r.p.tax || '과세', r.supply || 0, r.vat || 0, r.sell || 0]);
+    const headers = ['No', '품목명', '규격', '단위', '과세구분', '부가세', '납품단가(VAT포함)'];
+    const data = rows.map((r, i) => [i + 1, r.p.name, r.p.spec || '', r.p.unit || '', r.p.tax || '과세', r.vat || 0, r.sell || 0]);
     const filename = recipient ? `견적서_${recipient}` : '견적서';
     downloadExcel(filename, headers, data);
 }
