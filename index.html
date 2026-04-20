@@ -997,6 +997,19 @@
             body > *:not(#printOverlay) { display: none !important; }
             #printOverlay { display: block !important; position: static !important; background: white !important; padding: 0 !important; }
             #printOverlay .print-close-btn { display: none !important; }
+            /* 견적서 인쇄 시 단가 input은 테두리/배경 없이 텍스트처럼 */
+            #printOverlay input.quote-sell-input,
+            input.quote-sell-input {
+                border: none !important;
+                background: transparent !important;
+                padding: 0 !important;
+                width: auto !important;
+                font-weight: 700 !important;
+                -webkit-appearance: none;
+                appearance: none;
+            }
+            input.quote-sell-input::-webkit-outer-spin-button,
+            input.quote-sell-input::-webkit-inner-spin-button { display: none !important; }
             input[type=number] { border: none !important; background: transparent !important; }
         }
     </style>
@@ -1080,7 +1093,7 @@ function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.35</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.38</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -2314,11 +2327,11 @@ function debounceSearch() {
 const CATEGORY_TREE = {
     '01': { name: '농산품', sub: { '01': '잡곡', '02': '쌀', '03': '청과' } },
     '02': { name: '수산품', sub: { '01': '어류', '02': '연체류', '03': '갑각류', '04': '조개/패류', '05': '해조류' } },
-    '03': { name: '축산품', sub: { '01': '돈육', '02': '우육', '03': '계육', '04': '계란' } },
+    '03': { name: '축산품', sub: { '01': '돈육', '02': '우육', '03': '계육', '04': '계란', '05': '유제품' } },
     '04': { name: '공산품', sub: {
         '01': '김치/반찬', '02': '기름/분말', '03': '소스/양념', '04': '면/당면',
         '05': '떡/두부', '06': '햄/육가공', '07': '만두/냉동', '08': '캔/레토르트',
-        '09': '김/해조/건어물', '10': '포장재/소모품'
+        '09': '김/해조/건어물', '10': '포장재/소모품', '11': '과자/스낵/음료'
     }}
 };
 
@@ -3028,14 +3041,27 @@ function numToKorean(n) {
     return result + '원정';
 }
 
+// 견적서 단가 오버라이드 (모달 안에서 수정 가능, 모달 닫으면 리셋)
+var quoteSellOverride = {};
+
 function buildQuoteRows() {
     return products.filter(p => selectedProductCodes.has(p.code)).map(p => {
-        const sell = Number(p.sell) || 0;
+        const sell = quoteSellOverride[p.code] !== undefined
+            ? Number(quoteSellOverride[p.code]) || 0
+            : Number(p.sell) || 0;
         const isTaxFree = p.tax === '면세';
         const supply = sell ? (isTaxFree ? sell : Math.round(sell / 1.1)) : 0;
         const vat = (sell && !isTaxFree) ? sell - supply : 0;
         return { p, sell, supply, vat };
     });
+}
+
+// 견적서 단가 수정 핸들러
+function updateQuoteSell(code, value) {
+    var num = value === '' ? 0 : Number(value);
+    if (isNaN(num) || num < 0) num = 0;
+    quoteSellOverride[code] = num;
+    renderQuoteTable();
 }
 
 function renderQuoteTable() {
@@ -3055,7 +3081,13 @@ function renderQuoteTable() {
         <td style="${S}text-align:center;">${esc(r.p.tax || '과세')}</td>
         <td style="${S}text-align:right;">${r.supply ? r.supply.toLocaleString() : '-'}</td>
         <td style="${S}text-align:right;">${r.vat ? r.vat.toLocaleString() : '-'}</td>
-        <td style="${S}text-align:right;font-weight:700;">${r.sell ? r.sell.toLocaleString() : '-'}</td>
+        <td style="${S}text-align:right;font-weight:700;padding:2px 4px;">
+            <input type="number" class="quote-sell-input" min="0" step="100"
+                   value="${r.sell || ''}"
+                   onchange="updateQuoteSell('${esc(r.p.code)}', this.value)"
+                   onclick="this.select()"
+                   style="width:88px;text-align:right;font-weight:700;border:1px solid #d4d4d8;border-radius:4px;padding:4px 6px;font-family:inherit;font-size:0.82rem;background:#fffbeb;">
+        </td>
     </tr>`).join('');
 
     tfoot.innerHTML = `<tr style="background:#f5f5f5;font-weight:700;">
@@ -3083,6 +3115,7 @@ function openQuoteModal() {
     document.getElementById('quoteDateDisplay2').textContent = today;
     document.getElementById('quoteRecipient').value = '';
     document.getElementById('quoteSupplier').value = '';
+    quoteSellOverride = {};  // 견적서 단가 오버라이드 초기화
     updateQuoteRecipient();
     openModal('quoteModal');
     renderQuoteTable();
@@ -3633,10 +3666,10 @@ function populateQuoteVendor() {
 const CATEGORY_ABBR = {
     '양곡': 'GRN', '야채': 'VEG', '청과': 'FRT',
     '어류': 'FSH', '연체류': 'SQD', '갑각류': 'CRB', '조개/패류': 'CLM', '해조류': 'SEA',
-    '돈육': 'PRK', '우육': 'BEF', '계육': 'CHK', '계란': 'EGG',
+    '돈육': 'PRK', '우육': 'BEF', '계육': 'CHK', '계란': 'EGG', '유제품': 'MLK',
     '김치/반찬': 'KMC', '기름/분말': 'OIL', '소스/양념': 'SOS', '면/당면': 'NDL',
     '떡/두부': 'TFU', '햄/육가공': 'HAM', '만두/냉동': 'FRZ', '캔/레토르트': 'CAN',
-    '김/해조/건어물': 'DRY', '포장재/소모품': 'PKG'
+    '김/해조/건어물': 'DRY', '포장재/소모품': 'PKG', '과자/스낵/음료': 'SNK'
 };
 
 function getAbbrFromMinorName(minorName) {
