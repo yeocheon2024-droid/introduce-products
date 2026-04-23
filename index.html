@@ -1093,7 +1093,7 @@ function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.39</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.42</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1234,6 +1234,8 @@ function erpLogout() {
             <option value="available">판매중만</option>
             <option value="hidden">숨김만</option>
             <option value="visible">표시만</option>
+            <option value="draft">초안만 (미공개)</option>
+            <option value="published">공개만</option>
             <option value="noimage">이미지없음만</option>
         </select>
         <select id="majorFilter" onchange="onMajorFilterChange()">
@@ -1245,6 +1247,8 @@ function erpLogout() {
         <button class="btn btn-outline" id="showAllBtn" onclick="toggleShowAll()">전체 보기</button>
         <button class="btn btn-outline" id="quoteBtn" onclick="openQuoteModal()" style="display:none;">견적서 (<span id="quoteBtnCount">0</span>)</button>
         <button class="btn btn-outline" id="poBtn" onclick="openPurchaseOrderModal()" style="display:none;">발주서 (<span id="poBtnCount">0</span>)</button>
+        <button class="btn" id="publishSelectedBtn" onclick="publishSelectedProducts()" style="display:none;background:#28a745;color:#fff;">선택 공개 (<span id="publishSelectedBtnCount">0</span>)</button>
+        <button class="btn" id="publishAllDraftsBtn" onclick="publishAllDrafts()" style="display:none;background:#28a745;color:#fff;">초안 전체 공개</button>
         <button class="btn btn-primary" onclick="openAddProductModal()">+ 품목 추가</button>
     </div>
     <!-- PC: 테이블뷰 -->
@@ -2348,9 +2352,11 @@ function loadData(key, defaultVal) {
 
 // 가격 데이터 강제 갱신 (1회성)
 // v7: 중분류명 동기화 (잡곡/쌀, 캔/레토르트)
-if (!localStorage.getItem('price_updated_v7')) {
+// v8: 품목코드 엑셀 정본 맞춤 변경 (2026-04-23, 고추/반찬/참기름 43건 + 통깨 신규 + 짠지채 국내산 rename)
+// v9: 옛 코드 잔존 캐시 제거 (2026-04-23, SQL cleanup 이후 재동기화 강제)
+if (!localStorage.getItem('price_updated_v9')) {
     localStorage.removeItem('erp_products');
-    localStorage.setItem('price_updated_v7', 'done');
+    localStorage.setItem('price_updated_v9', 'done');
 }
 let products = loadData('erp_products', null);
 if (!products || products.length === 0) {
@@ -2520,6 +2526,8 @@ function getFilteredProducts() {
         if (filter === 'available' && p.soldOut) return false;
         if (filter === 'hidden' && !p.hidden) return false;
         if (filter === 'visible' && p.hidden) return false;
+        if (filter === 'draft' && !p.isDraft) return false;
+        if (filter === 'published' && p.isDraft) return false;
         if (filter === 'noimage' && (p.imageUrl && p.imageUrl.trim() !== '')) return false;
         if (majorFilter && p.majorCode !== majorFilter) return false;
         if (minorFilter && p.minorCode !== minorFilter) return false;
@@ -2558,11 +2566,11 @@ function renderProductList() {
                 : 'var(--accent)';
             const marginText = marginRate === null ? '-' : marginRate.toFixed(1) + '%';
             const isChecked = selectedProductCodes.has(p.code);
-            return `<tr>
+            return `<tr${p.isDraft ? ' style="background:#fff9e6;"' : ''}>
             <td style="padding:8px 4px;"><input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleProductSelect('${esc(p.code)}', this.checked)"></td>
             <td>${getProductThumbHTML(p.code)}</td>
             <td style="font-weight:600;color:var(--accent);">${esc(p.code)}</td>
-            <td>${p.soldOut ? '<span style="color:var(--danger);font-weight:700;font-size:0.7rem;margin-right:3px;">[품절]</span>' : ''}${esc(p.name)}</td>
+            <td>${p.isDraft ? '<span style="background:#ffc107;color:#000;font-weight:700;font-size:0.65rem;padding:1px 5px;border-radius:3px;margin-right:4px;">초안</span>' : ''}${p.soldOut ? '<span style="color:var(--danger);font-weight:700;font-size:0.7rem;margin-right:3px;">[품절]</span>' : ''}${esc(p.name)}</td>
             <td style="color:var(--text-secondary);">${esc(p.spec || '')}</td>
             <td style="color:var(--text-secondary);">${esc(p.majorName || '')}</td>
             <td style="color:var(--text-secondary);">${esc(p.minorName || '')}</td>
@@ -2572,6 +2580,7 @@ function renderProductList() {
             <td class="text-right" style="font-weight:600;">${sell ? sell.toLocaleString() : '-'}</td>
             <td class="text-right" style="font-weight:600;color:${marginColor};">${marginText}</td>
             <td class="text-center" style="white-space:nowrap;">
+                <button class="btn btn-sm" style="background:${p.isDraft ? '#28a745' : '#ffc107'};color:${p.isDraft ? '#fff' : '#000'};font-size:0.68rem;padding:3px 6px;" onclick="toggleDraft('${esc(p.code)}')" title="${p.isDraft ? '초안 — 공개 사이트에 숨김 중' : '공개됨'}">${p.isDraft ? '공개하기' : '공개됨'}</button>
                 <button class="btn btn-sm" style="background:${p.soldOut ? 'var(--success)' : 'var(--danger)'};color:#fff;font-size:0.68rem;padding:3px 6px;" onclick="toggleSoldOut('${esc(p.code)}')">${p.soldOut ? '판매중' : '품절'}</button>
                 <button class="btn btn-sm" style="background:${p.hidden ? '#6c757d' : '#ffc107'};color:${p.hidden ? '#fff' : '#000'};font-size:0.68rem;padding:3px 6px;" onclick="toggleHidden('${esc(p.code)}')" title="${p.hidden ? '고객 사이트에서 숨김 중' : '고객 사이트에 표시 중'}">${p.hidden ? '숨김' : '표시'}</button>
                 <button class="btn btn-outline btn-sm" onclick="editProduct('${esc(p.code)}')">수정</button>
@@ -2598,11 +2607,11 @@ function renderProductList() {
                     : 'var(--accent)';
                 const marginText = marginRate === null ? '-' : marginRate.toFixed(1) + '%';
                 const imgUrl = getProductImageUrl(p.code);
-                return `<div class="m-product-card">
+                return `<div class="m-product-card"${p.isDraft ? ' style="background:#fff9e6;"' : ''}>
                     <div class="m-product-top">
                         <img src="${imgUrl}" width="48" height="48" alt="${esc(p.name || '품목 이미지')}" style="object-fit:cover;border:1px solid var(--border-light);" onerror="this.style.display='none'">
                         <div class="m-product-info">
-                            <div class="m-product-name">${p.soldOut ? '<span style="color:var(--danger);font-weight:700;font-size:0.7rem;margin-right:3px;">[품절]</span>' : ''}${esc(p.name)}</div>
+                            <div class="m-product-name">${p.isDraft ? '<span style="background:#ffc107;color:#000;font-weight:700;font-size:0.65rem;padding:1px 5px;border-radius:3px;margin-right:4px;">초안</span>' : ''}${p.soldOut ? '<span style="color:var(--danger);font-weight:700;font-size:0.7rem;margin-right:3px;">[품절]</span>' : ''}${esc(p.name)}</div>
                             <div class="m-product-code">${esc(p.code)} · ${esc(p.spec || '')}</div>
                             <div class="m-product-meta">
                                 ${esc(p.majorName || '')} > ${esc(p.minorName || '')} ·
@@ -2633,6 +2642,7 @@ function renderProductList() {
                         <label style="display:flex;align-items:center;gap:5px;font-size:0.78rem;cursor:pointer;">
                             <input type="checkbox" ${selectedProductCodes.has(p.code) ? 'checked' : ''} onchange="toggleProductSelect('${esc(p.code)}', this.checked)"> 견적서 선택
                         </label>
+                        <button class="btn btn-sm" style="background:${p.isDraft ? '#28a745' : '#ffc107'};color:${p.isDraft ? '#fff' : '#000'};font-size:0.68rem;padding:3px 6px;" onclick="toggleDraft('${esc(p.code)}')">${p.isDraft ? '공개하기' : '공개됨'}</button>
                         <button class="btn btn-sm" style="background:${p.soldOut ? 'var(--success)' : 'var(--danger)'};color:#fff;font-size:0.68rem;padding:3px 6px;" onclick="toggleSoldOut('${esc(p.code)}')">${p.soldOut ? '판매중' : '품절'}</button>
                         <button class="btn btn-sm" style="background:${p.hidden ? '#6c757d' : '#ffc107'};color:${p.hidden ? '#fff' : '#000'};font-size:0.68rem;padding:3px 6px;" onclick="toggleHidden('${esc(p.code)}')">${p.hidden ? '숨김' : '표시'}</button>
                         <button class="btn btn-outline btn-sm" onclick="editProduct('${esc(p.code)}')">수정</button>
@@ -2659,6 +2669,7 @@ function renderProductList() {
     pagDiv.innerHTML = html;
     if (pagDivM) pagDivM.innerHTML = html;
     updateQuoteBtn();
+    updatePublishBtns();
 }
 
 // 품목명 실시간 유사도 검색 (분류 추천 + 중복 경고)
@@ -2994,12 +3005,84 @@ function toggleHidden(code) {
     }
 }
 
+// 초안 ↔ 공개 토글 (개별)
+function toggleDraft(code) {
+    const p = products.find(pr => pr.code === code);
+    if (!p) return;
+    const willPublish = !!p.isDraft; // true=초안→공개
+    if (willPublish && !confirm(`[${p.name}]을(를) 공개 사이트에 노출하시겠습니까?`)) return;
+    p.isDraft = !p.isDraft;
+    saveAll();
+    renderProductList();
+    if (db) {
+        db.from('products').update({ is_draft: !!p.isDraft }).eq('code', code)
+            .then(function(res) { if (res.error) console.warn('초안 상태 동기화 실패:', res.error.message); });
+    }
+}
+
+// 선택된 품목 중 초안인 것 일괄 공개
+async function publishSelectedProducts() {
+    const targets = products.filter(p => selectedProductCodes.has(p.code) && p.isDraft);
+    if (targets.length === 0) { alert('선택한 품목 중 초안이 없습니다.'); return; }
+    if (!confirm(`선택한 초안 ${targets.length}개를 모두 공개하시겠습니까?\n공개 즉시 카탈로그/쇼케이스/전단지/수발주 사이트에 노출됩니다.`)) return;
+    targets.forEach(p => { p.isDraft = false; });
+    saveAll();
+    renderProductList();
+    if (db) {
+        const codes = targets.map(p => p.code);
+        for (let i = 0; i < codes.length; i += 100) {
+            const slice = codes.slice(i, i + 100);
+            const { error } = await db.from('products').update({ is_draft: false }).in('code', slice);
+            if (error) { alert('공개 처리 중 오류: ' + error.message); return; }
+        }
+    }
+    alert(`${targets.length}개 품목이 공개되었습니다.`);
+}
+
+// 초안 전체 일괄 공개
+async function publishAllDrafts() {
+    const targets = products.filter(p => p.isDraft);
+    if (targets.length === 0) { alert('초안 품목이 없습니다.'); return; }
+    if (!confirm(`초안 ${targets.length}개 전체를 공개하시겠습니까?\n공개 즉시 카탈로그/쇼케이스/전단지/수발주 사이트에 노출됩니다.`)) return;
+    targets.forEach(p => { p.isDraft = false; });
+    saveAll();
+    renderProductList();
+    if (db) {
+        const codes = targets.map(p => p.code);
+        for (let i = 0; i < codes.length; i += 100) {
+            const slice = codes.slice(i, i + 100);
+            const { error } = await db.from('products').update({ is_draft: false }).in('code', slice);
+            if (error) { alert('공개 처리 중 오류: ' + error.message); return; }
+        }
+    }
+    alert(`${targets.length}개 품목이 공개되었습니다.`);
+}
+
+// 일괄 공개 버튼 표시/숫자 갱신
+function updatePublishBtns() {
+    const selBtn = document.getElementById('publishSelectedBtn');
+    const selCnt = document.getElementById('publishSelectedBtnCount');
+    if (selBtn && selCnt) {
+        const n = products.filter(p => selectedProductCodes.has(p.code) && p.isDraft).length;
+        selCnt.textContent = n;
+        selBtn.style.display = n > 0 ? '' : 'none';
+    }
+    const allBtn = document.getElementById('publishAllDraftsBtn');
+    if (allBtn) {
+        const filterVal = document.getElementById('productFilter')?.value;
+        const draftCount = products.filter(p => p.isDraft).length;
+        allBtn.style.display = (filterVal === 'draft' && draftCount > 0) ? '' : 'none';
+        allBtn.textContent = `초안 전체 공개 (${draftCount})`;
+    }
+}
+
 function roundUp100(n) { return Math.ceil(n / 100) * 100; }
 
 function toggleProductSelect(code, checked) {
     if (checked) selectedProductCodes.add(code);
     else selectedProductCodes.delete(code);
     updateQuoteBtn();
+    updatePublishBtns();
 }
 
 function toggleSelectAll(checked) {
@@ -3529,7 +3612,8 @@ function confirmUpload() {
             vendorType: vendor?.type || 'self',
             cost: Number(r[colMap.cost]) || 0,
             sell: Number(r[colMap.sell]) || 0,
-            registeredAt: (r[colMap.date] || new Date().toISOString().split('T')[0]).toString().trim()
+            registeredAt: (r[colMap.date] || new Date().toISOString().split('T')[0]).toString().trim(),
+            isDraft: true
         });
         added++;
     });
@@ -4563,7 +4647,8 @@ async function downloadFromSupabase() {
             registeredAt: p.registered_at || '',
             imageUrl: p.image_url || '',
             displayName: p.display_name || '',
-            soldOut: !!p.sold_out, hidden: !!p.hidden
+            soldOut: !!p.sold_out, hidden: !!p.hidden,
+            isDraft: !!p.is_draft
         }));
         syncLog(`품목 ${products.length}개 다운로드 완료`);
 
@@ -4636,6 +4721,7 @@ function autoSyncToSupabase() {
                 registered_at: p.registeredAt || new Date().toISOString().split('T')[0],
                 sold_out: !!p.soldOut,
                 hidden: !!p.hidden,
+                is_draft: !!p.isDraft,
                 display_name: p.displayName || null
             }));
 
@@ -6188,7 +6274,8 @@ async function autoSyncOnLoad() {
             vendorName: p.vendor_name || '', vendorType: p.vendor_type || 'self',
             cost: p.cost || 0, sell: p.sell || 0,
             registeredAt: p.registered_at || '', imageUrl: p.image_url || '',
-            displayName: p.display_name || '', soldOut: !!p.sold_out, hidden: !!p.hidden
+            displayName: p.display_name || '', soldOut: !!p.sold_out, hidden: !!p.hidden,
+            isDraft: !!p.is_draft
         }));
 
         // 클라우드에 있는 코드 목록
