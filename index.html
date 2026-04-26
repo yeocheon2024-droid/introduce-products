@@ -1093,7 +1093,7 @@ function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.45</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.46</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1256,7 +1256,7 @@ function erpLogout() {
                         <th style="width:24px;padding:8px 4px;"><input type="checkbox" id="selectAllCheck" onclick="toggleSelectAll(this.checked)" title="전체 선택"></th>
                         <th style="width:40px;">이미지</th><th>품목코드</th><th>품목명</th><th>규격</th><th>대분류</th><th>중분류</th>
                         <th>과세</th><th>매입처</th><th class="text-right">매입단가</th>
-                        <th class="text-right">이체할인가</th><th class="text-right">정상가<br><span style="font-weight:400;font-size:0.65rem;color:var(--text-muted);">(카드,자동)</span></th><th class="text-right">마진율</th><th class="text-center">관리</th>
+                        <th class="text-right">현금할인가</th><th class="text-right">정상가<br><span style="font-weight:400;font-size:0.65rem;color:var(--text-muted);">(카드,자동)</span></th><th class="text-right">마진율</th><th class="text-center">관리</th>
                     </tr>
                 </thead>
                 <tbody id="productTableBody"></tbody>
@@ -1327,9 +1327,9 @@ function erpLogout() {
         </div>
     </div>
     <div class="card">
-        <h3>이체할인가 미설정 품목 <span id="noSellCount" style="color:var(--danger);font-weight:400;font-size:0.85rem;"></span></h3>
+        <h3>현금할인가 미설정 품목 <span id="noSellCount" style="color:var(--danger);font-weight:400;font-size:0.85rem;"></span></h3>
         <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:16px;">
-            매입단가는 있지만 이체할인가가 없는 품목입니다. 마진율을 저장한 후 일괄 적용하세요.
+            매입단가는 있지만 현금할인가가 없는 품목입니다. 마진율을 저장한 후 일괄 적용하세요.
         </p>
         <div style="margin-bottom:16px;">
             <button class="btn btn-primary" onclick="applyMarginToNoSell()">마진율 일괄 적용</button>
@@ -1342,7 +1342,7 @@ function erpLogout() {
                         <th class="text-right">매입단가(VAT포함)</th>
                         <th class="text-right">공급가액</th>
                         <th class="text-right">부가세</th>
-                        <th class="text-right">이체할인가</th>
+                        <th class="text-right">현금할인가</th>
                     </tr>
                 </thead>
                 <tbody id="noSellTableBody"></tbody>
@@ -1755,7 +1755,7 @@ function erpLogout() {
     <div class="card">
         <h3>예약 가격 변경 <span id="psStatusBadge" style="font-size:0.7rem;font-weight:400;color:var(--text-muted);margin-left:8px;"></span></h3>
         <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:16px;">
-            품목별 이체할인가를 <strong>미래 날짜</strong>에 자동 변경되도록 예약합니다.
+            품목별 현금할인가를 <strong>미래 날짜</strong>에 자동 변경되도록 예약합니다.
             적용일이 도래하면 ERP·카탈로그·전단지·쇼케이스 중 어느 사이트든 접속 시 자동 반영됩니다.
             <br><strong style="color:var(--danger);">※ 품목당 예약은 1건만 가능</strong> — 새로 등록하면 기존 예약은 취소 처리됩니다.
         </p>
@@ -1772,12 +1772,12 @@ function erpLogout() {
                     <div id="psSearchResults" style="display:none;position:absolute;background:#fff;border:1px solid var(--border);border-radius:6px;max-height:200px;overflow-y:auto;z-index:100;margin-top:2px;box-shadow:0 4px 12px rgba(0,0,0,0.1);"></div>
                 </div>
                 <div style="flex:1;min-width:120px;">
-                    <label style="display:block;font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;">현재 이체할인가</label>
+                    <label style="display:block;font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;">현재 현금할인가</label>
                     <input type="text" id="psCurrentSell" readonly placeholder="품목 선택 필요"
                         style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;background:#f5f5f5;">
                 </div>
                 <div style="flex:1;min-width:120px;">
-                    <label style="display:block;font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;">신규 이체할인가</label>
+                    <label style="display:block;font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;">신규 현금할인가</label>
                     <input type="number" id="psNewSell" placeholder="0"
                         style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;">
                 </div>
@@ -1800,7 +1800,7 @@ function erpLogout() {
         <div style="background:var(--bg);border-radius:8px;padding:14px;margin-bottom:16px;">
             <h4 style="margin:0 0 10px 0;font-size:0.9rem;">일괄 예약 업로드 (엑셀)</h4>
             <p style="color:var(--text-muted);font-size:0.78rem;margin-bottom:10px;">
-                엑셀 컬럼: <code>품목코드 | 신규이체할인가 | 적용일자(YYYY-MM-DD) | 메모(선택)</code>
+                엑셀 컬럼: <code>품목코드 | 신규현금할인가 | 적용일자(YYYY-MM-DD) | 메모(선택)</code>
                 <br>(과거 호환: <code>신규판매단가</code>도 인식)
             </p>
             <div style="display:flex;gap:8px;align-items:center;">
@@ -2284,7 +2284,7 @@ function erpLogout() {
                 <input type="number" id="pmCost" placeholder="0" oninput="calcSellingPrice()">
             </div>
             <div class="form-group" style="flex:1">
-                <label>이체할인가 <span style="font-size:0.7rem;color:var(--text-muted);">(계좌이체 시 받는 금액)</span></label>
+                <label>현금할인가 <span style="font-size:0.7rem;color:var(--text-muted);">(계좌이체 시 받는 금액)</span></label>
                 <input type="number" id="pmSell" placeholder="자동 계산" oninput="updateCardPricePreview()">
             </div>
             <div class="form-group" style="flex:1">
@@ -2629,7 +2629,7 @@ function renderProductList() {
                             <div class="m-price-value" style="font-size:0.72rem;">${supply ? supply.toLocaleString() : '-'}${vat ? '/' + vat.toLocaleString() : ''}</div>
                         </div>
                         <div class="m-price-box" style="background:var(--accent-light);">
-                            <div class="m-price-label">이체할인가</div>
+                            <div class="m-price-label">현금할인가</div>
                             <div class="m-price-value" style="color:var(--accent);">${sell ? sell.toLocaleString() : '-'}</div>
                         </div>
                         <div class="m-price-box">
@@ -3303,15 +3303,15 @@ function calcSellingPrice() {
 
 function onVendorChange() { calcSellingPrice(); }
 
-// 이체할인가(sell) → 정상가(카드가) 자동 계산
-// 카드 결제는 수수료 3%가 붙어서 이체할인가의 103%, 10원 단위 반올림
+// 현금할인가(sell) → 정상가(카드가) 자동 계산
+// 카드 결제는 수수료 3%가 붙어서 현금할인가의 103%, 10원 단위 반올림
 function calcCardPrice(sell) {
     const v = Number(sell) || 0;
     if (v <= 0) return 0;
     return Math.round(v * 1.03 / 10) * 10;
 }
 
-// 모달에서 이체할인가 입력 시 정상가 미리보기 갱신
+// 모달에서 현금할인가 입력 시 정상가 미리보기 갱신
 function updateCardPricePreview() {
     const sell = Number(document.getElementById('pmSell')?.value) || 0;
     const out = document.getElementById('pmCardPricePreview');
@@ -3418,7 +3418,7 @@ function renderNoSellProducts() {
 
     const tbody = document.getElementById('noSellTableBody');
     if (noSell.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px;">모든 품목에 이체할인가가 설정되어 있습니다.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px;">모든 품목에 현금할인가가 설정되어 있습니다.</td></tr>';
         return;
     }
 
@@ -3447,7 +3447,7 @@ function renderNoSellProducts() {
 function applyMarginToNoSell() {
     const noSell = products.filter(p => p.cost > 0 && (!p.sell || p.sell === 0));
     if (noSell.length === 0) {
-        alert('이체할인가 미설정 품목이 없습니다.');
+        alert('현금할인가 미설정 품목이 없습니다.');
         return;
     }
 
@@ -3475,7 +3475,7 @@ function applyMarginToNoSell() {
     renderNoSellProducts();
     renderProductList();
 
-    let msg = applied + '개 품목에 이체할인가가 적용되었습니다.';
+    let msg = applied + '개 품목에 현금할인가가 적용되었습니다.';
     if (noMargin > 0) msg += '\n' + noMargin + '개 품목은 마진율이 미설정되어 건너뛰었습니다.';
     alert(msg);
 }
@@ -3533,7 +3533,7 @@ function confirmUpload() {
         else if (hn.includes('등록일')) colMap.date = i;
         else if (hn.includes('단위')) colMap.unit = i;
         else if (hn.includes('매입가') || hn.includes('매입단가')) colMap.cost = i;
-        else if (hn.includes('소비자가') || hn.includes('판매단가') || hn.includes('납품단가') || hn.includes('이체할인가')) colMap.sell = i;
+        else if (hn.includes('소비자가') || hn.includes('판매단가') || hn.includes('납품단가') || hn.includes('현금할인가')) colMap.sell = i;
         else if (hn.includes('관리코드')) colMap.mgrCode = i;
     });
 
@@ -7416,7 +7416,7 @@ async function psRegisterSingle() {
     var memo = document.getElementById('psMemo').value.trim();
 
     if (!code) { alert('품목을 선택해주세요.'); return; }
-    if (!newSell || newSell <= 0) { alert('신규 이체할인가를 입력해주세요.'); return; }
+    if (!newSell || newSell <= 0) { alert('신규 현금할인가를 입력해주세요.'); return; }
     if (!applyDate) { alert('적용일자를 선택해주세요.'); return; }
 
     var today = getKstDate();
@@ -7529,7 +7529,7 @@ async function psDeleteSchedule(id) {
 // 엑셀 일괄 업로드
 function psDownloadTemplate() {
     var ws = XLSX.utils.aoa_to_sheet([
-        ['품목코드', '신규이체할인가', '적용일자', '메모'],
+        ['품목코드', '신규현금할인가', '적용일자', '메모'],
         ['P001', 12000, '2026-04-15', '원가 인상분'],
         ['P002', 8500, '2026-05-01', '']
     ]);
@@ -7557,7 +7557,7 @@ async function psBulkUpload(event) {
             for (var i = 0; i < rows.length; i++) {
                 var r = rows[i];
                 var code = String(r['품목코드'] || '').trim();
-                var newSell = parseInt(r['신규이체할인가'] || r['신규판매단가'] || 0);
+                var newSell = parseInt(r['신규현금할인가'] || r['신규판매단가'] || 0);
                 var applyDate = r['적용일자'];
                 if (applyDate instanceof Date) applyDate = applyDate.toISOString().slice(0, 10);
                 else applyDate = String(applyDate || '').trim();
