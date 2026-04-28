@@ -1093,7 +1093,7 @@ function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.46</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.47</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1472,6 +1472,9 @@ function erpLogout() {
                 일괄 업로드
             </button>
             <input type="file" id="imgBulkFileInput" multiple accept="image/*" style="display:none" onchange="handleImageFiles(this.files)">
+            <button class="btn btn-outline" onclick="bulkShowHiddenWithImage()" title="숨김 상태이면서 이미지가 등록된 품목들을 모두 [표시]로 일괄 변경">
+                숨김+이미지있음 → 표시
+            </button>
             <div style="display:flex;align-items:center;gap:4px;margin-left:auto;">
                 <span id="imgResultCount" style="font-size:0.78rem;color:var(--text-muted);"></span>
             </div>
@@ -5141,6 +5144,50 @@ function imgGetUploaded() {
 
 function imgHasImage(p) {
     return imgGetUploaded().has(p.code) || !!p.imageUrl;
+}
+
+// 숨김 + 이미지 있음 → 표시 일괄 변경
+async function bulkShowHiddenWithImage() {
+    const uploaded = imgGetUploaded();
+    const targets = products.filter(p => p.hidden && (uploaded.has(p.code) || !!p.imageUrl));
+    if (targets.length === 0) {
+        alert('숨김 상태이면서 이미지가 등록된 품목이 없습니다.');
+        return;
+    }
+    const sample = targets.slice(0, 5).map(p => '· ' + (p.displayName || p.name)).join('\n');
+    const more = targets.length > 5 ? `\n... 외 ${targets.length - 5}개` : '';
+    if (!confirm(`숨김 + 이미지 있음 = ${targets.length}개 품목\n\n${sample}${more}\n\n모두 [표시] 상태로 변경하시겠습니까?\n공개 사이트(카탈로그/가격표/전단지)에 즉시 노출됩니다.`)) return;
+
+    // 1) 메모리 + localStorage 업데이트
+    targets.forEach(p => { p.hidden = false; });
+    saveAll();
+
+    // 2) Supabase 즉시 일괄 업데이트 (50개씩 배치)
+    let synced = 0, failed = 0;
+    if (db) {
+        const codes = targets.map(p => p.code);
+        for (let i = 0; i < codes.length; i += 50) {
+            const batch = codes.slice(i, i + 50);
+            try {
+                const { error } = await db.from('products').update({ hidden: false }).in('code', batch);
+                if (error) { failed += batch.length; console.warn('숨김 해제 동기화 실패:', error.message); }
+                else { synced += batch.length; }
+            } catch (err) {
+                failed += batch.length;
+                console.warn('숨김 해제 동기화 오류:', err);
+            }
+        }
+    }
+
+    // 3) UI 갱신
+    if (typeof renderProductList === 'function') renderProductList();
+    if (typeof imgRenderGrid === 'function') imgRenderGrid();
+
+    if (db) {
+        alert(`✅ ${targets.length}개 품목 변경 완료\n· Supabase 동기화: ${synced}개 성공${failed > 0 ? ` / ${failed}개 실패` : ''}\n· 카탈로그/가격표/전단지에 즉시 반영됩니다`);
+    } else {
+        alert(`✅ ${targets.length}개 품목 변경 완료 (로컬만, Supabase 미연결)`);
+    }
 }
 
 function imgGetFiltered() {
