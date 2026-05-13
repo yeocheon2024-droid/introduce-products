@@ -5441,35 +5441,35 @@ async function imgModalDownload() {
         alert('다운로드할 이미지가 없습니다.');
         return;
     }
-    // Canvas에 그려서 PNG로 다운로드 (CORS 우회)
-    var img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = function() {
-        var canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        canvas.getContext('2d').drawImage(img, 0, 0);
-        canvas.toBlob(function(blob) {
-            if (blob) {
-                var a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = imgModalCode + '.png';
-                a.click();
-                URL.revokeObjectURL(a.href);
-            }
-        }, 'image/png');
-    };
-    img.onerror = function() {
-        // Canvas 실패 시 새 탭으로 열기
-        window.open(getProductImageUrl(imgModalCode), '_blank');
-    };
-    // R2 URL 직접 사용
-    var r2Url = getProductImageUrl(imgModalCode);
+    // 다운로드 대상 URL 결정 (외부 이미지는 wsrv 프록시, R2는 직접)
     var p = products.find(function(pr) { return pr.code === imgModalCode; });
-    if (p && p.imageUrl) {
-        img.src = 'https://wsrv.nl/?url=' + encodeURIComponent(p.imageUrl) + '&output=png';
-    } else {
-        img.src = r2Url;
+    var srcUrl = (p && p.imageUrl)
+        ? 'https://wsrv.nl/?url=' + encodeURIComponent(p.imageUrl) + '&output=png'
+        : getProductImageUrl(imgModalCode);
+
+    // 캐시 우회 (R2 워커 cache miss로 CORS 헤더 누락 회피)
+    var fetchUrl = srcUrl + (srcUrl.indexOf('?') === -1 ? '?' : '&') + 'dl=' + Date.now();
+
+    try {
+        var res = await fetch(fetchUrl, { mode: 'cors', cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var blob = await res.blob();
+        var blobUrl = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = imgModalCode + '.png';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        // 약간 지연 후 해제 (즉시 해제 시 일부 브라우저 다운로드 실패)
+        setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 2000);
+    } catch (err) {
+        console.warn('이미지 다운로드 실패:', err);
+        // 폴백: 새 탭으로 열기 → 사장님이 우클릭 저장 가능
+        var w = window.open(srcUrl, '_blank');
+        if (!w) {
+            alert('다운로드 실패: ' + err.message + '\n팝업 차단을 해제하거나 이미지를 우클릭 → 저장해주세요.');
+        }
     }
 }
 
