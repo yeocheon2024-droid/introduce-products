@@ -2928,6 +2928,41 @@ async function saveProduct() {
     if (editingProductCode) {
         const idx = products.findIndex(p => p.code === editingProductCode);
         if (idx !== -1) products[idx] = { ...products[idx], ...data };
+
+        // 코드가 변경된 경우 옛 코드 정리 — autoSyncToSupabase 는 upsert 만
+        // 하므로 DB에 옛 코드 행이 그대로 남아 거래처 앱에서 두 개로 노출되는
+        // 버그 발생. 코드 변경 시 옛 행 + 관련 이력을 직접 정리.
+        if (editingProductCode !== code && db) {
+            try {
+                // 1) 옛 코드의 이미지 R2에서 삭제 (있을 경우)
+                deleteImageFromStorage(editingProductCode).catch(() => {});
+                // 2) product_code 가 외래 참조되는 테이블의 이력을 새 코드로 이전.
+                //    customer_pricing / customer_favorites 는 (customer_id, product_code) PK
+                //    충돌 가능성이 있어 UPDATE 가 실패할 수 있으나, 동일 거래처가 두 코드
+                //    모두 갖고 있는 경우는 거의 없으므로 시도 → 실패하면 옛 행 삭제.
+                await db.from('order_items').update({ product_code: code }).eq('product_code', editingProductCode);
+                await db.from('purchase_order_items').update({ product_code: code }).eq('product_code', editingProductCode);
+                await db.from('purchase_request_items').update({ product_code: code }).eq('product_code', editingProductCode);
+                const cpRes = await db.from('customer_pricing').update({ product_code: code }).eq('product_code', editingProductCode);
+                if (cpRes.error) await db.from('customer_pricing').delete().eq('product_code', editingProductCode);
+                const cfRes = await db.from('customer_favorites').update({ product_code: code }).eq('product_code', editingProductCode);
+                if (cfRes.error) await db.from('customer_favorites').delete().eq('product_code', editingProductCode);
+                await db.from('showcase_products').update({ product_code: code }).eq('product_code', editingProductCode);
+                await db.from('price_schedule').update({ product_code: code }).eq('product_code', editingProductCode);
+                // 3) products 테이블에서 옛 코드 행 삭제
+                await db.from('products').delete().eq('code', editingProductCode);
+                // 4) 삭제 로그 등록 (deleteProduct 와 동일 패턴)
+                await db.from('deleted_products').upsert({
+                    code: editingProductCode,
+                    name: data.name,
+                    note: '코드 변경 → ' + code,
+                    deleted_at: new Date().toISOString()
+                }, { onConflict: 'code' });
+            } catch (e) {
+                console.warn('코드 변경 시 옛 코드 정리 실패:', e.message);
+                alert('옛 코드 정리 중 오류가 발생했습니다. 콘솔을 확인하세요.\n' + e.message);
+            }
+        }
     } else {
         products.push(data);
     }
