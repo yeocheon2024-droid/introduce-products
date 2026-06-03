@@ -1093,7 +1093,7 @@ function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.47</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.48</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -2252,12 +2252,25 @@ function erpLogout() {
         <div class="form-row">
             <div class="form-group" style="flex:2;position:relative;">
                 <label>품목명 * <span id="pmNameHint" style="font-size:0.72rem;color:var(--text-muted);font-weight:400;margin-left:4px;"></span></label>
-                <input type="text" id="pmName" placeholder="품목명 (2글자 이상 입력 시 분류 추천)" oninput="pmSuggestFromName()" autocomplete="off">
+                <input type="text" id="pmName" placeholder="품목명 (2글자 이상 입력 시 분류 추천)" oninput="pmSuggestFromName(); pmCheckDisplayNameSync();" autocomplete="off">
                 <div id="pmSuggestBox" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:6px;max-height:180px;overflow-y:auto;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,0.1);margin-top:2px;"></div>
             </div>
             <div class="form-group" style="flex:1">
                 <label>규격</label>
                 <input type="text" id="pmSpec" placeholder="1kg, 10개입">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group" style="flex:1">
+                <label>
+                    거래처 표시명
+                    <span style="font-size:0.7rem;color:var(--text-muted);font-weight:400;margin-left:4px;">
+                        (비워두면 품목명이 거래처앱에 그대로 표시됨)
+                    </span>
+                    <button type="button" onclick="pmClearDisplayName()" style="float:right;font-size:0.7rem;background:transparent;border:1px solid var(--border);color:var(--text-muted);padding:1px 8px;border-radius:4px;cursor:pointer;font-weight:400;">↺ 품목명 사용</button>
+                </label>
+                <input type="text" id="pmDisplayName" placeholder="비우면 거래처앱(jiguorder.com)에 위 품목명이 표시됩니다" oninput="pmCheckDisplayNameSync()">
+                <div id="pmDisplayNameHint" style="font-size:0.72rem;margin-top:4px;min-height:1em;"></div>
             </div>
         </div>
         <div class="form-row">
@@ -2813,6 +2826,7 @@ function openAddProductModal() {
     document.getElementById('pmUnit').value = '';
     document.getElementById('pmCost').value = '';
     document.getElementById('pmSell').value = '';
+    document.getElementById('pmDisplayName').value = '';
     updateCardPricePreview();
     populateVendorSelect();
     populateMajorSelect();
@@ -2821,6 +2835,7 @@ function openAddProductModal() {
     var sb = document.getElementById('pmSuggestBox'); if (sb) sb.style.display = 'none';
     var ht = document.getElementById('pmNameHint'); if (ht) ht.textContent = '';
     var ch = document.getElementById('pmCodeHint'); if (ch) ch.textContent = '';
+    var dh = document.getElementById('pmDisplayNameHint'); if (dh) dh.textContent = '';
     openModal('productModal');
 }
 
@@ -2842,9 +2857,44 @@ function editProduct(code) {
     document.getElementById('pmMinor').value = p.minorCode || '';
     document.getElementById('pmCost').value = p.cost || '';
     document.getElementById('pmSell').value = p.sell || '';
+    document.getElementById('pmDisplayName').value = p.displayName || '';
+    pmCheckDisplayNameSync();
     updateCardPricePreview();
     loadProductModalImage(code);
     openModal('productModal');
+}
+
+// 거래처 표시명 입력란을 비우는 빠른 버튼 ('↺ 품목명 사용')
+function pmClearDisplayName() {
+    document.getElementById('pmDisplayName').value = '';
+    pmCheckDisplayNameSync();
+}
+
+// 품목명과 표시명 불일치 안내 — 사장님이 거래처앱 노출 차이를 인지하게 함
+function pmCheckDisplayNameSync() {
+    var nameEl = document.getElementById('pmName');
+    var dispEl = document.getElementById('pmDisplayName');
+    var hint = document.getElementById('pmDisplayNameHint');
+    if (!nameEl || !dispEl || !hint) return;
+    var name = nameEl.value.trim();
+    var disp = dispEl.value.trim();
+    if (!disp) {
+        // 비어있음 — 거래처앱이 품목명 자동 사용
+        hint.innerHTML = '<span style="color:var(--success);">✓ 거래처앱에 품목명 그대로 표시됩니다</span>';
+    } else if (disp === name) {
+        // 동일 — 사실상 비어있는 거랑 같음. 비우길 권장
+        hint.innerHTML = '<span style="color:var(--text-muted);">품목명과 같습니다. 우측 [↺ 품목명 사용] 으로 비워두면 앞으로 품목명 변경 시 자동 반영됩니다.</span>';
+    } else {
+        // 다름 — 거래처앱에는 displayName 노출됨. 명시적 안내
+        hint.innerHTML = '<span style="color:var(--warning,#d97706);">⚠️ 거래처앱(jiguorder.com)에는 <strong>' + escapeHtml(disp) + '</strong> 로 표시됩니다 (품목명과 다름)</span>';
+    }
+}
+
+// 위 안내에서 사용할 안전한 HTML 이스케이프
+function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, function(c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
 }
 
 // 품목코드 실시간 중복 체크 (로컬)
@@ -2922,6 +2972,8 @@ async function saveProduct() {
         vendorType: vendor?.type || 'self',
         cost: Number(document.getElementById('pmCost').value) || 0,
         sell: Number(document.getElementById('pmSell').value) || 0,
+        // 거래처 표시명 — 비우면 거래처앱이 자동으로 name 사용 (saveAll에서 null로 직렬화)
+        displayName: document.getElementById('pmDisplayName').value.trim(),
         registeredAt: new Date().toISOString().split('T')[0]
     };
 
