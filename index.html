@@ -1093,7 +1093,7 @@ function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.48</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.49</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -5043,6 +5043,26 @@ async function uploadImageToStorage(code, file) {
     });
     const result = await resp.json();
     if (!result.success) throw new Error('R2 업로드 실패');
+
+    // R2 업로드 성공 → products.image_url 을 NULL 로 비움.
+    // 거래처앱(getOriginalImageUrl)은 image_url 이 외부 URL 이면 그것을 우선
+    // 사용하므로, 옛 네이버 URL 등이 남아있으면 새 R2 이미지가 노출되지 않음.
+    // 업로드 자체가 "새 이미지를 쓰겠다"는 의도이므로 자동으로 외부 URL 정리.
+    if (typeof db !== 'undefined' && db) {
+        try {
+            const { error } = await db.from('products').update({ image_url: null }).eq('code', code);
+            if (error) console.warn('image_url 정리 실패(' + code + '):', error.message);
+        } catch (e) {
+            console.warn('image_url 정리 예외(' + code + '):', e.message);
+        }
+    }
+    // 로컬 products 배열 동기화 — 다음 saveAll/렌더 시 옛 URL이 다시 박히는 것 차단
+    if (typeof products !== 'undefined' && Array.isArray(products)) {
+        const idx = products.findIndex(p => p.code === code);
+        if (idx >= 0 && products[idx].imageUrl) {
+            delete products[idx].imageUrl;
+        }
+    }
 }
 
 async function deleteImageFromStorage(code) {
