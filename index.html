@@ -2347,7 +2347,9 @@ function debounceSearch() {
 const CATEGORY_TREE = {
     '01': { name: '농산품', sub: { '01': '잡곡', '02': '쌀', '03': '청과' } },
     '02': { name: '수산품', sub: { '01': '어류', '02': '연체류', '03': '갑각류', '04': '조개/패류', '05': '해조류' } },
-    '03': { name: '축산품', sub: { '01': '돈육', '02': '우육', '03': '계육', '04': '계란', '05': '유제품' } },
+    // 거래처 앱 운영 카테고리에 맞춰 '축산품' → '우유/계란' 으로 통일 (2026-06-04)
+    // 정육은 자체매입 안 함 — 돈육/우육/계육 sub 는 제거. 가공육은 04 공산품의 06 햄/육가공.
+    '03': { name: '우유/계란', sub: { '04': '계란', '05': '유제품' } },
     '04': { name: '공산품', sub: {
         '01': '김치/반찬', '02': '기름/분말', '03': '소스/양념', '04': '면/당면',
         '05': '떡/두부', '06': '햄/육가공', '07': '만두/냉동', '08': '캔/레토르트',
@@ -4742,15 +4744,24 @@ function autoSyncToSupabase() {
     syncTimer = setTimeout(async () => {
         try {
             // 품목 전체 upsert
-            const batch = products.map(p => ({
+            // major_name/minor_name 은 CATEGORY_TREE 기준으로 강제 재매핑.
+            // products[].majorName 에 옛 값('축산품' 등)이 남아있어도 동기화 시점에
+            // 거래처 앱 운영 카테고리로 자동 정정 → 카테고리 충돌 재발 방지.
+            const batch = products.map(p => {
+                const majorCode = p.majorCode || '';
+                const minorCode = p.minorCode || '';
+                const treeMajor = CATEGORY_TREE[majorCode];
+                const canonicalMajorName = treeMajor?.name || p.majorName || '';
+                const canonicalMinorName = treeMajor?.sub?.[minorCode] || p.minorName || '';
+                return {
                 code: p.code,
                 name: p.name,
                 spec: p.spec || '',
                 unit: p.unit || '',
-                major_code: p.majorCode || '',
-                major_name: p.majorName || '',
-                minor_code: p.minorCode || '',
-                minor_name: p.minorName || '',
+                major_code: majorCode,
+                major_name: canonicalMajorName,
+                minor_code: minorCode,
+                minor_name: canonicalMinorName,
                 tax: p.tax || '과세',
                 vendor_code: p.vendorCode || '',
                 vendor_name: p.vendorName || '',
@@ -4761,7 +4772,8 @@ function autoSyncToSupabase() {
                 sold_out: !!p.soldOut,
                 hidden: !!p.hidden,
                 display_name: p.displayName || null
-            }));
+                };
+            });
 
             // 50개씩 배치 upsert
             for (let i = 0; i < batch.length; i += 50) {
