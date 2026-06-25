@@ -1093,7 +1093,7 @@ function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.49</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.50</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1241,6 +1241,9 @@ function erpLogout() {
         </select>
         <select id="minorFilter" onchange="renderProductList()">
             <option value="">중분류 전체</option>
+        </select>
+        <select id="vendorFilter" onchange="renderProductList()">
+            <option value="">매입처 전체</option>
         </select>
         <button class="btn btn-outline" id="showAllBtn" onclick="toggleShowAll()">전체 보기</button>
         <button class="btn btn-outline" id="quoteBtn" onclick="openQuoteModal()" style="display:none;">견적서 (<span id="quoteBtnCount">0</span>)</button>
@@ -2538,6 +2541,8 @@ function getFilteredProducts() {
     const filter = document.getElementById('productFilter').value;
     const majorFilter = document.getElementById('majorFilter').value;
     const minorFilter = document.getElementById('minorFilter').value;
+    const vendorFilterEl = document.getElementById('vendorFilter');
+    const vendorFilter = vendorFilterEl ? vendorFilterEl.value : '';
     return products.filter(p => {
         if (filter === 'self' && p.vendorType !== 'self') return false;
         if (filter === 'external' && p.vendorType !== 'external') return false;
@@ -2548,11 +2553,13 @@ function getFilteredProducts() {
         if (filter === 'noimage' && (p.imageUrl && p.imageUrl.trim() !== '')) return false;
         if (majorFilter && p.majorCode !== majorFilter) return false;
         if (minorFilter && p.minorCode !== minorFilter) return false;
+        if (vendorFilter && p.vendorCode !== vendorFilter) return false;
         if (q) {
             return (p.code || '').toLowerCase().includes(q) ||
                    (p.name || '').toLowerCase().includes(q) ||
                    (p.majorName || '').toLowerCase().includes(q) ||
-                   (p.minorName || '').toLowerCase().includes(q);
+                   (p.minorName || '').toLowerCase().includes(q) ||
+                   (p.vendorName || '').toLowerCase().includes(q);
         }
         return true;
     });
@@ -5980,6 +5987,32 @@ function initCategoryFilters() {
     majorSel.innerHTML = '<option value="">대분류 전체</option>';
     for (const mc in CATEGORY_TREE) {
         majorSel.innerHTML += `<option value="${mc}">${CATEGORY_TREE[mc].name}</option>`;
+    }
+    initVendorFilter();
+}
+
+// 매입처 필터 옵션 채우기. 실제 products 에 등록된 매입처만 노출 (vendors 마스터
+// 에 있어도 사용 안 하는 매입처는 굳이 보여줄 필요 없음). 이름순 정렬.
+function initVendorFilter() {
+    const sel = document.getElementById('vendorFilter');
+    if (!sel) return;
+    const prev = sel.value;
+    const seen = new Map();  // code -> name
+    products.forEach(p => {
+        const code = p.vendorCode || '';
+        if (!code) return;
+        if (!seen.has(code)) {
+            seen.set(code, p.vendorName || code);
+        }
+    });
+    const list = Array.from(seen.entries())
+        .map(([code, name]) => ({ code, name }))
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    sel.innerHTML = '<option value="">매입처 전체</option>' +
+        list.map(v => `<option value="${v.code}">${v.name} (${v.code})</option>`).join('');
+    // 직전 선택값 복원 — 탭 재진입/품목 추가 시 선택 유지
+    if (prev && list.some(v => v.code === prev)) {
+        sel.value = prev;
     }
 }
 
