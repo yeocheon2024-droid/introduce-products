@@ -13,6 +13,7 @@
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="default-products.js"></script>
+    <script src="category-remap-v10.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -1093,7 +1094,7 @@ function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v2.50</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.0 · 새 분류</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -2348,15 +2349,23 @@ function debounceSearch() {
 // 데이터 초기화
 // ============================================================
 const CATEGORY_TREE = {
-    '01': { name: '농산품', sub: { '01': '잡곡', '02': '쌀', '03': '청과' } },
+    // 2026-07-04 중분류 세분화 개편 — 16개 → 43개.
+    // 품목별 재배정 데이터는 category-remap-v10.js (1회성 마이그레이션이 아래에서 적용).
+    // 거래처 앱 운영 카테고리에 맞춰 '축산품' → '우유/계란' 으로 통일 (2026-06-04).
+    '01': { name: '농산품', sub: { '01': '쌀', '02': '잡곡', '03': '콩류', '04': '청과' } },
     '02': { name: '수산품', sub: { '01': '어류', '02': '연체류', '03': '갑각류', '04': '조개/패류', '05': '해조류' } },
-    // 거래처 앱 운영 카테고리에 맞춰 '축산품' → '우유/계란' 으로 통일 (2026-06-04)
-    // 정육은 자체매입 안 함 — 돈육/우육/계육 sub 는 제거. 가공육은 04 공산품의 06 햄/육가공.
     '03': { name: '우유/계란', sub: { '04': '계란', '05': '유제품' } },
     '04': { name: '공산품', sub: {
-        '01': '김치/반찬', '02': '기름/분말', '03': '소스/양념', '04': '면/당면',
-        '05': '떡/두부', '06': '햄/육가공', '07': '만두/냉동', '08': '캔/레토르트',
-        '09': '김/해조/건어물', '10': '포장재/소모품', '11': '과자/스낵/음료'
+        '01': '김치', '02': '젓갈', '03': '절임/장아찌', '04': '조림/무침반찬',
+        '05': '단무지/락교', '06': '장류', '07': '간장/식초/맛술/액젓', '08': '양념/초고추장',
+        '09': '다시다/조미료', '10': '육수/장국/쯔유', '11': '마요/케찹/드레싱', '12': '양식/일식소스',
+        '13': '중식/아시아소스', '14': '카레/스프/분말소스', '15': '설탕/소금/감미료', '16': '쨈/필링/토핑',
+        '17': '향신료/허브', '18': '기름/오일', '19': '고춧가루/건고추', '20': '밀가루/전분/튀김가루',
+        '21': '깨/기타분말', '22': '면/국수/당면', '23': '파스타', '24': '참치/캔햄/수산캔',
+        '25': '과일캔', '26': '야채/버섯캔', '27': '즉석/레토르트', '28': '김/해조',
+        '29': '건어물/건나물', '30': '견과/건과일', '31': '음료/원액', '32': '과자/스낵',
+        '33': '만두', '34': '냉동식품', '35': '떡/두부', '36': '햄/육가공',
+        '37': '포장재/일회용품', '38': '세제/위생용품'
     }}
 };
 
@@ -2387,6 +2396,45 @@ if (!products || products.length === 0) {
 }
 let vendors = loadData('erp_vendors', DEFAULT_VENDORS);
 let margins = loadData('erp_margins', {});
+
+// v10: 중분류 세분화 개편 (2026-07-04) — 1회성 마이그레이션.
+// category-remap-v10.js 의 품목코드→새 분류 매핑으로 minorCode 재배정하고
+// 새 category_key 는 옛 중분류의 마진율을 상속한다.
+// 완료 후 페이지가 저장(saveAll)될 때 autoSyncToSupabase 가 서버에도 반영.
+if (!localStorage.getItem('category_split_v10') && typeof CATEGORY_REMAP_V10 !== 'undefined') {
+    let migrated = 0;
+    products.forEach(function(p) {
+        const r = CATEGORY_REMAP_V10[p.code];
+        if (!r) return;
+        const treeMajor = CATEGORY_TREE[r[0]];
+        if (!treeMajor || !treeMajor.sub[r[1]]) return;
+        p.majorCode = r[0];
+        p.minorCode = r[1];
+        p.majorName = treeMajor.name;
+        p.minorName = treeMajor.sub[r[1]];
+        migrated++;
+    });
+    // 마진율 상속 — 새 키에 값이 없으면 옛 중분류의 마진율 복사
+    if (typeof MARGIN_INHERIT_V10 !== 'undefined') {
+        Object.entries(MARGIN_INHERIT_V10).forEach(function([newKey, oldKey]) {
+            if (margins[newKey] === undefined && oldKey && margins[oldKey] !== undefined) {
+                margins[newKey] = margins[oldKey];
+            }
+        });
+    }
+    localStorage.setItem('erp_products', JSON.stringify(products));
+    localStorage.setItem('erp_margins', JSON.stringify(margins));
+    localStorage.setItem('category_split_v10', 'done');
+    console.log('[v10] 중분류 개편 마이그레이션 완료: ' + migrated + '개 재배정');
+    // 매핑에 없는 품목 (스냅샷 이후 신규 등록분 등) — 분류가 어긋날 수 있으니 경고
+    var unmapped = products.filter(function(p) { return !CATEGORY_REMAP_V10[p.code]; });
+    if (unmapped.length > 0) {
+        console.warn('[v10] 매핑 없는 품목 ' + unmapped.length + '개 — 품목 관리에서 분류 확인 필요:',
+            unmapped.map(function(p) { return p.code + ' ' + p.name; }));
+    }
+    // Supabase 동기화 — db 초기화 이후에 실행되도록 지연 예약
+    window.__categorySplitV10JustRan = true;
+}
 let pendingUpload = null;
 let editingProductCode = null;
 let currentPage = 1;
@@ -4489,6 +4537,49 @@ function initSupabase() {
     var keyInput = document.getElementById('supabaseKey');
     if (urlInput) urlInput.value = url;
     if (keyInput) keyInput.value = key;
+
+    // v10 중분류 개편 마이그레이션이 방금 실행됐으면 서버에 즉시 반영
+    // (products 전체 upsert + category_order 새 순서 + 옛 중분류 행 삭제)
+    if (db && window.__categorySplitV10JustRan) {
+        window.__categorySplitV10JustRan = false;
+        syncCategorySplitV10();
+    }
+}
+
+async function syncCategorySplitV10() {
+    try {
+        autoSyncToSupabase(); // products + margins 서버 반영 (디바운스 2초)
+        // category_order — 새 중분류 표시 순서
+        var NEW_ORDER = [
+            ['쌀', '농산품', 1], ['김치', '공산품', 2], ['계란', '우유/계란', 3],
+            ['잡곡', '농산품', 4], ['콩류', '농산품', 5],
+            ['젓갈', '공산품', 10], ['절임/장아찌', '공산품', 11], ['조림/무침반찬', '공산품', 12],
+            ['단무지/락교', '공산품', 13], ['장류', '공산품', 14], ['간장/식초/맛술/액젓', '공산품', 15],
+            ['양념/초고추장', '공산품', 16], ['다시다/조미료', '공산품', 17], ['육수/장국/쯔유', '공산품', 18],
+            ['마요/케찹/드레싱', '공산품', 19], ['양식/일식소스', '공산품', 20], ['중식/아시아소스', '공산품', 21],
+            ['카레/스프/분말소스', '공산품', 22], ['설탕/소금/감미료', '공산품', 23], ['쨈/필링/토핑', '공산품', 24],
+            ['향신료/허브', '공산품', 25], ['기름/오일', '공산품', 26], ['고춧가루/건고추', '공산품', 27],
+            ['밀가루/전분/튀김가루', '공산품', 28], ['깨/기타분말', '공산품', 29],
+            ['면/국수/당면', '공산품', 30], ['파스타', '공산품', 31],
+            ['참치/캔햄/수산캔', '공산품', 32], ['과일캔', '공산품', 33], ['야채/버섯캔', '공산품', 34],
+            ['즉석/레토르트', '공산품', 35], ['김/해조', '공산품', 36], ['건어물/건나물', '공산품', 37],
+            ['견과/건과일', '공산품', 38], ['음료/원액', '공산품', 39], ['과자/스낵', '공산품', 40],
+            ['만두', '공산품', 41], ['냉동식품', '공산품', 42], ['떡/두부', '공산품', 43],
+            ['햄/육가공', '공산품', 44], ['포장재/일회용품', '공산품', 45], ['세제/위생용품', '공산품', 46],
+            ['유제품', '우유/계란', 47]
+        ];
+        var rows = NEW_ORDER.map(function(r) {
+            return { minor_name: r[0], major_name: r[1], sort_order: r[2], updated_at: new Date().toISOString() };
+        });
+        await db.from('category_order').upsert(rows, { onConflict: 'minor_name' });
+        // 옛 중분류 순서 행 제거 (더 이상 존재하지 않는 이름)
+        var OLD_MINORS = ['김치/반찬', '기름/분말', '소스/양념', '면/당면', '캔/레토르트',
+                          '포장재/소모품', '김/해조/건어물', '과자/스낵/음료', '만두/냉동'];
+        await db.from('category_order').delete().in('minor_name', OLD_MINORS);
+        console.log('[v10] category_order 서버 반영 완료');
+    } catch (e) {
+        console.error('[v10] category_order 반영 실패 — 정렬 관리 탭에서 저장하면 재반영됩니다:', e);
+    }
 }
 
 async function connectSupabase() {
