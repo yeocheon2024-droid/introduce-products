@@ -1094,7 +1094,7 @@ function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.3 · 즉시 저장</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.4 · NOT NULL 대응</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -4972,7 +4972,7 @@ function buildProductPayload(p) {
     const treeMajor = CATEGORY_TREE[majorCode];
     const canonicalMajorName = treeMajor?.name || p.majorName || '';
     const canonicalMinorName = treeMajor?.sub?.[minorCode] || p.minorName || '';
-    return {
+    const payload = {
         code: p.code,
         name: p.name,
         spec: p.spec || '',
@@ -4991,10 +4991,14 @@ function buildProductPayload(p) {
         sold_out: !!p.soldOut,
         hidden: !!p.hidden,
         display_name: p.displayName || null,
-        image_url: p.imageUrl || null,
-        sort_order: (p.sortOrder != null) ? p.sortOrder : null,
-        pack_size: (p.packSize != null) ? p.packSize : null
+        image_url: p.imageUrl || null
     };
+    // sort_order / pack_size 는 DB에 NOT NULL 제약 + 기본값이 있는 컬럼이라
+    // null 을 보내면 not-null constraint 위반으로 upsert 자체가 실패.
+    // 로컬 값이 있을 때만 전송하고, 없으면 필드 자체를 빼서 DB 기본값이 유지되게 함.
+    if (p.sortOrder != null) payload.sort_order = p.sortOrder;
+    if (p.packSize != null) payload.pack_size = p.packSize;
+    return payload;
 }
 
 function autoSyncToSupabase() {
@@ -5006,38 +5010,9 @@ function autoSyncToSupabase() {
             // major_name/minor_name 은 CATEGORY_TREE 기준으로 강제 재매핑.
             // products[].majorName 에 옛 값('축산품' 등)이 남아있어도 동기화 시점에
             // 거래처 앱 운영 카테고리로 자동 정정 → 카테고리 충돌 재발 방지.
-            const batch = products.map(p => {
-                const majorCode = p.majorCode || '';
-                const minorCode = p.minorCode || '';
-                const treeMajor = CATEGORY_TREE[majorCode];
-                const canonicalMajorName = treeMajor?.name || p.majorName || '';
-                const canonicalMinorName = treeMajor?.sub?.[minorCode] || p.minorName || '';
-                return {
-                code: p.code,
-                name: p.name,
-                spec: p.spec || '',
-                unit: p.unit || '',
-                major_code: majorCode,
-                major_name: canonicalMajorName,
-                minor_code: minorCode,
-                minor_name: canonicalMinorName,
-                tax: p.tax || '과세',
-                vendor_code: p.vendorCode || '',
-                vendor_name: p.vendorName || '',
-                vendor_type: p.vendorType || 'self',
-                cost: p.cost || 0,
-                sell: p.sell || 0,
-                registered_at: p.registeredAt || new Date().toISOString().split('T')[0],
-                sold_out: !!p.soldOut,
-                hidden: !!p.hidden,
-                display_name: p.displayName || null,
-                // 아래 3 필드는 예전 payload 에서 빠져 있어 코드 변경(옛 코드 삭제 → 새 코드 INSERT)
-                // 시 거래처앱의 정렬순서/pack_size/네이버 image_url 이 초기화되던 버그 원인.
-                image_url: p.imageUrl || null,
-                sort_order: (p.sortOrder != null) ? p.sortOrder : null,
-                pack_size: (p.packSize != null) ? p.packSize : null
-                };
-            });
+            // buildProductPayload 공용 헬퍼로 단일 소스화.
+            // NOT NULL 컬럼(pack_size, sort_order)은 값 있을 때만 전송 (헬퍼 내부 처리).
+            const batch = products.map(buildProductPayload);
 
             // 50개씩 배치 upsert
             for (let i = 0; i < batch.length; i += 50) {
