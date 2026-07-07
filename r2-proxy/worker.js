@@ -34,6 +34,11 @@ export default {
           httpMetadata: { contentType },
         });
 
+        // 업로드 후 엣지 캐시 즉시 무효화 (구버전 이미지 제거)
+        const cacheUrl = new URL(request.url);
+        cacheUrl.pathname = '/' + filename;
+        await caches.default.delete(new Request(cacheUrl.toString()));
+
         return new Response(JSON.stringify({ success: true, filename }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -44,7 +49,47 @@ export default {
         const filename = decodeURIComponent(path.replace('/delete/', ''));
         await env.BUCKET.delete(filename);
 
+        // 캐시 무효화
+        const cacheUrl = new URL(request.url);
+        cacheUrl.pathname = '/' + filename;
+        await caches.default.delete(new Request(cacheUrl.toString()));
+
         return new Response(JSON.stringify({ success: true, deleted: filename }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Rename: POST /rename/옛이름.png/새이름.png
+      // ERP 에서 품목 코드를 변경할 때 R2 이미지를 그대로 이전 (GET → PUT → DELETE 조합).
+      // 예전엔 옛 파일만 지우고 새 파일명으로 이전 안 해서 코드 변경 시 이미지가 사라졌음.
+      if (request.method === 'POST' && path.startsWith('/rename/')) {
+        const rest = path.replace('/rename/', '');
+        const slashIdx = rest.indexOf('/');
+        if (slashIdx <= 0) {
+          return new Response(JSON.stringify({ error: 'invalid rename path' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        const from = decodeURIComponent(rest.slice(0, slashIdx));
+        const to = decodeURIComponent(rest.slice(slashIdx + 1));
+        const source = await env.BUCKET.get(from);
+        if (!source) {
+          return new Response(JSON.stringify({ error: 'source not found', from }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        await env.BUCKET.put(to, source.body, {
+          httpMetadata: source.httpMetadata,
+        });
+        await env.BUCKET.delete(from);
+        // 양쪽 URL 캐시 무효화
+        const url1 = new URL(request.url); url1.pathname = '/' + from;
+        const url2 = new URL(request.url); url2.pathname = '/' + to;
+        await caches.default.delete(new Request(url1.toString()));
+        await caches.default.delete(new Request(url2.toString()));
+        return new Response(JSON.stringify({ success: true, from, to }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
@@ -76,7 +121,7 @@ export default {
           headers: {
             ...corsHeaders,
             'Content-Type': object.httpMetadata?.contentType || 'image/png',
-            'Cache-Control': 'public, max-age=86400',
+            'Cache-Control': 'public, max-age=31536000',
           },
         });
       }

@@ -1094,7 +1094,7 @@ function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.4 · NOT NULL 대응</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.5 · 잔여 이슈 정리</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -2972,18 +2972,18 @@ function showToast(message, type) {
     t._timer = setTimeout(function() { t.style.opacity = '0'; }, 2200);
 }
 
-// 품목코드 실시간 중복 체크 (로컬)
+// 품목코드 실시간 중복 체크 (로컬) — 대소문자/공백 정규화 적용
 function pmCheckCodeDuplicate() {
     var codeInput = document.getElementById('pmCode');
     var hint = document.getElementById('pmCodeHint');
     if (!codeInput || !hint) return;
-    var code = codeInput.value.trim();
+    var code = codeInput.value.trim().toUpperCase();
     if (!code) { hint.textContent = ''; return; }
-    // 수정 모드에서 자기 자신은 제외
-    if (editingProductCode && code === editingProductCode) {
+    // 수정 모드에서 자기 자신은 제외 (자기 자신도 대문자로 정규화 비교)
+    if (editingProductCode && code === editingProductCode.toUpperCase()) {
         hint.textContent = '(수정 중)'; hint.style.color = 'var(--text-muted)'; return;
     }
-    var dup = products.find(function(p){ return p.code === code; });
+    var dup = products.find(function(p){ return (p.code || '').toUpperCase() === code; });
     if (dup) {
         hint.textContent = '⚠️ 이미 사용 중: ' + (dup.name || '').slice(0, 15);
         hint.style.color = 'var(--danger)';
@@ -2998,7 +2998,14 @@ async function saveProduct() {
     const saveBtn = document.querySelector('#productModal button.btn-primary');
     if (saveBtn && saveBtn.disabled) return;
 
-    const code = document.getElementById('pmCode').value.trim();
+    // 코드는 대문자·공백 정규화 — 'wi001' 과 'WI001' 을 서로 다른 코드로 저장하던 버그 방지.
+    // 사용자가 소문자로 입력해도 대문자로 통일해서 대소문자 차이로 인한 중복 등록 차단.
+    const codeRaw = document.getElementById('pmCode').value.trim();
+    const code = codeRaw.toUpperCase();
+    if (codeRaw !== code) {
+        // 입력창도 시각적으로 갱신 (사용자 인지)
+        document.getElementById('pmCode').value = code;
+    }
     const name = document.getElementById('pmName').value.trim();
     if (!code || !name) { alert('품목코드와 품목명은 필수입니다.'); return; }
 
@@ -3077,8 +3084,17 @@ async function saveProduct() {
             // 버그 발생. 코드 변경 시 옛 행 + 관련 이력을 직접 정리.
             if (editingProductCode !== code && db) {
                 try {
-                    // 1) 옛 코드의 이미지 R2에서 삭제 (있을 경우)
-                    deleteImageFromStorage(editingProductCode).catch(() => {});
+                    // 1) R2 이미지를 새 코드 이름으로 이전 (rename).
+                    //    옛 코드로 저장된 이미지를 그대로 새 코드로 옮겨서 카탈로그/거래처앱에서
+                    //    이미지가 사라지지 않도록. rename 엔드포인트가 옛 파일 → 새 파일 이전
+                    //    + 옛 파일 자동 삭제까지 처리. 실패해도 저장 흐름은 계속 (이미지만 이슈).
+                    try {
+                        await fetch(R2_WORKER_URL + '/rename/' + editingProductCode + '.png/' + code + '.png', {
+                            method: 'POST'
+                        });
+                    } catch (e) {
+                        console.warn('R2 이미지 rename 실패(무시):', e && e.message);
+                    }
                     // 2) product_code 가 외래 참조되는 테이블의 이력을 새 코드로 이전.
                     await db.from('order_items').update({ product_code: code }).eq('product_code', editingProductCode);
                     await db.from('purchase_order_items').update({ product_code: code }).eq('product_code', editingProductCode);
@@ -3091,10 +3107,10 @@ async function saveProduct() {
                     await db.from('price_schedule').update({ product_code: code }).eq('product_code', editingProductCode);
                     // 3) products 테이블에서 옛 코드 행 삭제
                     await db.from('products').delete().eq('code', editingProductCode);
-                    // 4) 삭제 로그 등록
+                    // 4) 삭제 로그 등록 — 실제 컬럼명은 'product_name'
                     await db.from('deleted_products').upsert({
                         code: editingProductCode,
-                        name: data.name,
+                        product_name: data.name,
                         note: '코드 변경 → ' + code,
                         deleted_at: new Date().toISOString()
                     }, { onConflict: 'code' });
@@ -3135,7 +3151,9 @@ async function saveProduct() {
 
         closeModal('productModal');
 
-        // 이미지 처리 (비동기)
+        // 이미지 처리 (비동기) — 실패 시 사용자에게 명확히 통보.
+        // 예전엔 console.warn 만 남기고 조용히 넘어가서 사용자가 성공한 줄 알고
+        // 옛 이미지가 계속 노출되는 것을 이상하게 여겼음. 이제는 toast 로 알림.
         if (pendingImageFile === 'DELETE') {
             // 1) R2에서 삭제
             deleteImageFromStorage(code)
@@ -3146,16 +3164,27 @@ async function saveProduct() {
                     imageCacheBuster = Date.now();
                     renderProductList();
                 })
-                .catch(err => console.warn('R2 이미지 삭제 실패:', err.message));
-            // 2) Supabase image_url도 명시적으로 null 업데이트
+                .catch(err => {
+                    console.warn('R2 이미지 삭제 실패:', err.message);
+                    showToast('R2 이미지 삭제 실패: ' + err.message, 'error');
+                });
+            // 2) Supabase image_url 명시적으로 null 업데이트 — 실패 시 알림
             if (db) {
                 db.from('products').update({ image_url: null }).eq('code', code)
-                    .then(function(res) { if (res.error) console.warn('image_url 삭제 실패:', res.error.message); });
+                    .then(function(res) {
+                        if (res.error) {
+                            console.warn('image_url 삭제 실패:', res.error.message);
+                            showToast('image_url 정리 실패 — 옛 URL 남아있을 수 있음', 'error');
+                        }
+                    });
             }
         } else if (pendingImageFile && pendingImageFile !== 'DELETE') {
             uploadImageToStorage(code, pendingImageFile)
                 .then(() => { imageCacheBuster = Date.now(); renderProductList(); })
-                .catch(err => console.warn('이미지 업로드 실패:', err.message));
+                .catch(err => {
+                    console.warn('이미지 업로드 실패:', err.message);
+                    showToast('이미지 업로드 실패: ' + err.message, 'error');
+                });
         }
         pendingImageFile = null;
 
@@ -3205,10 +3234,10 @@ async function deleteProduct(code) {
         const delRes = await db.from('products').delete().eq('code', code);
         if (delRes.error) throw new Error('products DELETE: ' + delRes.error.message);
 
-        // 3) 삭제 로그 등록 (재사용 감지용). 컬럼명은 'name' 으로 통일.
+        // 3) 삭제 로그 등록 (재사용 감지용). 실제 컬럼명은 'product_name'.
         const logRes = await db.from('deleted_products').upsert({
             code: code,
-            name: name,
+            product_name: name,
             deleted_at: new Date().toISOString()
         }, { onConflict: 'code' });
         if (logRes.error) console.warn('삭제 로그 기록 실패(무시):', logRes.error.message);
@@ -5014,10 +5043,26 @@ function autoSyncToSupabase() {
             // NOT NULL 컬럼(pack_size, sort_order)은 값 있을 때만 전송 (헬퍼 내부 처리).
             const batch = products.map(buildProductPayload);
 
-            // 50개씩 배치 upsert
+            // 50개씩 배치 upsert. 실패 배치는 한 번 재시도 후에도 실패하면
+            // 실패한 코드 목록을 모아 사용자에게 통보 (부분 실행 조용한 실패 방지).
+            const failedCodes = [];
             for (let i = 0; i < batch.length; i += 50) {
-                await db.from('products')
-                    .upsert(batch.slice(i, i + 50), { onConflict: 'code' });
+                const chunk = batch.slice(i, i + 50);
+                let res = await db.from('products').upsert(chunk, { onConflict: 'code' });
+                if (res.error) {
+                    // 한 번 재시도 (일시적 네트워크/과부하 대응)
+                    await new Promise(r => setTimeout(r, 500));
+                    res = await db.from('products').upsert(chunk, { onConflict: 'code' });
+                    if (res.error) {
+                        console.error('배치 upsert 실패 (재시도 후):', res.error.message);
+                        chunk.forEach(item => failedCodes.push(item.code));
+                    }
+                }
+            }
+            if (failedCodes.length > 0) {
+                const sample = failedCodes.slice(0, 3).join(', ');
+                const suffix = failedCodes.length > 3 ? ` 외 ${failedCodes.length - 3}건` : '';
+                showToast(`동기화 실패 ${failedCodes.length}건 (${sample}${suffix}) — 콘솔 확인`, 'error');
             }
 
             // 매입처
@@ -5152,17 +5197,17 @@ async function selectNaverImage(code, encodedUrl) {
     document.getElementById('naverImageResults').style.opacity = '0.5';
 
     try {
-        // CORS 프록시 없이 URL 자체를 품목 데이터에 저장
         const idx = products.findIndex(p => p.code === code);
         if (idx < 0) throw new Error('품목을 찾을 수 없습니다.');
-        products[idx].imageUrl = imageUrl;
-        localStorage.setItem('erp_products', JSON.stringify(products));
-
-        // Supabase에도 반영
+        // DB 를 먼저 시도. 실패하면 로컬도 반영 안 함 → 로컬↔DB 불일치 원천 차단.
+        // 예전엔 로컬만 반영되고 DB 실패는 console.warn 만 → 사장님 화면은 새 이미지,
+        // 거래처앱은 옛 이미지 상태로 서로 다른 화면을 보는 버그.
         if (db) {
             const { error } = await db.from('products').update({ image_url: imageUrl }).eq('code', code);
-            if (error) console.warn('Supabase 저장 오류:', error.message);
+            if (error) throw new Error('DB 저장 실패: ' + error.message);
         }
+        products[idx].imageUrl = imageUrl;
+        try { localStorage.setItem('erp_products', JSON.stringify(products)); } catch (e) { console.warn(e.message); }
 
         status.textContent = '✅ 저장 완료!';
         document.getElementById('naverImageResults').style.opacity = '1';
@@ -5474,16 +5519,23 @@ async function downloadNaverImagesZip() {
     btn.textContent = '&#128230; 전체 ZIP 다운로드';
 }
 
-function removeNaverImage(code) {
+async function removeNaverImage(code) {
     if (!confirm(code + ' 이미지를 삭제할까요?')) return;
     const idx = products.findIndex(p => p.code === code);
-    if (idx >= 0) {
-        delete products[idx].imageUrl;
-        localStorage.setItem('erp_products', JSON.stringify(products));
-        if (db) db.from('products').update({ image_url: null }).eq('code', code);
-        renderNaverSavedImages();
-        renderProductList();
+    if (idx < 0) return;
+    // DB 를 먼저 처리. 실패 시 로컬 반영 안 함 (사용자에게 실패 알림).
+    if (db) {
+        const { error } = await db.from('products').update({ image_url: null }).eq('code', code);
+        if (error) {
+            showToast('이미지 삭제 실패: ' + error.message, 'error');
+            return;
+        }
     }
+    delete products[idx].imageUrl;
+    try { localStorage.setItem('erp_products', JSON.stringify(products)); } catch (e) { console.warn(e.message); }
+    renderNaverSavedImages();
+    renderProductList();
+    showToast('이미지 삭제 완료', 'success');
 }
 
 function renderUploadedImages(list) { /* 통합 뷰로 이관 */ }
@@ -5782,9 +5834,13 @@ async function imgModalSelectNaver(encodedUrl) {
     try {
         const idx = products.findIndex(p => p.code === imgModalCode);
         if (idx < 0) throw new Error('품목 없음');
+        // DB 를 먼저 시도. 실패 시 로컬 반영 안 함 (로컬↔DB 불일치 차단).
+        if (db) {
+            const { error } = await db.from('products').update({ image_url: imageUrl }).eq('code', imgModalCode);
+            if (error) throw new Error('DB 저장 실패: ' + error.message);
+        }
         products[idx].imageUrl = imageUrl;
-        localStorage.setItem('erp_products', JSON.stringify(products));
-        if (db) await db.from('products').update({ image_url: imageUrl }).eq('code', imgModalCode);
+        try { localStorage.setItem('erp_products', JSON.stringify(products)); } catch (e) { console.warn(e.message); }
 
         statusEl.textContent = '저장 완료!';
         statusEl.style.color = 'var(--success)';
