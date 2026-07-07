@@ -1094,7 +1094,7 @@ function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.2 · localStorage 안전화</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.3 · 즉시 저장</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -3117,6 +3117,22 @@ async function saveProduct() {
 
         saveAll();
         renderProductList();
+
+        // 방금 저장한 품목을 debounce 없이 즉시 DB upsert.
+        // autoSyncToSupabase 는 2초 debounce → 사용자가 새로고침을 빨리 하면
+        // DB에 저장이 안 된 상태로 재로드 → 방금 저장한 품목 사라지는 버그 발생.
+        // 이 블록이 그것을 근본 차단. 실패 시엔 명확히 alert 하고 catch 로 전달.
+        if (db) {
+            const savedProduct = products.find(p => p.code === code);
+            if (savedProduct) {
+                const payload = buildProductPayload(savedProduct);
+                const upsertRes = await db.from('products').upsert(payload, { onConflict: 'code' });
+                if (upsertRes.error) {
+                    throw new Error('DB 저장 실패: ' + upsertRes.error.message);
+                }
+            }
+        }
+
         closeModal('productModal');
 
         // 이미지 처리 (비동기)
@@ -4946,6 +4962,39 @@ async function downloadFromSupabase() {
         syncLog(`오류 발생: ${err.message}`);
         alert('다운로드 중 오류: ' + err.message);
     }
+}
+
+// 품목 하나를 DB payload 형식으로 변환 — autoSyncToSupabase 와 saveProduct
+// 의 즉시 upsert 가 모두 이 함수를 공유해 payload 구조 어긋남을 방지.
+function buildProductPayload(p) {
+    const majorCode = p.majorCode || '';
+    const minorCode = p.minorCode || '';
+    const treeMajor = CATEGORY_TREE[majorCode];
+    const canonicalMajorName = treeMajor?.name || p.majorName || '';
+    const canonicalMinorName = treeMajor?.sub?.[minorCode] || p.minorName || '';
+    return {
+        code: p.code,
+        name: p.name,
+        spec: p.spec || '',
+        unit: p.unit || '',
+        major_code: majorCode,
+        major_name: canonicalMajorName,
+        minor_code: minorCode,
+        minor_name: canonicalMinorName,
+        tax: p.tax || '과세',
+        vendor_code: p.vendorCode || '',
+        vendor_name: p.vendorName || '',
+        vendor_type: p.vendorType || 'self',
+        cost: p.cost || 0,
+        sell: p.sell || 0,
+        registered_at: p.registeredAt || new Date().toISOString().split('T')[0],
+        sold_out: !!p.soldOut,
+        hidden: !!p.hidden,
+        display_name: p.displayName || null,
+        image_url: p.imageUrl || null,
+        sort_order: (p.sortOrder != null) ? p.sortOrder : null,
+        pack_size: (p.packSize != null) ? p.packSize : null
+    };
 }
 
 function autoSyncToSupabase() {
