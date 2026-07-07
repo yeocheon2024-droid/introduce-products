@@ -1094,7 +1094,7 @@ function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.1 · CRUD 안정화</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.2 · localStorage 안전화</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -3850,10 +3850,38 @@ document.querySelectorAll('.modal-overlay').forEach(m => {
 // 저장 / 백업 / 복원
 // ============================================================
 function saveAll() {
-    localStorage.setItem('erp_products', JSON.stringify(products));
-    localStorage.setItem('erp_vendors', JSON.stringify(vendors));
-    localStorage.setItem('erp_margins', JSON.stringify(margins));
-    // Supabase 자동 동기화
+    // localStorage 저장 — quota 초과/예외에도 흐름이 안 막히도록 각각 try/catch.
+    // 진실 소스는 Supabase 이고 localStorage 는 캐시 용도이므로 실패해도 무해.
+    // 이전 버그: quota 실패가 saveProduct/deleteProduct 의 catch 에 잡혀
+    //          "저장 실패 (RLS)" 같은 오해 문구가 표시되던 문제.
+    try {
+        // base64 data URL(임시 preview) 은 저장 대상에서 제외 — 이미지 하나가
+        // 100KB 이상이라 몇 개만 있어도 5~10MB quota 를 순식간에 삼킴.
+        // R2 URL(http/https) 은 유지.
+        const productsForStorage = products.map(p => {
+            if (p && typeof p.imageUrl === 'string' && p.imageUrl.startsWith('data:')) {
+                const clone = Object.assign({}, p);
+                delete clone.imageUrl;
+                return clone;
+            }
+            return p;
+        });
+        localStorage.setItem('erp_products', JSON.stringify(productsForStorage));
+    } catch (e) {
+        // 그래도 quota 초과면 조용히 넘어감 — Supabase 동기화가 진짜 저장.
+        console.warn('erp_products localStorage 저장 실패:', e && e.message);
+    }
+    try {
+        localStorage.setItem('erp_vendors', JSON.stringify(vendors));
+    } catch (e) {
+        console.warn('erp_vendors localStorage 저장 실패:', e && e.message);
+    }
+    try {
+        localStorage.setItem('erp_margins', JSON.stringify(margins));
+    } catch (e) {
+        console.warn('erp_margins localStorage 저장 실패:', e && e.message);
+    }
+    // Supabase 자동 동기화 — 진실 소스
     if (db) {
         autoSyncToSupabase();
     }
