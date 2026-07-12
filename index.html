@@ -1554,6 +1554,14 @@ function erpLogout() {
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;max-height:300px;overflow-y:auto;" id="imgModalNaverGrid"></div>
             <div id="imgModalNaverStatus" style="text-align:center;padding:10px;color:var(--text-muted);font-size:0.82rem;"></div>
         </div>
+        <!-- 냉동식품 여부 — products.is_frozen (거래처앱 상세에 ❄️ 냉동 배지 노출) -->
+        <div style="border-top:1px solid var(--border-light);margin-top:12px;padding-top:12px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <label style="display:flex;align-items:center;gap:8px;font-size:0.85rem;font-weight:600;cursor:pointer;">
+                <input type="checkbox" id="imgModalFrozen" onchange="imgModalToggleFrozen(this.checked)" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;">
+                ❄️ 냉동식품
+            </label>
+            <span id="imgModalFrozenStatus" style="font-size:0.75rem;color:var(--text-muted);"></span>
+        </div>
         <!-- 품질표시사항(라벨) 이미지 — R2 에 {코드}_label.png / _label2~5.png 규칙 (최대 5장) -->
         <div style="border-top:1px solid var(--border-light);margin-top:12px;padding-top:12px;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:4px;">
@@ -4981,7 +4989,8 @@ async function downloadFromSupabase() {
             registeredAt: p.registered_at || '',
             imageUrl: p.image_url || '',
             displayName: p.display_name || '',
-            soldOut: !!p.sold_out, hidden: !!p.hidden
+            soldOut: !!p.sold_out, hidden: !!p.hidden,
+            isFrozen: !!p.is_frozen
         }));
         syncLog(`품목 ${products.length}개 다운로드 완료`);
 
@@ -5794,10 +5803,40 @@ function imgOpenModal(code) {
         noImg.style.display = '';
     }
 
+    // 냉동식품 체크박스 초기화
+    const frozenCb = document.getElementById('imgModalFrozen');
+    if (frozenCb) frozenCb.checked = !!p.isFrozen;
+    const frozenStatus = document.getElementById('imgModalFrozenStatus');
+    if (frozenStatus) { frozenStatus.textContent = ''; frozenStatus.style.color = 'var(--text-muted)'; }
+
     // 품질표시사항(라벨) 미리보기
     labelModalLoad(code);
 
     openModal('imgChangeModal');
+}
+
+// 냉동식품 여부 토글 — products.is_frozen 즉시 동기화 (거래처앱 상세 배지용)
+async function imgModalToggleFrozen(checked) {
+    const p = products.find(pr => pr.code === imgModalCode);
+    if (!p) return;
+    const statusEl = document.getElementById('imgModalFrozenStatus');
+    p.isFrozen = checked;
+    saveAll();
+    if (!db) {
+        statusEl.textContent = '로컬만 저장됨 (Supabase 미연결)';
+        return;
+    }
+    const { error } = await db.from('products').update({ is_frozen: checked }).eq('code', imgModalCode);
+    if (error) {
+        statusEl.textContent = '동기화 실패: ' + error.message;
+        statusEl.style.color = 'var(--danger)';
+        if ((error.message || '').indexOf('is_frozen') !== -1) {
+            alert('Supabase 에 is_frozen 컬럼이 없습니다.\nmigration_output/add_is_frozen_20260712.sql 을 SQL Editor 에서 실행해주세요.');
+        }
+    } else {
+        statusEl.textContent = checked ? '냉동으로 저장됨 ❄️' : '냉동 해제됨';
+        statusEl.style.color = 'var(--success)';
+    }
 }
 
 async function imgModalUploadFile(file) {
@@ -6950,7 +6989,8 @@ async function autoSyncOnLoad() {
             vendorName: p.vendor_name || '', vendorType: p.vendor_type || 'self',
             cost: p.cost || 0, sell: p.sell || 0,
             registeredAt: p.registered_at || '', imageUrl: p.image_url || '',
-            displayName: p.display_name || '', soldOut: !!p.sold_out, hidden: !!p.hidden
+            displayName: p.display_name || '', soldOut: !!p.sold_out, hidden: !!p.hidden,
+            isFrozen: !!p.is_frozen
         }));
 
         // 클라우드에 있는 코드 목록
