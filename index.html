@@ -8336,7 +8336,12 @@ function vmApplyBulkMargin(selectedOnly) {
     alert(target.length + '개 품목 마진 설정 완료.\n\n※ [마진만 저장] 을 눌러야 서버에 반영됩니다.');
 }
 
-/** 중도매인 배포용 양식 다운로드 — 중도매인(코드 앞3자리)별 시트 분리, 마진·판매가 없음 */
+/**
+ * 중도매인 배포용 양식 — 분류체계(중분류)별 가로 블록.
+ * 일일 단가표와 같은 모양이라 중도매인이 매일 채우기 쉽다.
+ * 시트 = 중도매인(코드 앞3자리) / 블록 = 중분류 / 컬럼 = 품목|규격|단가|관리코드
+ * ※ 마진·판매가는 넣지 않는다 (중도매인에게 우리 마진 노출 금지)
+ */
 function vmDownloadFormat() {
     var all = vmGetVegProducts();
     if (all.length === 0) { alert('야채 품목이 없습니다.'); return; }
@@ -8346,20 +8351,65 @@ function vmDownloadFormat() {
         if (!byVendor[v]) byVendor[v] = [];
         byVendor[v].push(p);
     });
+    var COLS = 4, GAP = 1, PER_BAND = 6;   // 품목|규격|단가|관리코드 + 사이 여백 / 한 줄에 6블록
     var wb = XLSX.utils.book_new();
-    Object.keys(byVendor).sort().forEach(function(v) {
-        var rows = [['관리코드', '품목', '규격', '단위', '오늘 경매가', '입하없음']];
-        byVendor[v].forEach(function(p) {
-            rows.push([p.code, p.name, p.spec || '', p.unit || '', '', '']);
+    Object.keys(byVendor).sort().forEach(function(vendor) {
+        // 중분류별로 묶기 (분류체계 번호 순)
+        var gm = {};
+        byVendor[vendor].forEach(function(p) {
+            var k = (p.minorCode || '99') + '|' + (p.minorName || '기타');
+            if (!gm[k]) gm[k] = [];
+            gm[k].push(p);
         });
-        var ws = XLSX.utils.aoa_to_sheet(rows);
-        ws['!cols'] = [{ wch: 11 }, { wch: 22 }, { wch: 10 }, { wch: 8 }, { wch: 12 }, { wch: 10 }];
-        XLSX.utils.book_append_sheet(wb, ws, '중도매인' + v);
+        var groups = Object.keys(gm).sort().map(function(k) {
+            return {
+                code: k.split('|')[0],
+                name: k.split('|')[1],
+                items: gm[k].slice().sort(function(a, b) { return String(a.code).localeCompare(String(b.code)); })
+            };
+        });
+        var aoa = [], merges = [], row = 0;
+        for (var b = 0; b < groups.length; b += PER_BAND) {
+            var band = groups.slice(b, b + PER_BAND);
+            var h = 0;
+            band.forEach(function(g) { if (g.items.length > h) h = g.items.length; });
+            while (aoa.length < row + 2 + h) aoa.push([]);
+            band.forEach(function(g, gi) {
+                var c0 = gi * (COLS + GAP);
+                // 블록 제목 (중분류) — 병합
+                aoa[row][c0] = g.code + '. ' + g.name;
+                merges.push({ s: { r: row, c: c0 }, e: { r: row, c: c0 + COLS - 1 } });
+                ['품목', '규격', '단가', '관리코드'].forEach(function(t, i) { aoa[row + 1][c0 + i] = t; });
+                g.items.forEach(function(p, ri) {
+                    var r = row + 2 + ri;
+                    aoa[r][c0 + 0] = p.name || '';
+                    aoa[r][c0 + 1] = p.spec || p.unit || '';
+                    aoa[r][c0 + 2] = '';          // ← 중도매인이 채울 단가 (비워두면 입하없음 처리)
+                    aoa[r][c0 + 3] = p.code;      // 업로드 매칭용
+                });
+            });
+            row += 2 + h + 2;   // 블록 줄 사이 여백 2줄
+        }
+        var ws = XLSX.utils.aoa_to_sheet(aoa);
+        ws['!merges'] = merges;
+        var cols = [];
+        for (var i = 0; i < PER_BAND * (COLS + GAP); i++) {
+            var m = i % (COLS + GAP);
+            cols.push({ wch: m === 0 ? 18 : m === 1 ? 10 : m === 2 ? 10 : m === 3 ? 11 : 2 });
+        }
+        ws['!cols'] = cols;
+        XLSX.utils.book_append_sheet(wb, ws, '중도매인' + vendor);
     });
     XLSX.writeFile(wb, '야채_경매가_양식_' + getKstDate(0) + '.xlsx');
 }
 
-/** 중도매인이 채워준 경매가 엑셀 읽기 */
+/**
+ * 중도매인이 채워준 경매가 엑셀 읽기.
+ * 가로 블록 양식(중분류가 옆으로 나열)이라 헤더 위치가 제각각이므로,
+ * 시트 전체를 훑어 '관리코드 값' 셀을 찾고 **바로 왼쪽 칸을 단가**로 읽는다.
+ * → 새 배포양식은 물론, 기존 일일 단가표(…|단가|관리코드) 도 그대로 업로드된다.
+ * 단가가 비어있거나 '입하없음/-' 이면 입하없음 처리.
+ */
 function vmHandlePriceUpload(e) {
     var file = e.target.files[0];
     if (!file) return;
@@ -8368,44 +8418,40 @@ function vmHandlePriceUpload(e) {
         try {
             var wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
             var codeMap = {};
-            products.forEach(function(p) { codeMap[String(p.code).trim()] = true; });
-            var n = 0, miss = 0, noStockN = 0;
+            vmGetVegProducts().forEach(function(p) { codeMap[String(p.code).trim()] = true; });
+            var n = 0, noStockN = 0, dup = 0;
+            var seen = {};
             wb.SheetNames.forEach(function(sn) {
-                var rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1 });
-                if (!rows.length) return;
-                var hdr = (rows[0] || []).map(function(x) { return String(x || '').trim(); });
-                var iCode = hdr.findIndex(function(h) { return h.indexOf('관리코드') >= 0 || h.indexOf('품목코드') >= 0; });
-                var iCost = hdr.findIndex(function(h) { return h.indexOf('경매가') >= 0 || h.indexOf('단가') >= 0; });
-                var iNo = hdr.findIndex(function(h) { return h.indexOf('입하없음') >= 0; });
-                if (iCode === -1 || iCost === -1) return;
-                for (var r = 1; r < rows.length; r++) {
-                    var row = rows[r] || [];
-                    var code = String(row[iCode] === undefined ? '' : row[iCode]).trim();
-                    if (!code) continue;
-                    if (!codeMap[code]) { miss++; continue; }
-                    var s = String(row[iCost] === undefined || row[iCost] === null ? '' : row[iCost]).trim();
-                    var noStock = false, cost = null;
-                    if (s === '' || s === '-' || s.indexOf('입하없음') >= 0 || s.indexOf('품절') >= 0) {
-                        noStock = true;
-                    } else {
-                        cost = Number(s.replace(/[^0-9.]/g, ''));
-                        if (!cost || isNaN(cost)) { noStock = true; cost = null; }
+                var rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, blankrows: true });
+                rows.forEach(function(row) {
+                    if (!row) return;
+                    for (var c = 0; c < row.length; c++) {
+                        var v = String(row[c] === undefined || row[c] === null ? '' : row[c]).trim();
+                        if (!v || !codeMap[v]) continue;
+                        if (seen[v]) { dup++; continue; }
+                        seen[v] = true;
+                        // 단가 = 관리코드 바로 왼쪽 칸
+                        var raw = c > 0 ? row[c - 1] : '';
+                        var s = String(raw === undefined || raw === null ? '' : raw).trim();
+                        var noStock = false, cost = null;
+                        if (s === '' || s === '-' || s.indexOf('입하없음') >= 0 || s.indexOf('품절') >= 0) {
+                            noStock = true;
+                        } else {
+                            cost = Number(s.replace(/[^0-9.]/g, ''));
+                            if (!cost || isNaN(cost)) { noStock = true; cost = null; }
+                        }
+                        vmTodayPrice[v] = { cost: cost, noStock: noStock };
+                        if (noStock) noStockN++;
+                        n++;
                     }
-                    if (iNo !== -1) {
-                        var nv = String(row[iNo] === undefined ? '' : row[iNo]).trim().toUpperCase();
-                        if (nv && nv !== '0' && nv !== 'FALSE') noStock = true;
-                    }
-                    vmTodayPrice[code] = { cost: cost, noStock: noStock };
-                    if (noStock) noStockN++;
-                    n++;
-                }
+                });
             });
             var st = document.getElementById('vmUploadStatus');
             if (n === 0) {
-                st.textContent = '⚠️ 반영 0건 — [관리코드] · [오늘 경매가] 컬럼을 확인하세요';
+                st.textContent = '⚠️ 반영 0건 — 관리코드가 들어있는 양식인지 확인하세요';
                 st.style.color = 'var(--danger)';
             } else {
-                st.textContent = '✅ ' + n + '건 반영 (입하없음 ' + noStockN + '건)' + (miss ? ' · 미등록코드 ' + miss + '건 건너뜀' : '');
+                st.textContent = '✅ ' + n + '건 반영 (입하없음 ' + noStockN + '건)' + (dup ? ' · 중복 ' + dup + '건 무시' : '');
                 st.style.color = 'var(--primary)';
             }
             renderVegMarginList();
