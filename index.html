@@ -1094,7 +1094,7 @@ function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.6 · 야채 대분류 추가</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.7 · 야채 마진율 관리</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1136,6 +1136,9 @@ function erpLogout() {
         <div class="sidebar-nav">
             <button onclick="switchTab('margins')">
                 <span class="nav-icon">&#37;</span>마진율
+            </button>
+            <button onclick="switchTab('vegMargin')">
+                <span class="nav-icon">&#129388;</span>야채 마진율
             </button>
             <button onclick="switchTab('images')">
                 <span class="nav-icon">&#128247;</span>이미지 관리
@@ -1351,6 +1354,67 @@ function erpLogout() {
                 </thead>
                 <tbody id="noSellTableBody"></tbody>
             </table>
+        </div>
+    </div>
+</div>
+
+<!-- 야채 마진율 관리 -->
+<div class="tab-content" id="tab-vegMargin">
+    <div class="card">
+        <h3>&#129388; 야채 마진율 관리 <span id="vmCount" style="font-size:0.8rem;font-weight:400;color:var(--text-muted);"></span></h3>
+        <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:16px;">
+            <b>판매가 = 경매가 + 마진</b> · 마진은 품목마다 <b>%</b> 또는 <b>정액(원)</b> 중 선택합니다.<br>
+            아침에 중도매인이 채워준 <b>경매가 엑셀</b>을 올리면 판매가가 자동 계산되고, <b>[가격 적용]</b> 하면 거래처 앱(지구오더)에 즉시 반영됩니다.
+        </p>
+
+        <!-- 기본 마진 일괄 적용 -->
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px;background:#f5f7fa;border:1px solid var(--border-light);border-radius:8px;margin-bottom:12px;">
+            <strong style="font-size:0.85rem;">기본 마진</strong>
+            <input type="number" id="vmBulkValue" value="10" style="width:90px;padding:6px 8px;">
+            <select id="vmBulkType" style="padding:6px 8px;">
+                <option value="rate">% (퍼센트)</option>
+                <option value="amount">원 (정액)</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="vmApplyBulkMargin(false)">전체 적용</button>
+            <button class="btn btn-outline btn-sm" onclick="vmApplyBulkMargin(true)">선택 적용</button>
+            <span style="font-size:0.72rem;color:var(--text-muted);">※ 마진만 세팅 (가격 반영은 아래 [가격 적용])</span>
+        </div>
+
+        <!-- 경매가 업로드 -->
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px;border:1px dashed var(--border);border-radius:8px;margin-bottom:12px;">
+            <strong style="font-size:0.85rem;">&#128228; 오늘 경매가 업로드</strong>
+            <input type="file" id="vmPriceFile" accept=".xlsx,.xls,.csv" onchange="vmHandlePriceUpload(event)" style="font-size:0.8rem;">
+            <button class="btn btn-outline btn-sm" onclick="vmDownloadFormat()">&#128229; 중도매인 배포양식 받기</button>
+            <span id="vmUploadStatus" style="font-size:0.78rem;color:var(--primary);font-weight:600;"></span>
+        </div>
+
+        <!-- 필터 -->
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+            <select id="vmMinorFilter" onchange="renderVegMarginList()" style="padding:6px 8px;"><option value="">중분류 전체</option></select>
+            <input type="text" id="vmSearch" placeholder="품목명 · 관리코드 검색" oninput="renderVegMarginList()" style="padding:6px 10px;flex:1;min-width:160px;">
+            <label style="font-size:0.8rem;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="vmCheckAll" onchange="vmToggleAll(this)"> 전체선택</label>
+        </div>
+
+        <div class="table-wrap" style="max-height:560px;overflow-y:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:34px;"></th>
+                        <th style="width:95px;">관리코드</th><th>품목</th><th style="width:80px;">규격</th><th style="width:60px;">단위</th>
+                        <th style="width:160px;">마진</th>
+                        <th class="text-right" style="width:105px;">오늘 경매가</th>
+                        <th class="text-right" style="width:105px;">판매가(자동)</th>
+                        <th class="text-center" style="width:75px;">입하없음</th>
+                    </tr>
+                </thead>
+                <tbody id="vmTableBody"></tbody>
+            </table>
+        </div>
+
+        <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap;">
+            <span id="vmApplyHint" style="font-size:0.78rem;color:var(--text-muted);"></span>
+            <button class="btn btn-outline" onclick="vmSaveMarginsOnly()">마진만 저장</button>
+            <button class="btn btn-primary" onclick="vmApplyPrices()">가격 적용 (앱 즉시 반영)</button>
         </div>
     </div>
 </div>
@@ -2492,7 +2556,8 @@ const PAGE_TITLES = {
     orderHistory: '발주/견적 기록',
     displayName: '표시명 관리',
     priceSchedule: '예약 가격 변경',
-    sortOrder: '정렬 관리 (카테고리·품목 순서)'
+    sortOrder: '정렬 관리 (카테고리·품목 순서)',
+    vegMargin: '야채 마진율 관리'
 };
 
 function switchTab(tabId) {
@@ -2526,6 +2591,7 @@ function switchTab(tabId) {
     if (tabId === 'vendors') renderVendors();
     if (tabId === 'categories') renderCategoryTree();
     if (tabId === 'margins') { renderMargins(); renderNoSellProducts(); }
+    if (tabId === 'vegMargin') { initVegMarginTab(); }
     if (tabId === 'quote') { loadApiKey(); populateQuoteVendor(); }
     if (tabId === 'images') { imgInitCategoryFilter(); loadUploadedImages(); initNaverKeys(); initStabilityKey(); }
     if (tabId === 'export') { populateExportVendor(); updateExportSelectedInfo(); }
@@ -4862,7 +4928,13 @@ async function uploadToSupabase() {
                 registered_at: p.registeredAt || new Date().toISOString().split('T')[0],
                 display_name: p.displayName || null,
                 sold_out: !!p.soldOut,
-                hidden: !!p.hidden
+                hidden: !!p.hidden,
+                // 야채 마진 — 로컬에 값이 있을 때만 전송. 없으면 필드를 빼서 서버 값이 유지되게 함
+                // (오래된 localStorage 가 서버 마진을 null 로 덮어쓰는 사고 방지)
+                ...(p.marginType ? {
+                    margin_type: p.marginType,
+                    margin_value: (p.marginValue === null || p.marginValue === undefined) ? null : Number(p.marginValue)
+                } : {})
             }));
 
             const { error } = await db.from('products')
@@ -4990,7 +5062,10 @@ async function downloadFromSupabase() {
             imageUrl: p.image_url || '',
             displayName: p.display_name || '',
             soldOut: !!p.sold_out, hidden: !!p.hidden,
-            isFrozen: !!p.is_frozen
+            isFrozen: !!p.is_frozen,
+            // 야채 마진 (판매가 = 경매가 + 마진). 'rate'=%, 'amount'=원. 미설정이면 null
+            marginType: p.margin_type || null,
+            marginValue: (p.margin_value === null || p.margin_value === undefined) ? null : Number(p.margin_value)
         }));
         syncLog(`품목 ${products.length}개 다운로드 완료`);
 
@@ -5066,7 +5141,12 @@ function buildProductPayload(p) {
         sold_out: !!p.soldOut,
         hidden: !!p.hidden,
         display_name: p.displayName || null,
-        image_url: p.imageUrl || null
+        image_url: p.imageUrl || null,
+        // 야채 마진 — 로컬에 값이 있을 때만 전송 (서버 값 보존)
+        ...(p.marginType ? {
+            margin_type: p.marginType,
+            margin_value: (p.marginValue === null || p.marginValue === undefined) ? null : Number(p.marginValue)
+        } : {})
     };
     // sort_order / pack_size 는 DB에 NOT NULL 제약 + 기본값이 있는 컬럼이라
     // null 을 보내면 not-null constraint 위반으로 upsert 자체가 실패.
@@ -7020,7 +7100,13 @@ async function autoSyncOnLoad() {
                 registered_at: p.registeredAt || new Date().toISOString().split('T')[0],
                 display_name: p.displayName || null,
                 sold_out: !!p.soldOut,
-                hidden: !!p.hidden
+                hidden: !!p.hidden,
+                // 야채 마진 — 로컬에 값이 있을 때만 전송. 없으면 필드를 빼서 서버 값이 유지되게 함
+                // (오래된 localStorage 가 서버 마진을 null 로 덮어쓰는 사고 방지)
+                ...(p.marginType ? {
+                    margin_type: p.marginType,
+                    margin_value: (p.marginValue === null || p.marginValue === undefined) ? null : Number(p.marginValue)
+                } : {})
             }));
             for (let i = 0; i < batch.length; i += 50) {
                 await db.from('products').upsert(batch.slice(i, i + 50), { onConflict: 'code' });
@@ -8111,6 +8197,306 @@ async function aiGenerateDisplayNames() {
     renderDisplayNameTable();
     progress.textContent = '✅ ' + completed + '개 품목의 표시명이 생성되었습니다.';
     setTimeout(() => { progress.style.display = 'none'; }, 5000);
+}
+
+// ============================================================
+// 야채 마진율 관리
+//   판매가 = 경매가 + 마진   (marginType: 'rate'=%, 'amount'=원)
+//   아침 루틴: 중도매인 경매가 엑셀 업로드 → 판매가 자동계산 → [가격 적용] → 거래처앱 즉시 반영
+//   야채는 매일 시세가 바뀌므로 거래처별 단가를 쓰지 않고 전 거래처 동일가.
+// ============================================================
+
+// 오늘 업로드/입력한 경매가 임시 보관 — 관리코드 -> { cost, noStock }
+var vmTodayPrice = {};
+
+function vmGetVegProducts() {
+    return products.filter(function(p) { return p.majorName === '야채'; });
+}
+
+function initVegMarginTab() {
+    var sel = document.getElementById('vmMinorFilter');
+    if (sel) {
+        var minors = [];
+        vmGetVegProducts().forEach(function(p) {
+            if (p.minorName && minors.indexOf(p.minorName) === -1) minors.push(p.minorName);
+        });
+        minors.sort();
+        sel.innerHTML = '<option value="">중분류 전체</option>' + minors.map(function(m) {
+            return '<option value="' + esc(m) + '">' + esc(m) + '</option>';
+        }).join('');
+    }
+    renderVegMarginList();
+}
+
+function vmFiltered() {
+    var minorEl = document.getElementById('vmMinorFilter');
+    var searchEl = document.getElementById('vmSearch');
+    var minor = minorEl ? minorEl.value : '';
+    var q = (searchEl ? searchEl.value : '').trim().toLowerCase();
+    return vmGetVegProducts().filter(function(p) {
+        if (minor && p.minorName !== minor) return false;
+        if (q && ((p.code || '') + ' ' + (p.name || '')).toLowerCase().indexOf(q) === -1) return false;
+        return true;
+    });
+}
+
+/** 판매가 = 경매가 + 마진. 마진 미설정이면 0 반환(적용 대상에서 제외) */
+function vmCalcSell(p, cost) {
+    if (!cost || cost <= 0) return 0;
+    var v = Number(p.marginValue) || 0;
+    if (p.marginType === 'amount') return Math.round(cost + v);
+    if (p.marginType === 'rate') return Math.round(cost * (1 + v / 100));
+    return 0;
+}
+
+function renderVegMarginList() {
+    var tbody = document.getElementById('vmTableBody');
+    if (!tbody) return;
+    var list = vmFiltered();
+    var all = vmGetVegProducts();
+    var cntEl = document.getElementById('vmCount');
+    if (cntEl) {
+        var setCnt = all.filter(function(p) { return p.marginType; }).length;
+        cntEl.textContent = '(전체 ' + all.length + '개 · 마진설정 ' + setCnt + '개 · 표시 ' + list.length + '개)';
+    }
+    if (list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px;">야채 품목이 없습니다.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = list.map(function(p) {
+        var t = vmTodayPrice[p.code] || {};
+        var hasToday = (t.cost !== undefined && t.cost !== null && t.cost !== '');
+        var cost = hasToday ? Number(t.cost) : (p.cost || 0);
+        var sell = vmCalcSell(p, cost);
+        var noStock = (t.noStock !== undefined) ? !!t.noStock : !!p.soldOut;
+        var mType = p.marginType || 'rate';
+        var mVal = (p.marginValue === null || p.marginValue === undefined) ? '' : p.marginValue;
+        var c = esc(p.code);
+        return '<tr' + (noStock ? ' style="background:#fff5f5;"' : '') + '>' +
+            '<td><input type="checkbox" class="vm-chk" data-code="' + c + '"></td>' +
+            '<td style="font-weight:600;color:var(--accent);font-size:0.76rem;">' + c + '</td>' +
+            '<td>' + esc(p.name) + '</td>' +
+            '<td style="color:var(--text-secondary);font-size:0.76rem;">' + esc(p.spec || '') + '</td>' +
+            '<td style="font-size:0.76rem;">' + esc(p.unit || '') + '</td>' +
+            '<td><div style="display:flex;gap:4px;">' +
+                '<input type="number" value="' + mVal + '" onchange="vmSetMargin(\'' + c + '\', this.value, null)" style="width:68px;padding:4px 6px;font-size:0.8rem;">' +
+                '<select onchange="vmSetMargin(\'' + c + '\', null, this.value)" style="padding:4px;font-size:0.78rem;">' +
+                    '<option value="rate"' + (mType === 'rate' ? ' selected' : '') + '>%</option>' +
+                    '<option value="amount"' + (mType === 'amount' ? ' selected' : '') + '>원</option>' +
+                '</select></div></td>' +
+            '<td class="text-right"><input type="number" value="' + (cost || '') + '" onchange="vmSetCost(\'' + c + '\', this.value)" style="width:88px;padding:4px 6px;text-align:right;font-size:0.8rem;"></td>' +
+            '<td class="text-right" style="font-weight:700;color:' + (sell ? '#0066cc' : 'var(--text-muted)') + ';">' + (sell ? sell.toLocaleString() : '-') + '</td>' +
+            '<td class="text-center"><input type="checkbox" ' + (noStock ? 'checked' : '') + ' onchange="vmSetNoStock(\'' + c + '\', this.checked)"></td>' +
+            '</tr>';
+    }).join('');
+}
+
+function vmSetMargin(code, value, type) {
+    var p = products.find(function(x) { return x.code === code; });
+    if (!p) return;
+    if (value !== null) p.marginValue = (value === '' ? null : Number(value));
+    if (type !== null) p.marginType = type;
+    if (!p.marginType) p.marginType = 'rate';
+    renderVegMarginList();
+}
+
+function vmSetCost(code, value) {
+    if (!vmTodayPrice[code]) vmTodayPrice[code] = {};
+    vmTodayPrice[code].cost = (value === '' ? null : Number(value));
+    renderVegMarginList();
+}
+
+function vmSetNoStock(code, checked) {
+    if (!vmTodayPrice[code]) vmTodayPrice[code] = {};
+    vmTodayPrice[code].noStock = !!checked;
+    renderVegMarginList();
+}
+
+function vmToggleAll(cb) {
+    document.querySelectorAll('.vm-chk').forEach(function(c) { c.checked = cb.checked; });
+}
+
+/** 기본 마진 일괄 적용 — selectedOnly=false 면 현재 표시된 목록 전체 */
+function vmApplyBulkMargin(selectedOnly) {
+    var val = Number(document.getElementById('vmBulkValue').value);
+    var type = document.getElementById('vmBulkType').value;
+    if (isNaN(val)) { alert('마진 값을 입력하세요.'); return; }
+    var target;
+    if (selectedOnly) {
+        var codes = Array.prototype.slice.call(document.querySelectorAll('.vm-chk:checked'))
+            .map(function(c) { return c.getAttribute('data-code'); });
+        if (codes.length === 0) { alert('선택된 품목이 없습니다. 체크박스로 선택해주세요.'); return; }
+        target = vmGetVegProducts().filter(function(p) { return codes.indexOf(p.code) !== -1; });
+    } else {
+        target = vmFiltered();
+        if (!confirm('현재 표시된 ' + target.length + '개 품목의 마진을\n[' + val + (type === 'rate' ? '%' : '원') + '] 으로 일괄 변경합니다.\n\n계속할까요?')) return;
+    }
+    target.forEach(function(p) { p.marginType = type; p.marginValue = val; });
+    renderVegMarginList();
+    alert(target.length + '개 품목 마진 설정 완료.\n\n※ [마진만 저장] 을 눌러야 서버에 반영됩니다.');
+}
+
+/** 중도매인 배포용 양식 다운로드 — 중도매인(코드 앞3자리)별 시트 분리, 마진·판매가 없음 */
+function vmDownloadFormat() {
+    var all = vmGetVegProducts();
+    if (all.length === 0) { alert('야채 품목이 없습니다.'); return; }
+    var byVendor = {};
+    all.forEach(function(p) {
+        var v = String(p.code || '').slice(0, 3) || '기타';
+        if (!byVendor[v]) byVendor[v] = [];
+        byVendor[v].push(p);
+    });
+    var wb = XLSX.utils.book_new();
+    Object.keys(byVendor).sort().forEach(function(v) {
+        var rows = [['관리코드', '품목', '규격', '단위', '오늘 경매가', '입하없음']];
+        byVendor[v].forEach(function(p) {
+            rows.push([p.code, p.name, p.spec || '', p.unit || '', '', '']);
+        });
+        var ws = XLSX.utils.aoa_to_sheet(rows);
+        ws['!cols'] = [{ wch: 11 }, { wch: 22 }, { wch: 10 }, { wch: 8 }, { wch: 12 }, { wch: 10 }];
+        XLSX.utils.book_append_sheet(wb, ws, '중도매인' + v);
+    });
+    XLSX.writeFile(wb, '야채_경매가_양식_' + getKstDate(0) + '.xlsx');
+}
+
+/** 중도매인이 채워준 경매가 엑셀 읽기 */
+function vmHandlePriceUpload(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+        try {
+            var wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+            var codeMap = {};
+            products.forEach(function(p) { codeMap[String(p.code).trim()] = true; });
+            var n = 0, miss = 0, noStockN = 0;
+            wb.SheetNames.forEach(function(sn) {
+                var rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1 });
+                if (!rows.length) return;
+                var hdr = (rows[0] || []).map(function(x) { return String(x || '').trim(); });
+                var iCode = hdr.findIndex(function(h) { return h.indexOf('관리코드') >= 0 || h.indexOf('품목코드') >= 0; });
+                var iCost = hdr.findIndex(function(h) { return h.indexOf('경매가') >= 0 || h.indexOf('단가') >= 0; });
+                var iNo = hdr.findIndex(function(h) { return h.indexOf('입하없음') >= 0; });
+                if (iCode === -1 || iCost === -1) return;
+                for (var r = 1; r < rows.length; r++) {
+                    var row = rows[r] || [];
+                    var code = String(row[iCode] === undefined ? '' : row[iCode]).trim();
+                    if (!code) continue;
+                    if (!codeMap[code]) { miss++; continue; }
+                    var s = String(row[iCost] === undefined || row[iCost] === null ? '' : row[iCost]).trim();
+                    var noStock = false, cost = null;
+                    if (s === '' || s === '-' || s.indexOf('입하없음') >= 0 || s.indexOf('품절') >= 0) {
+                        noStock = true;
+                    } else {
+                        cost = Number(s.replace(/[^0-9.]/g, ''));
+                        if (!cost || isNaN(cost)) { noStock = true; cost = null; }
+                    }
+                    if (iNo !== -1) {
+                        var nv = String(row[iNo] === undefined ? '' : row[iNo]).trim().toUpperCase();
+                        if (nv && nv !== '0' && nv !== 'FALSE') noStock = true;
+                    }
+                    vmTodayPrice[code] = { cost: cost, noStock: noStock };
+                    if (noStock) noStockN++;
+                    n++;
+                }
+            });
+            var st = document.getElementById('vmUploadStatus');
+            if (n === 0) {
+                st.textContent = '⚠️ 반영 0건 — [관리코드] · [오늘 경매가] 컬럼을 확인하세요';
+                st.style.color = 'var(--danger)';
+            } else {
+                st.textContent = '✅ ' + n + '건 반영 (입하없음 ' + noStockN + '건)' + (miss ? ' · 미등록코드 ' + miss + '건 건너뜀' : '');
+                st.style.color = 'var(--primary)';
+            }
+            renderVegMarginList();
+        } catch (err) {
+            alert('엑셀 읽기 실패: ' + err.message);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
+}
+
+/** 마진만 서버 저장 (가격은 안 건드림) */
+async function vmSaveMarginsOnly() {
+    var veg = vmGetVegProducts().filter(function(p) { return p.marginType; });
+    if (veg.length === 0) { alert('설정된 마진이 없습니다.'); return; }
+    saveAll();
+    if (!db) { alert('로컬에 저장했습니다.\n(Supabase 미연결 — [Supabase 설정] 에서 연결하면 서버에도 반영됩니다)'); return; }
+    var hint = document.getElementById('vmApplyHint');
+    hint.textContent = '마진 저장 중...';
+    var ok = 0, fail = 0;
+    for (var i = 0; i < veg.length; i += 20) {
+        var results = await Promise.all(veg.slice(i, i + 20).map(function(p) {
+            return db.from('products').update({
+                margin_type: p.marginType || null,
+                margin_value: (p.marginValue === null || p.marginValue === undefined) ? null : Number(p.marginValue)
+            }).eq('code', p.code);
+        }));
+        results.forEach(function(r) { if (r.error) fail++; else ok++; });
+    }
+    hint.textContent = '';
+    renderVegMarginList();
+    alert('마진 저장 완료\n성공 ' + ok + '건' + (fail ? '\n실패 ' + fail + '건' : ''));
+}
+
+/** 오늘 경매가로 판매가 계산 → 즉시 적용 (거래처앱 실시간 반영) */
+async function vmApplyPrices() {
+    var targets = [];
+    var noMargin = 0;
+    vmGetVegProducts().forEach(function(p) {
+        var t = vmTodayPrice[p.code];
+        if (!t) return; // 오늘 안 올라온 품목은 손대지 않음
+        var noStock = !!t.noStock;
+        var cost = (t.cost === null || t.cost === undefined || t.cost === '') ? null : Number(t.cost);
+        if (!noStock) {
+            if (!cost || cost <= 0) return;
+            if (!p.marginType) { noMargin++; return; }
+            var sell = vmCalcSell(p, cost);
+            if (!sell) { noMargin++; return; }
+            targets.push({ p: p, cost: cost, sell: sell, noStock: false });
+        } else {
+            targets.push({ p: p, cost: null, sell: null, noStock: true });
+        }
+    });
+    if (targets.length === 0) {
+        alert('적용할 가격이 없습니다.\n\n경매가 엑셀을 업로드하거나 표에서 직접 입력해주세요.' +
+              (noMargin ? '\n(마진 미설정 ' + noMargin + '건은 제외됨)' : ''));
+        return;
+    }
+    var noStockCnt = targets.filter(function(t) { return t.noStock; }).length;
+    if (!confirm('야채 ' + targets.length + '개 품목 가격을 적용합니다.\n' +
+                 '· 가격변경 ' + (targets.length - noStockCnt) + '건\n' +
+                 '· 입하없음 ' + noStockCnt + '건\n' +
+                 (noMargin ? '· 마진 미설정으로 제외 ' + noMargin + '건\n' : '') +
+                 '\n거래처 앱에 즉시 반영됩니다. 계속할까요?')) return;
+
+    var hint = document.getElementById('vmApplyHint');
+    hint.textContent = '가격 적용 중...';
+    targets.forEach(function(t) {
+        if (!t.noStock) { t.p.cost = t.cost; t.p.sell = t.sell; }
+        t.p.soldOut = t.noStock;
+    });
+    saveAll();
+    var ok = 0, fail = 0;
+    if (db) {
+        for (var i = 0; i < targets.length; i += 20) {
+            var results = await Promise.all(targets.slice(i, i + 20).map(function(t) {
+                var upd = { sold_out: !!t.noStock };
+                if (!t.noStock) { upd.cost = t.cost; upd.sell = t.sell; }
+                return db.from('products').update(upd).eq('code', t.p.code);
+            }));
+            results.forEach(function(r) { if (r.error) fail++; else ok++; });
+        }
+    }
+    hint.textContent = '';
+    vmTodayPrice = {};
+    var st = document.getElementById('vmUploadStatus');
+    if (st) st.textContent = '';
+    renderVegMarginList();
+    if (typeof renderProductList === 'function') renderProductList();
+    alert('✅ 가격 적용 완료\n성공 ' + ok + '건' + (fail ? '\n실패 ' + fail + '건' : '') +
+          (db ? '\n\n거래처 앱(지구오더)에 반영되었습니다.' : '\n\n※ Supabase 미연결 — 로컬에만 반영됨'));
 }
 
 // ============================================================
