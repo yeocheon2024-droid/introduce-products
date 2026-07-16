@@ -1094,7 +1094,7 @@ function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.8 · 야채 주문 금액 확정</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.9 · 중도매인 경매가 연동</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1382,9 +1382,11 @@ function erpLogout() {
 
         <!-- 경매가 업로드 -->
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px;border:1px dashed var(--border);border-radius:8px;margin-bottom:12px;">
-            <strong style="font-size:0.85rem;">&#128228; 오늘 경매가 업로드</strong>
+            <strong style="font-size:0.85rem;">&#128228; 오늘 경매가</strong>
+            <button class="btn btn-primary btn-sm" onclick="vmLoadAuctionPrices()">&#128229; 중도매인 입력분 불러오기</button>
+            <span style="font-size:0.72rem;color:var(--text-muted);">또는 엑셀:</span>
             <input type="file" id="vmPriceFile" accept=".xlsx,.xls,.csv" onchange="vmHandlePriceUpload(event)" style="font-size:0.8rem;">
-            <button class="btn btn-outline btn-sm" onclick="vmDownloadFormat()">&#128229; 중도매인 배포양식 받기</button>
+            <button class="btn btn-outline btn-sm" onclick="vmDownloadFormat()">&#128229; 배포양식 받기</button>
             <span id="vmUploadStatus" style="font-size:0.78rem;color:var(--primary);font-weight:600;"></span>
         </div>
 
@@ -8418,6 +8420,45 @@ function vmDownloadFormat() {
         XLSX.utils.book_append_sheet(wb, ws, '중도매인' + vendor);
     });
     XLSX.writeFile(wb, '야채_경매가_양식_' + getKstDate(0) + '.xlsx');
+}
+
+/**
+ * 중도매인이 발주 페이지에서 직접 입력한 오늘 경매가를 불러온다.
+ * (엑셀 왕복 없이 이 버튼 → [가격 적용] 이면 끝)
+ * 엑셀 업로드와 같은 vmTodayPrice 에 담기므로 이후 흐름은 동일하다.
+ */
+async function vmLoadAuctionPrices() {
+    if (!db) { alert('Supabase 미연결 — [Supabase 설정] 에서 연결해주세요.'); return; }
+    var st = document.getElementById('vmUploadStatus');
+    if (st) { st.textContent = '불러오는 중...'; st.style.color = 'var(--text-muted)'; }
+    try {
+        var res = await db.rpc('veg_auction_prices_for', { p_date: null });
+        if (res.error) throw new Error(res.error.message);
+        var rows = res.data || [];
+        if (rows.length === 0) {
+            st.textContent = '⚠️ 오늘 중도매인이 입력한 경매가가 없습니다';
+            st.style.color = 'var(--danger)';
+            return;
+        }
+        var codeMap = {};
+        vmGetVegProducts().forEach(function(p) { codeMap[String(p.code).trim()] = true; });
+        var n = 0, noStockN = 0, miss = 0;
+        rows.forEach(function(r) {
+            var code = String(r.product_code || '').trim();
+            if (!codeMap[code]) { miss++; return; }
+            var noStock = !!r.no_stock || !r.cost || Number(r.cost) <= 0;
+            vmTodayPrice[code] = { cost: noStock ? null : Number(r.cost), noStock: noStock };
+            if (noStock) noStockN++;
+            n++;
+        });
+        st.textContent = '✅ 중도매인 입력분 ' + n + '건 불러옴 (입하없음 ' + noStockN + '건)' +
+                         (miss ? ' · 미등록코드 ' + miss + '건 건너뜀' : '');
+        st.style.color = 'var(--primary)';
+        renderVegMarginList();
+    } catch (e) {
+        st.textContent = '⚠️ 불러오기 실패: ' + e.message;
+        st.style.color = 'var(--danger)';
+    }
 }
 
 /**
