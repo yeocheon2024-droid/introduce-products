@@ -1094,7 +1094,7 @@ function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.7 · 야채 마진율 관리</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.8 · 야채 주문 금액 확정</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -5466,16 +5466,20 @@ async function uploadImageToStorage(code, file) {
     const result = await resp.json();
     if (!result.success) throw new Error('R2 업로드 실패');
 
-    // R2 업로드 성공 → products.image_url 을 NULL 로 비움.
+    // R2 업로드 성공 → products.image_url 을 NULL 로 비움 + image_version 갱신.
     // 거래처앱(getOriginalImageUrl)은 image_url 이 외부 URL 이면 그것을 우선
     // 사용하므로, 옛 네이버 URL 등이 남아있으면 새 R2 이미지가 노출되지 않음.
     // 업로드 자체가 "새 이미지를 쓰겠다"는 의도이므로 자동으로 외부 URL 정리.
+    // image_version: 같은 파일명으로 덮어써도 거래처앱 썸네일 URL(wsrv)이 바뀌어
+    // 옛 캐시 이미지가 계속 보이는 문제를 품목 단위로 즉시 해소 (2026-07-14).
     if (typeof db !== 'undefined' && db) {
         try {
-            const { error } = await db.from('products').update({ image_url: null }).eq('code', code);
-            if (error) console.warn('image_url 정리 실패(' + code + '):', error.message);
+            const { error } = await db.from('products')
+                .update({ image_url: null, image_version: Date.now() })
+                .eq('code', code);
+            if (error) console.warn('image_url/버전 갱신 실패(' + code + '):', error.message);
         } catch (e) {
-            console.warn('image_url 정리 예외(' + code + '):', e.message);
+            console.warn('image_url/버전 갱신 예외(' + code + '):', e.message);
         }
     }
     // 로컬 products 배열 동기화 — 다음 saveAll/렌더 시 옛 URL이 다시 박히는 것 차단.
@@ -5974,6 +5978,19 @@ async function uploadLabelToStorage(code, file, slot) {
     });
     const result = await resp.json();
     if (!result.success) throw new Error('R2 업로드 실패');
+
+    // image_version 갱신 — 거래처앱 라벨 썸네일(wsrv)도 품목 버전을 타므로
+    // 라벨 교체 즉시 새 이미지가 보이게 함 (2026-07-14)
+    if (typeof db !== 'undefined' && db) {
+        try {
+            const { error } = await db.from('products')
+                .update({ image_version: Date.now() })
+                .eq('code', code);
+            if (error) console.warn('라벨 버전 갱신 실패(' + code + '):', error.message);
+        } catch (e) {
+            console.warn('라벨 버전 갱신 예외(' + code + '):', e.message);
+        }
+    }
 }
 
 var labelModalSlots = {};   // 현재 모달 품목의 슬롯 점유 상태 (slot 번호 -> true)
@@ -8535,6 +8552,33 @@ async function vmApplyPrices() {
             results.forEach(function(r) { if (r.error) fail++; else ok++; });
         }
     }
+    // 3) 어제 들어온 야채 주문(오늘 배송분)의 금액을 오늘 경매가로 확정
+    //    거래처는 주문할 때 '예상가'만 봤으므로, 실제 경매가가 나온 지금 확정해준다.
+    var confirmMsg = '';
+    if (db) {
+        hint.textContent = '야채 주문 금액 확정 중...';
+        try {
+            var cf = await db.rpc('confirm_vegetable_order_prices', { p_delivery_date: null });
+            if (cf.error) {
+                confirmMsg = '\n\n⚠️ 야채 주문 금액 확정 실패: ' + cf.error.message +
+                             '\n(가격은 반영됐습니다. 사장님께 문의 필요)';
+            } else {
+                var rows = cf.data || [];
+                if (rows.length === 0) {
+                    confirmMsg = '\n\n(오늘 배송할 야채 주문은 없습니다)';
+                } else {
+                    var sum = rows.reduce(function(s, r) { return s + (Number(r.after_amount) || 0); }, 0);
+                    var changed = rows.filter(function(r) { return Number(r.before_amount) !== Number(r.after_amount); }).length;
+                    confirmMsg = '\n\n📋 오늘 배송 야채 주문 ' + rows.length + '건 금액 확정' +
+                                 '\n· 합계 ' + sum.toLocaleString() + '원' +
+                                 (changed ? '\n· 예상가에서 바뀐 주문 ' + changed + '건' : '\n· 예상가와 동일');
+                }
+            }
+        } catch (e) {
+            confirmMsg = '\n\n⚠️ 야채 주문 금액 확정 중 오류: ' + e.message;
+        }
+    }
+
     hint.textContent = '';
     vmTodayPrice = {};
     var st = document.getElementById('vmUploadStatus');
@@ -8542,7 +8586,8 @@ async function vmApplyPrices() {
     renderVegMarginList();
     if (typeof renderProductList === 'function') renderProductList();
     alert('✅ 가격 적용 완료\n성공 ' + ok + '건' + (fail ? '\n실패 ' + fail + '건' : '') +
-          (db ? '\n\n거래처 앱(지구오더)에 반영되었습니다.' : '\n\n※ Supabase 미연결 — 로컬에만 반영됨'));
+          (db ? '\n\n거래처 앱(지구오더)에 반영되었습니다.' : '\n\n※ Supabase 미연결 — 로컬에만 반영됨') +
+          confirmMsg);
 }
 
 // ============================================================
