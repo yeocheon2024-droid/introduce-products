@@ -1017,65 +1017,124 @@
 </head>
 <body>
 
-<!-- 🔒 로그인 게이트 (비밀번호 확인 전엔 ERP 접근 차단) -->
+<!-- 🔒 로그인 게이트 (Supabase Auth 인증 전엔 ERP 접근 차단)
+     예전 클라이언트 SHA-256 방식은 GitHub 노출된 해시에 취약 → Supabase Auth 로 교체.
+     로그인 성공 시 세션 토큰이 모든 supabase-js 요청에 자동 첨부되어 authenticated
+     역할로 승격. RLS 정책이 authenticated 만 UPDATE/DELETE 허용하도록 되어 있어
+     GitHub 에 노출된 anon key 로는 아무것도 못 바꿈 (근본 방어). -->
 <div id="loginGate" style="position:fixed;inset:0;background:linear-gradient(135deg,#f5f1e8 0%,#e8e0d0 100%);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;">
   <div style="background:#fff;padding:40px 36px;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.12);max-width:380px;width:100%;box-sizing:border-box;">
     <div style="text-align:center;margin-bottom:28px;">
       <div style="font-size:2.2rem;margin-bottom:8px;">🔒</div>
       <h2 style="margin:0;color:#2d6a4f;font-size:1.4rem;">ERP 품목관리</h2>
-      <p style="margin:8px 0 0;color:#888;font-size:0.9rem;">접근하려면 비밀번호를 입력하세요</p>
+      <p style="margin:8px 0 0;color:#888;font-size:0.9rem;">어드민 계정으로 로그인</p>
     </div>
+    <input type="email" id="loginEmail" placeholder="이메일" autocomplete="username"
+      style="width:100%;padding:12px 14px;border:1px solid #ddd;border-radius:8px;font-size:1rem;box-sizing:border-box;outline:none;margin-bottom:10px;transition:border-color 0.2s;"
+      onkeydown="if(event.key==='Enter')document.getElementById('loginPw').focus()"
+      onfocus="this.style.borderColor='#2d6a4f'" onblur="this.style.borderColor='#ddd'">
     <input type="password" id="loginPw" placeholder="비밀번호" autocomplete="current-password"
       style="width:100%;padding:12px 14px;border:1px solid #ddd;border-radius:8px;font-size:1rem;box-sizing:border-box;outline:none;transition:border-color 0.2s;"
       onkeydown="if(event.key==='Enter')doLogin()" onfocus="this.style.borderColor='#2d6a4f'" onblur="this.style.borderColor='#ddd'">
     <p id="loginError" style="margin:10px 0 0;color:#d62828;font-size:0.85rem;min-height:1.2em;text-align:center;"></p>
-    <button onclick="doLogin()"
+    <button id="loginBtn" onclick="doLogin()"
       style="width:100%;padding:12px;margin-top:14px;background:#2d6a4f;color:#fff;border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer;transition:background 0.2s;"
       onmouseover="this.style.background='#1e4a35'" onmouseout="this.style.background='#2d6a4f'">로그인</button>
+    <p style="margin:14px 0 0;color:#aaa;font-size:0.72rem;text-align:center;">
+      로그인하면 세션이 유지되어 다음 방문 시 자동 로그인됩니다.
+    </p>
   </div>
 </div>
 
 <script>
-// 비밀번호 SHA-256 해시 (바꾸려면 이 값만 새 해시로 교체)
-const AUTH_HASH = 'a2e6acea2feabf6ced177eb5fd8fb200af1edee60c38bdf4849001e7aca05ebd';
+// Supabase URL/anon key — supabase-js 초기화용 (아래 스크립트에서 전역 db 로 재사용)
+const _SUPA_URL_AUTH = 'https://joqupkcczjebwnomnfbo.supabase.co';
+const _SUPA_KEY_AUTH = 'sb_publishable_SsIL-yhXCilGv7XZXo963Q_PYpeeG83';
 
-async function _sha256(text) {
-  const buf = new TextEncoder().encode(text);
-  const hash = await crypto.subtle.digest('SHA-256', buf);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+// supabase-js 는 <script src="..."> 로 뒤에서 로드됨. 로그인 게이트 스크립트는
+// supabase 준비될 때까지 대기.
+function _waitSupabase() {
+  return new Promise((resolve) => {
+    if (window.supabase && window.supabase.createClient) return resolve();
+    const t = setInterval(() => {
+      if (window.supabase && window.supabase.createClient) {
+        clearInterval(t);
+        resolve();
+      }
+    }, 50);
+  });
+}
+
+// 로그인 전용 supabase 클라이언트 — 아래 스크립트의 전역 db 와는 별개 인스턴스지만
+// 같은 auth 스토리지(localStorage) 를 공유하므로 세션은 자동으로 db 에도 전파됨.
+let _authClient = null;
+async function _getAuthClient() {
+  if (_authClient) return _authClient;
+  await _waitSupabase();
+  _authClient = window.supabase.createClient(_SUPA_URL_AUTH, _SUPA_KEY_AUTH, {
+    auth: { persistSession: true, autoRefreshToken: true, storageKey: 'jigufood-erp-auth' }
+  });
+  return _authClient;
 }
 
 async function doLogin() {
-  const input = document.getElementById('loginPw');
+  const emailEl = document.getElementById('loginEmail');
+  const pwEl = document.getElementById('loginPw');
   const err = document.getElementById('loginError');
-  const pw = input.value;
-  if (!pw) { err.textContent = '비밀번호를 입력하세요.'; return; }
-  const hash = await _sha256(pw);
-  if (hash === AUTH_HASH) {
-    localStorage.setItem('erp_auth', '1');
+  const btn = document.getElementById('loginBtn');
+  const email = emailEl.value.trim();
+  const pw = pwEl.value;
+  if (!email || !pw) { err.textContent = '이메일과 비밀번호를 모두 입력하세요.'; return; }
+  btn.disabled = true; btn.textContent = '로그인 중...';
+  err.textContent = '';
+  try {
+    const client = await _getAuthClient();
+    const { data, error } = await client.auth.signInWithPassword({ email, password: pw });
+    if (error) throw error;
+    if (!data || !data.session) throw new Error('세션이 생성되지 않았습니다.');
+    // 성공 — 로그인 게이트 숨김. 이후 supabase-js 클라이언트가 같은 storage 를 읽어
+    // 자동으로 authenticated 세션을 사용함.
+    localStorage.setItem('erp_auth', '1');  // 하위호환 (다른 곳에서 참조)
     document.getElementById('loginGate').style.display = 'none';
-    err.textContent = '';
-    input.value = '';
-  } else {
-    err.textContent = '비밀번호가 틀렸습니다.';
-    input.value = '';
-    input.focus();
+    pwEl.value = '';
+  } catch (e) {
+    err.textContent = '로그인 실패: ' + (e && e.message ? e.message : String(e));
+    pwEl.value = '';
+    pwEl.focus();
+  } finally {
+    btn.disabled = false; btn.textContent = '로그인';
   }
 }
 
-function erpLogout() {
+async function erpLogout() {
   if (!confirm('로그아웃 하시겠습니까?')) return;
+  try {
+    const client = await _getAuthClient();
+    await client.auth.signOut();
+  } catch (e) {
+    console.warn('signOut 실패:', e && e.message);
+  }
   localStorage.removeItem('erp_auth');
   location.reload();
 }
 
-// 페이지 로드 시 인증 체크
-(function() {
-  if (localStorage.getItem('erp_auth') === '1') {
-    document.getElementById('loginGate').style.display = 'none';
-  } else {
-    setTimeout(() => document.getElementById('loginPw')?.focus(), 100);
+// 페이지 로드 시 인증 체크 — Supabase 세션이 살아있으면 게이트 통과.
+// 새로고침해도 auth 세션이 localStorage 에 남아있어 자동 로그인됨.
+(async function() {
+  try {
+    const client = await _getAuthClient();
+    const { data } = await client.auth.getSession();
+    if (data && data.session) {
+      // 유효한 세션 → 자동 로그인
+      localStorage.setItem('erp_auth', '1');
+      document.getElementById('loginGate').style.display = 'none';
+      return;
+    }
+  } catch (e) {
+    console.warn('세션 확인 실패:', e && e.message);
   }
+  // 세션 없음 — 로그인 게이트 노출
+  setTimeout(() => document.getElementById('loginEmail')?.focus(), 100);
 })();
 </script>
 
@@ -1094,7 +1153,7 @@ function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.10 · 야채 납품일 기준 통일</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.11 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -4797,11 +4856,15 @@ function downloadExcel(filename, headers, rows) {
 // Supabase 연동
 // ============================================================
 function initSupabase() {
-    // 코드에 내장된 키로 자동 연결
+    // 코드에 내장된 키로 자동 연결.
+    // storageKey 를 로그인 게이트와 동일하게 지정 → 로그인 세션이 db 클라이언트에도
+    // 자동 전파. 이후 모든 supabase 요청이 authenticated 역할로 전송됨.
     var url = SUPABASE_URL;
     var key = SUPABASE_KEY;
     if (url && key && window.supabase) {
-        db = window.supabase.createClient(url, key);
+        db = window.supabase.createClient(url, key, {
+            auth: { persistSession: true, autoRefreshToken: true, storageKey: 'jigufood-erp-auth' }
+        });
     }
     // 설정 화면에 값 채우기
     var urlInput = document.getElementById('supabaseUrl');
