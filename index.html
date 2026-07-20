@@ -1153,7 +1153,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.11 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.12 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -2543,13 +2543,24 @@ function loadData(key, defaultVal) {
 // v7: 중분류명 동기화 (잡곡/쌀, 캔/레토르트)
 // v8: 품목코드 엑셀 정본 맞춤 변경 (2026-04-23, 고추/반찬/참기름 43건 + 통깨 신규 + 짠지채 국내산 rename)
 // v9: 옛 코드 잔존 캐시 제거 (2026-04-23, SQL cleanup 이후 재동기화 강제)
-if (!localStorage.getItem('price_updated_v9')) {
+// v11: 가격 되돌림 사고 대응 (2026-07-20) — default-products.js 를 현재 DB 스냅샷으로
+//      재생성하고 모든 기기의 옛 localStorage 를 비워 최신 데이터로 재시딩
+//      (v10 은 category_split_v10 플래그와 혼동 방지를 위해 건너뜀)
+if (!localStorage.getItem('price_updated_v11')) {
     localStorage.removeItem('erp_products');
-    localStorage.setItem('price_updated_v9', 'done');
+    localStorage.setItem('price_updated_v11', 'done');
 }
 let products = loadData('erp_products', null);
+// 기본값 스냅샷(DEFAULT_PRODUCTS)으로 시딩된 세션인지 추적.
+// 이 데이터가 클라우드 병합 전에 서버로 업로드되면 DB 전체 단가가 스냅샷 시점으로
+// 되돌아가는 사고가 남 (2026-07-20 계란 단가 회귀 사고의 원인).
+let seededFromDefaults = false;
+// autoSyncOnLoad 의 클라우드 병합(서버 데이터 우선)이 끝났는지 여부.
+// 병합 전에는 전체 upsert(autoSyncToSupabase)를 허용하지 않는다.
+let cloudMergeDone = false;
 if (!products || products.length === 0) {
     products = (typeof DEFAULT_PRODUCTS !== 'undefined') ? JSON.parse(JSON.stringify(DEFAULT_PRODUCTS)) : [];
+    seededFromDefaults = true;
     localStorage.setItem('erp_products', JSON.stringify(products));
 }
 let vendors = loadData('erp_vendors', DEFAULT_VENDORS);
@@ -2590,8 +2601,10 @@ if (!localStorage.getItem('category_split_v10') && typeof CATEGORY_REMAP_V10 !==
         console.warn('[v10] 매핑 없는 품목 ' + unmapped.length + '개 — 품목 관리에서 분류 확인 필요:',
             unmapped.map(function(p) { return p.code + ' ' + p.name; }));
     }
-    // Supabase 동기화 — db 초기화 이후에 실행되도록 지연 예약
-    window.__categorySplitV10JustRan = true;
+    // Supabase 동기화 — db 초기화 이후에 실행되도록 지연 예약.
+    // 단, 기본값 스냅샷으로 막 시딩된 세션이면 서버 push 금지 — 서버에는 이미
+    // v10 분류가 반영돼 있고, 이 push 가 스냅샷 가격으로 DB를 덮어쓰던 원인이었음.
+    if (!seededFromDefaults) window.__categorySplitV10JustRan = true;
 }
 let pendingUpload = null;
 let editingProductCode = null;
@@ -5226,6 +5239,14 @@ function autoSyncToSupabase() {
     // 연속 저장 시 마지막 것만 동기화 (디바운스 2초)
     clearTimeout(syncTimer);
     syncTimer = setTimeout(async () => {
+        // 🚨 안전 가드 (2026-07-20): 빈 localStorage 에서 DEFAULT_PRODUCTS 로 시딩된
+        // 세션이 클라우드 병합 전에 전체 upsert 를 실행하면 DB 단가 전체가 스냅샷
+        // 시점으로 되돌아간다 (실제 발생한 사고). 병합 완료 전에는 업로드 금지.
+        // 병합이 끝나면 autoSyncOnLoad → saveAll 경로로 자동 재동기화되므로 유실 없음.
+        if (seededFromDefaults && !cloudMergeDone) {
+            console.warn('[Supabase] 자동 동기화 보류 — 기본값 시딩 세션은 클라우드 병합 후에만 업로드');
+            return;
+        }
         try {
             // 품목 전체 upsert
             // major_name/minor_name 은 CATEGORY_TREE 기준으로 강제 재매핑.
@@ -7167,11 +7188,14 @@ async function autoSyncOnLoad() {
         // 로컬에만 있는 품목 (아직 업로드 안 된 것) — 삭제 목록 제외
         const localOnly = products.filter(p => !cloudCodes.has(p.code) && !deletedSet2.has(p.code));
 
-        // 병합: 클라우드 데이터 + 로컬에만 있는 품목
-        products = [...cloudProducts, ...localOnly];
+        // 병합: 클라우드 데이터 + 로컬에만 있는 품목.
+        // 기본값 스냅샷으로 시딩된 세션의 '로컬 전용' 품목은 실제 신규 등록분이 아니라
+        // 서버에서 삭제된 스냅샷 잔재이므로 버린다 (재업로드 시 옛 품목/가격 부활 방지).
+        products = seededFromDefaults ? [...cloudProducts] : [...cloudProducts, ...localOnly];
+        cloudMergeDone = true; // 이후부터 로컬 products 는 서버 데이터 기반 — 전체 업로드 허용
 
         // 로컬에만 있던 품목을 Supabase에 업로드
-        if (localOnly.length > 0) {
+        if (localOnly.length > 0 && !seededFromDefaults) {
             console.log('로컬에만 있는 품목 ' + localOnly.length + '개 → Supabase 업로드');
             const batch = localOnly.map(p => ({
                 code: p.code, name: p.name, spec: p.spec || '', unit: p.unit || '',
