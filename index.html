@@ -1153,7 +1153,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.12 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.13 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -5239,12 +5239,13 @@ function autoSyncToSupabase() {
     // 연속 저장 시 마지막 것만 동기화 (디바운스 2초)
     clearTimeout(syncTimer);
     syncTimer = setTimeout(async () => {
-        // 🚨 안전 가드 (2026-07-20): 빈 localStorage 에서 DEFAULT_PRODUCTS 로 시딩된
-        // 세션이 클라우드 병합 전에 전체 upsert 를 실행하면 DB 단가 전체가 스냅샷
-        // 시점으로 되돌아간다 (실제 발생한 사고). 병합 완료 전에는 업로드 금지.
-        // 병합이 끝나면 autoSyncOnLoad → saveAll 경로로 자동 재동기화되므로 유실 없음.
-        if (seededFromDefaults && !cloudMergeDone) {
-            console.warn('[Supabase] 자동 동기화 보류 — 기본값 시딩 세션은 클라우드 병합 후에만 업로드');
+        // 🚨 안전 가드 (2026-07-20, v3.13 강화): 클라우드 병합(autoSyncOnLoad)이 끝나기
+        // 전에 전체 upsert 를 실행하면 이 기기의 로컬 데이터(옛 스냅샷/오래된 localStorage)가
+        // DB 전체를 덮어쓴다 (실제 발생한 가격 되돌림 사고). 어떤 세션이든 병합 완료
+        // 전에는 전체 업로드 금지. 개별 품목 저장(saveProduct 즉시 upsert)은 영향 없고,
+        // 병합이 끝나면 saveAll 경로로 자동 재동기화되므로 유실 없음.
+        if (!cloudMergeDone) {
+            console.warn('[Supabase] 자동 동기화 보류 — 클라우드 병합 완료 전에는 전체 업로드 금지');
             return;
         }
         try {
