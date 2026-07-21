@@ -1153,7 +1153,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.13 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.14 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -7146,25 +7146,21 @@ function toggleSidebar() {
 async function autoSyncOnLoad() {
     if (!db) return;
     try {
-        // 0) 삭제 로그 먼저 조회 → 로컬에서 해당 품목 제거 (삭제 전파)
-        try {
-            const { data: delLog } = await db.from('deleted_products').select('code');
-            if (delLog && delLog.length > 0) {
-                const deletedSet = new Set(delLog.map(function(r){ return r.code; }));
-                const beforeCount = products.length;
-                products = products.filter(function(p){ return !deletedSet.has(p.code); });
-                const removed = beforeCount - products.length;
-                if (removed > 0) {
-                    console.log('[동기화] 삭제 로그에 따라 로컬에서 ' + removed + '건 제거');
-                    saveAll();
-                }
-            }
-        } catch (e) { console.warn('삭제 로그 조회 실패:', e.message); }
+        // 🚨 사고 이력 (2026-07-21): 옛 구조는 (0) deleted_products 로 로컬 사전 필터 +
+        // saveAll → (1) products fetch → 실패 시 조기 return 이었다. products fetch 가
+        // 일회성으로 실패/빈 응답이면 로컬은 이미 축소된 상태로 저장돼 있고 복구 경로가
+        // 없어 화면이 0 으로 남는 사고 발생 (DB·RLS 는 정상, 거래처앱은 멀쩡했음).
+        // → 현재 구조는: products fetch 성공 확인 → 빈 응답 가드 → 그 다음에만 merge/save.
+        //   deleted_products 는 아래 localOnly 계산에서 이미 배제하므로 사전 필터 불필요.
 
-        // 1) 품목 양방향 병합
+        // 1) 품목 양방향 병합 — cloud fetch 먼저, 실패 시 로컬 데이터 손대지 않음
         const { data: productData, error: productErr } = await db
             .from('products').select('*').order('code');
-        if (productErr || !productData) return;
+        if (productErr || !productData) {
+            console.warn('[동기화] products fetch 실패 — 로컬 데이터 유지:',
+                productErr && productErr.message);
+            return;
+        }
 
         const cloudProducts = productData.map(p => ({
             code: p.code, name: p.name, spec: p.spec || '', unit: p.unit || '',
@@ -7178,9 +7174,18 @@ async function autoSyncOnLoad() {
             isFrozen: !!p.is_frozen
         }));
 
+        // 🚨 안전 가드 (2026-07-21, v3.14): cloud 응답이 빈 배열인데 로컬에 데이터가
+        // 있으면 네트워크/PostgREST 일시 이상으로 간주 (DB 는 실제로 932개인데 빈 응답이
+        // 반환된 사고 발생). 로컬 유지 + cloudMergeDone 도 안 세워서 전체 upsert 도 차단.
+        if (cloudProducts.length === 0 && products.length > 0) {
+            console.warn('[동기화] 클라우드 응답이 비어있음 (로컬 ' + products.length +
+                '개 존재) — 로컬 유지, 병합 보류');
+            return;
+        }
+
         // 클라우드에 있는 코드 목록
         const cloudCodes = new Set(cloudProducts.map(p => p.code));
-        // 삭제 로그 재조회 (업로드 전 필터링용)
+        // 삭제 로그 조회 (업로드 전 필터링용 + 로컬 반영용)
         var deletedSet2 = new Set();
         try {
             const { data: delLog2 } = await db.from('deleted_products').select('code');
@@ -7192,6 +7197,8 @@ async function autoSyncOnLoad() {
         // 병합: 클라우드 데이터 + 로컬에만 있는 품목.
         // 기본값 스냅샷으로 시딩된 세션의 '로컬 전용' 품목은 실제 신규 등록분이 아니라
         // 서버에서 삭제된 스냅샷 잔재이므로 버린다 (재업로드 시 옛 품목/가격 부활 방지).
+        // cloudProducts 자체에 삭제된 코드가 없고 localOnly 에서도 배제되므로,
+        // 결과 products 에는 deleted_products 코드가 섞이지 않는다.
         products = seededFromDefaults ? [...cloudProducts] : [...cloudProducts, ...localOnly];
         cloudMergeDone = true; // 이후부터 로컬 products 는 서버 데이터 기반 — 전체 업로드 허용
 
