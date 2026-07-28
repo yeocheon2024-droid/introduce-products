@@ -1153,7 +1153,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.18 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.19 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -3190,6 +3190,11 @@ function pmCheckCodeDuplicate() {
 }
 
 async function saveProduct() {
+    // 옛 버전 탭 — 오래된 데이터로 저장하면 다른 기기의 수정을 덮어쓸 수 있음
+    if (typeof staleVersionDetected !== 'undefined' && staleVersionDetected) {
+        alert('새 버전이 배포되었습니다.\n이 화면은 오래된 버전이라 저장할 수 없습니다.\n\n새로고침 후 다시 시도해주세요.');
+        return;
+    }
     // 저장 버튼 잠금 — 중복 클릭으로 인한 이중 저장/모달 얼음 방지
     const saveBtn = document.querySelector('#productModal button.btn-primary');
     if (saveBtn && saveBtn.disabled) return;
@@ -5303,8 +5308,65 @@ window.addEventListener('pagehide', function() {
     }
 });
 
+// ============================================================
+// 🚨 옛 버전 탭 감지 (v3.19): 배포 후 새로고침 안 된 탭이 옛 코드/옛 데이터로
+// 계속 도는 것을 차단. 2026-07-28 계란 가격 롤백 사고 — v3.17 탭이 하루 넘게
+// 살아있다가 전체 985개 품목을 옛 값으로 덮어씀. 주기적으로 배포 서버의
+// 버전을 확인해서 내 버전보다 높으면: 모든 업로드 차단 + 배너 표시 +
+// 화면이 백그라운드일 땐 조용히 자동 새로고침.
+// ============================================================
+let staleVersionDetected = false;
+
+function _appVersionNum(text) {
+    var m = (text || '').match(/v3\.(\d+)/);
+    return m ? Number(m[1]) : null;
+}
+
+async function checkAppVersion() {
+    if (staleVersionDetected) return;
+    try {
+        var res = await fetch(location.pathname + '?_vc=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return;
+        var html = await res.text();
+        var remoteM = html.match(/id="appVersionLabel"[^>]*>\s*v3\.(\d+)/);
+        var label = document.getElementById('appVersionLabel');
+        var local = _appVersionNum(label && label.textContent);
+        var remote = remoteM ? Number(remoteM[1]) : null;
+        if (remote !== null && local !== null && remote > local) {
+            staleVersionDetected = true;
+            console.warn('[버전] 새 버전 감지 (로컬 v3.' + local + ' < 서버 v3.' + remote + ') — 업로드 차단');
+            showStaleVersionBanner();
+            if (document.hidden) location.reload();
+        }
+    } catch (e) { /* 오프라인/로컬 파일 실행 등 — 무시 */ }
+}
+
+function showStaleVersionBanner() {
+    if (document.getElementById('staleVerBanner')) return;
+    var d = document.createElement('div');
+    d.id = 'staleVerBanner';
+    d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:100000;background:#d62828;color:#fff;padding:10px 16px;text-align:center;font-weight:600;font-size:0.95rem;box-shadow:0 2px 8px rgba(0,0,0,0.25);';
+    d.innerHTML = '⚠️ 새 버전이 배포되었습니다. 이 화면은 오래된 버전이라 <b>저장이 차단</b>됩니다. ' +
+        '<button onclick="location.reload()" style="margin-left:10px;padding:4px 14px;border:none;border-radius:6px;cursor:pointer;font-weight:700;background:#fff;color:#d62828;">지금 새로고침</button>';
+    document.body.appendChild(d);
+}
+
+// 10분마다 + 탭이 다시 보일 때마다 확인. 백그라운드에 있다가 새 버전이
+// 감지된 상태로 숨겨지면 그 자리에서 자동 새로고침 (작업 중이 아닐 때만).
+setInterval(checkAppVersion, 10 * 60 * 1000);
+document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) checkAppVersion();
+    else if (staleVersionDetected) location.reload();
+});
+setTimeout(checkAppVersion, 30 * 1000);
+
 async function runSupabaseSync() {
     syncPendingFlush = false;
+    // 옛 버전 탭 — 서버를 덮어쓸 위험이 있으므로 업로드 전면 금지
+    if (staleVersionDetected) {
+        console.warn('[Supabase] 업로드 차단 — 새 버전 배포됨, 새로고침 필요');
+        return;
+    }
     // 🚨 안전 가드 (2026-07-20, v3.13 강화): 클라우드 병합(autoSyncOnLoad)이 끝나기
     // 전에 업로드하면 이 기기의 로컬 데이터(옛 스냅샷/오래된 localStorage)가
     // DB 를 덮어쓴다 (실제 발생한 가격 되돌림 사고). 병합 완료 전에는 업로드 금지.
