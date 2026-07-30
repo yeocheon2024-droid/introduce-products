@@ -1153,7 +1153,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.19 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.20 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1258,6 +1258,9 @@ async function erpLogout() {
         </div>
     </div>
 
+    <!-- 동일품목 그룹: 숨긴 매입처가 더 싸진 경우 알림 -->
+    <div id="dashVendorCompareAlert"></div>
+
     <!-- 오늘 반영된 예약 가격 위젯 -->
     <div class="card" id="dashPriceScheduleCard">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
@@ -1311,6 +1314,7 @@ async function erpLogout() {
         <button class="btn btn-outline" id="showAllBtn" onclick="toggleShowAll()">전체 보기</button>
         <button class="btn btn-outline" id="quoteBtn" onclick="openQuoteModal()" style="display:none;">견적서 (<span id="quoteBtnCount">0</span>)</button>
         <button class="btn btn-outline" id="poBtn" onclick="openPurchaseOrderModal()" style="display:none;">발주서 (<span id="poBtnCount">0</span>)</button>
+        <button class="btn btn-outline" id="groupBtn" onclick="pgGroupSelected()" style="display:none;" title="선택한 품목들을 '같은 실물 상품'으로 묶어 매입처 단가를 비교합니다">&#128279; 같은품목 묶기 (<span id="groupBtnCount">0</span>)</button>
         <button class="btn btn-primary" onclick="openAddProductModal()">+ 품목 추가</button>
     </div>
     <!-- PC: 테이블뷰 -->
@@ -2120,6 +2124,16 @@ async function erpLogout() {
 
 <!-- 가격 비교 탭 -->
 <div class="tab-content" id="tab-priceCompare">
+    <!-- 동일품목 매입처 비교 -->
+    <div class="card" id="vendorCompareCard">
+        <h3>&#128279; 매입처 비교 (동일품목 그룹)</h3>
+        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:12px;">
+            품목관리에서 같은 실물 상품 2개 이상을 체크하고 <b>[&#128279; 같은품목 묶기]</b>를 누르면 여기에 그룹이 생깁니다.<br>
+            그룹 안에서 매입처별 단가를 비교하고 <b>[이 매입처로 전환]</b>으로 한쪽만 거래처앱·카탈로그에 노출할 수 있습니다.
+        </p>
+        <div id="vendorCompareList"></div>
+    </div>
+
     <div class="card">
         <h3>가격 비교</h3>
         <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">
@@ -2694,7 +2708,7 @@ function switchTab(tabId) {
     if (tabId === 'images') { imgInitCategoryFilter(); loadUploadedImages(); initNaverKeys(); initStabilityKey(); }
     if (tabId === 'export') { populateExportVendor(); updateExportSelectedInfo(); }
     if (tabId === 'settings') { initSupabase(); }
-    if (tabId === 'priceCompare') { initPriceCompare(); }
+    if (tabId === 'priceCompare') { initPriceCompare(); renderVendorCompare(); }
     if (tabId === 'orderHistory') { initOrderHistory(); }
     if (tabId === 'displayName') { initDisplayNameTab(); }
     if (tabId === 'priceSchedule') { initPriceScheduleTab(); }
@@ -2714,6 +2728,9 @@ function renderDashboard() {
 
     // 오늘 반영된 예약 가격 위젯 (비동기)
     renderTodayAppliedSchedule();
+
+    // 동일품목 그룹 — 숨긴 매입처가 더 싸진 경우 알림
+    renderVendorCompareAlert();
 
     // 신규 품목 타임라인
     const days = parseInt(document.getElementById('dashRecentDays')?.value || '30');
@@ -2838,7 +2855,7 @@ function renderProductList() {
             <td style="padding:8px 4px;"><input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleProductSelect('${esc(p.code)}', this.checked)"></td>
             <td>${getProductThumbHTML(p.code)}</td>
             <td style="font-weight:600;color:var(--accent);">${esc(p.code)}</td>
-            <td>${p.hidden ? '<span style="background:#6c757d;color:#fff;font-weight:700;font-size:0.65rem;padding:1px 5px;border-radius:3px;margin-right:4px;">숨김</span>' : ''}${p.soldOut ? '<span style="color:var(--danger);font-weight:700;font-size:0.7rem;margin-right:3px;">[품절]</span>' : ''}${esc(p.name)}</td>
+            <td>${p.hidden ? '<span style="background:#6c757d;color:#fff;font-weight:700;font-size:0.65rem;padding:1px 5px;border-radius:3px;margin-right:4px;">숨김</span>' : ''}${p.soldOut ? '<span style="color:var(--danger);font-weight:700;font-size:0.7rem;margin-right:3px;">[품절]</span>' : ''}${p.sameGroup ? '<span style="background:#e7f0ff;color:#0353a4;font-weight:700;font-size:0.65rem;padding:1px 5px;border-radius:3px;margin-right:4px;" title="동일품목 그룹 — 가격비교 탭에서 매입처 비교">&#128279;' + esc(p.sameGroup) + '</span>' : ''}${esc(p.name)}</td>
             <td style="color:var(--text-secondary);">${esc(p.spec || '')}</td>
             <td style="color:var(--text-secondary);">${esc(p.majorName || '')}</td>
             <td style="color:var(--text-secondary);">${esc(p.minorName || '')}</td>
@@ -3530,6 +3547,10 @@ function updateQuoteBtn() {
     const poBtn = document.getElementById('poBtn');
     const poCnt = document.getElementById('poBtnCount');
     if (poBtn && poCnt) { poCnt.textContent = n; poBtn.style.display = n > 0 ? '' : 'none'; }
+    // 같은품목 묶기 — 2개 이상 선택 시에만 노출
+    const gBtn = document.getElementById('groupBtn');
+    const gCnt = document.getElementById('groupBtnCount');
+    if (gBtn && gCnt) { gCnt.textContent = n; gBtn.style.display = n >= 2 ? '' : 'none'; }
 }
 
 function numToKorean(n) {
@@ -5185,7 +5206,9 @@ async function downloadFromSupabase() {
             isFrozen: !!p.is_frozen,
             // 야채 마진 (판매가 = 경매가 + 마진). 'rate'=%, 'amount'=원. 미설정이면 null
             marginType: p.margin_type || null,
-            marginValue: (p.margin_value === null || p.margin_value === undefined) ? null : Number(p.margin_value)
+            marginValue: (p.margin_value === null || p.margin_value === undefined) ? null : Number(p.margin_value),
+            // 동일품목 그룹 — 컬럼 존재 시에만
+            ...(p.same_group !== undefined ? { sameGroup: p.same_group } : {})
         }));
         syncLog(`품목 ${products.length}개 다운로드 완료`);
 
@@ -5271,6 +5294,9 @@ function buildProductPayload(p) {
         hidden: !!p.hidden,
         display_name: p.displayName || null,
         image_url: p.imageUrl || null,
+        // 동일품목 그룹 — 필드가 정의된 경우에만 전송 (same_group 컬럼
+        // 마이그레이션 전 세션에서 upsert 가 깨지지 않게)
+        ...(p.sameGroup !== undefined ? { same_group: p.sameGroup || null } : {}),
         // 야채 마진 — 로컬에 값이 있을 때만 전송 (서버 값 보존)
         ...(p.marginType ? {
             margin_type: p.marginType,
@@ -6955,6 +6981,195 @@ function toggleShowAll() {
 function searchUploadedImages() { imgFilterChanged(); }
 
 // ============================================================
+// 동일품목 그룹 — 두 매입처에 같은 실물 상품이 각각 등록된 경우
+// same_group 키로 묶어서 단가 비교 + 한쪽만 노출 전환.
+// 자동 전환은 하지 않는다 (알림까지만) — 단가 출렁일 때마다 노출 상품이
+// 바뀌면 거래처 혼란 + 실제 거래 상황과 어긋날 수 있어 전환은 원클릭 수동.
+// ============================================================
+
+/** 그룹명 → 구성 품목 배열 (2개 이상인 그룹만) */
+function pgGetGroups() {
+    var groups = {};
+    products.forEach(function(p) {
+        if (p.sameGroup) {
+            (groups[p.sameGroup] = groups[p.sameGroup] || []).push(p);
+        }
+    });
+    Object.keys(groups).forEach(function(g) {
+        if (groups[g].length < 2) delete groups[g];
+    });
+    return groups;
+}
+
+/** 품목관리에서 체크한 품목들을 하나의 그룹으로 묶기 */
+async function pgGroupSelected() {
+    var codes = Array.from(selectedProductCodes);
+    if (codes.length < 2) { alert('같은 실물 상품 2개 이상을 체크해주세요.'); return; }
+    var sel = products.filter(function(p) { return selectedProductCodes.has(p.code); });
+    // 선택 중 이미 그룹이 있는 품목이 있으면 그 그룹명을 기본값으로 (그룹에 추가하는 경우)
+    var existing = sel.find(function(p) { return p.sameGroup; });
+    var defName = existing ? existing.sameGroup : (sel[0].name || '').trim();
+    var g = prompt('그룹 이름을 입력하세요 (같은 실물 상품임을 나타내는 이름):', defName);
+    if (g === null) return;
+    // 따옴표/역슬래시 제거 — onclick 속성 안에 그룹명이 들어가므로 깨짐 방지
+    g = g.trim().replace(/['"\\]/g, '');
+    if (!g) { alert('그룹 이름을 입력해주세요.'); return; }
+
+    if (db) {
+        var res = await db.from('products').update({ same_group: g }).in('code', codes);
+        if (res.error) {
+            if (/same_group/i.test(res.error.message)) {
+                alert('DB에 same_group 컬럼이 아직 없습니다.\n\nmigration_output/add_same_group_20260728.sql 파일을\nSupabase SQL Editor에서 먼저 실행해주세요.\n\n(' + res.error.message + ')');
+            } else {
+                alert('그룹 저장 실패: ' + res.error.message);
+            }
+            return;
+        }
+    }
+    sel.forEach(function(p) { p.sameGroup = g; });
+    saveAll();
+    selectedProductCodes.clear();
+    updateQuoteBtn();
+    renderProductList();
+    showToast('"' + g + '" 그룹으로 ' + codes.length + '개 묶음 — 가격비교 탭에서 확인하세요', 'success');
+}
+
+/** 그룹 해제 — 품목/숨김 상태는 그대로 두고 묶음만 푼다 */
+async function pgUngroup(group) {
+    var members = products.filter(function(p) { return p.sameGroup === group; });
+    if (members.length === 0) return;
+    if (!confirm('[' + group + '] 그룹을 해제합니다.\n품목과 숨김 상태는 그대로 유지됩니다.\n\n계속할까요?')) return;
+    if (db) {
+        var res = await db.from('products').update({ same_group: null })
+            .in('code', members.map(function(p) { return p.code; }));
+        if (res.error) { alert('해제 실패: ' + res.error.message); return; }
+    }
+    members.forEach(function(p) { p.sameGroup = null; });
+    saveAll();
+    renderVendorCompare();
+    renderProductList();
+    showToast('그룹 해제 완료', 'success');
+}
+
+/** 그룹 내에서 지정 품목만 노출, 나머지 숨김 */
+async function pgSwitchVendor(group, code) {
+    var members = products.filter(function(p) { return p.sameGroup === group; });
+    var target = members.find(function(p) { return p.code === code; });
+    if (!target) return;
+    var others = members.filter(function(p) { return p.code !== code; });
+    if (!confirm('[' + group + '] 그룹에서\n\n  ✅ 노출: ' + (target.vendorName || '-') + ' · ' + target.name +
+                 '\n  🙈 숨김: ' + others.map(function(p) { return (p.vendorName || '-') + ' · ' + p.name; }).join(', ') +
+                 '\n\n거래처앱·카탈로그에 바로 반영됩니다. 계속할까요?')) return;
+    if (db) {
+        // 노출 대상을 먼저 해제 → 나머지 숨김 (한순간이라도 전부 숨김이 되지 않게)
+        var r1 = await db.from('products').update({ hidden: false }).eq('code', code);
+        if (r1.error) { alert('전환 실패: ' + r1.error.message); return; }
+        var r2 = await db.from('products').update({ hidden: true })
+            .in('code', others.map(function(p) { return p.code; }));
+        if (r2.error) { alert('숨김 처리 실패: ' + r2.error.message); return; }
+    }
+    members.forEach(function(p) { p.hidden = p.code !== code; });
+    saveAll();
+    renderVendorCompare();
+    renderProductList();
+    showToast((target.vendorName || '') + ' 품목으로 전환 완료', 'success');
+}
+
+/** 가격비교 탭의 매입처 비교 섹션 렌더링 */
+function renderVendorCompare() {
+    var el = document.getElementById('vendorCompareList');
+    if (!el) return;
+    var groups = pgGetGroups();
+    var names = Object.keys(groups).sort();
+    if (names.length === 0) {
+        el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;font-size:0.85rem;">아직 묶인 그룹이 없습니다. 품목관리에서 같은 상품 2개 이상을 체크한 뒤 [&#128279; 같은품목 묶기]를 눌러주세요.</div>';
+        return;
+    }
+    el.innerHTML = names.map(function(g) {
+        var mem = groups[g].slice().sort(function(a, b) { return (Number(a.cost) || 1e15) - (Number(b.cost) || 1e15); });
+        var withCost = mem.filter(function(p) { return Number(p.cost) > 0; });
+        var minCost = withCost.length ? Math.min.apply(null, withCost.map(function(p) { return Number(p.cost); })) : 0;
+        var visible = mem.filter(function(p) { return !p.hidden; });
+        // 경고 배지: 노출 중인 것보다 숨긴 쪽이 더 싼 경우 / 여러 개 동시 노출
+        var warn = '';
+        if (visible.length > 1) {
+            warn = '<span style="background:#fff3cd;color:#856404;font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:10px;">⚠️ ' + visible.length + '개 동시 노출 중</span>';
+        } else if (visible.length === 1 && Number(visible[0].cost) > 0 && minCost > 0 && Number(visible[0].cost) > minCost) {
+            warn = '<span style="background:#f8d7da;color:#721c24;font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:10px;">⚠️ 숨긴 매입처가 ' + (Number(visible[0].cost) - minCost).toLocaleString() + '원 더 쌈</span>';
+        } else if (visible.length === 0) {
+            warn = '<span style="background:#e2e3e5;color:#41464b;font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:10px;">전체 숨김 상태</span>';
+        }
+        var rows = mem.map(function(p) {
+            var cost = Number(p.cost) || 0;
+            var sell = Number(p.sell) || 0;
+            var margin = (sell > 0 && cost > 0) ? ((sell - cost) / sell * 100).toFixed(1) + '%' : '-';
+            var isCheapest = cost > 0 && cost === minCost;
+            var stateBadge = p.hidden
+                ? '<span style="background:#6c757d;color:#fff;font-size:0.68rem;font-weight:700;padding:2px 7px;border-radius:3px;">숨김</span>'
+                : '<span style="background:#28a745;color:#fff;font-size:0.68rem;font-weight:700;padding:2px 7px;border-radius:3px;">노출 중</span>';
+            return '<tr' + (p.hidden ? ' style="background:#fafafa;color:var(--text-muted);"' : '') + '>' +
+                '<td style="padding:7px 10px;">' + stateBadge + '</td>' +
+                '<td style="padding:7px 10px;"><span class="badge ' + (p.vendorType === 'self' ? 'badge-self' : 'badge-external') + '">' + esc(p.vendorName || '-') + '</span></td>' +
+                '<td style="padding:7px 10px;font-weight:600;color:var(--accent);">' + esc(p.code) + '</td>' +
+                '<td style="padding:7px 10px;">' + esc(p.name) + '</td>' +
+                '<td style="padding:7px 10px;color:var(--text-secondary);">' + esc(p.spec || '') + '</td>' +
+                '<td style="padding:7px 10px;text-align:right;font-weight:700;' + (isCheapest ? 'color:#0066cc;' : '') + '">' +
+                    (cost ? cost.toLocaleString() : '-') + (isCheapest ? ' <span style="font-size:0.68rem;">최저</span>' : '') + '</td>' +
+                '<td style="padding:7px 10px;text-align:right;">' + (sell ? sell.toLocaleString() : '-') + '</td>' +
+                '<td style="padding:7px 10px;text-align:right;">' + margin + '</td>' +
+                '<td style="padding:7px 10px;text-align:center;">' +
+                    (p.hidden || visible.length !== 1 || visible[0].code !== p.code
+                        ? '<button class="btn btn-sm btn-primary" style="font-size:0.72rem;padding:3px 10px;" onclick="pgSwitchVendor(\'' + esc(g) + '\',\'' + esc(p.code) + '\')">이 매입처로 전환</button>'
+                        : '<span style="font-size:0.72rem;color:var(--text-muted);">현재 노출</span>') +
+                '</td></tr>';
+        }).join('');
+        return '<div style="border:1px solid var(--border-light);border-radius:var(--radius-sm);margin-bottom:14px;overflow:hidden;">' +
+            '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--bg);border-bottom:1px solid var(--border-light);flex-wrap:wrap;">' +
+                '<span style="font-weight:700;font-size:0.9rem;">&#128279; ' + esc(g) + '</span>' +
+                '<span style="font-size:0.75rem;color:var(--text-muted);">' + mem.length + '개 매입처</span>' + warn +
+                '<span style="flex:1;"></span>' +
+                '<button class="btn btn-outline btn-sm" style="font-size:0.72rem;padding:3px 10px;" onclick="pgUngroup(\'' + esc(g) + '\')">그룹 해제</button>' +
+            '</div>' +
+            '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.82rem;min-width:760px;">' +
+                '<thead><tr style="background:var(--bg);border-bottom:1px solid var(--border-light);color:var(--text-muted);font-size:0.75rem;">' +
+                '<th style="padding:6px 10px;text-align:left;">상태</th><th style="padding:6px 10px;text-align:left;">매입처</th>' +
+                '<th style="padding:6px 10px;text-align:left;">코드</th><th style="padding:6px 10px;text-align:left;">품목명</th>' +
+                '<th style="padding:6px 10px;text-align:left;">규격</th><th style="padding:6px 10px;text-align:right;">매입단가</th>' +
+                '<th style="padding:6px 10px;text-align:right;">현금할인가</th><th style="padding:6px 10px;text-align:right;">마진율</th>' +
+                '<th style="padding:6px 10px;text-align:center;">전환</th>' +
+                '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+    }).join('');
+}
+
+/** 대시보드 알림 — 숨긴 매입처가 더 싸진 그룹 */
+function renderVendorCompareAlert() {
+    var el = document.getElementById('dashVendorCompareAlert');
+    if (!el) return;
+    var groups = pgGetGroups();
+    var issues = [];
+    Object.keys(groups).forEach(function(g) {
+        var mem = groups[g];
+        var visible = mem.filter(function(p) { return !p.hidden && Number(p.cost) > 0; });
+        var hiddenOnes = mem.filter(function(p) { return p.hidden && Number(p.cost) > 0; });
+        if (!visible.length || !hiddenOnes.length) return;
+        var vMin = Math.min.apply(null, visible.map(function(p) { return Number(p.cost); }));
+        var hMin = Math.min.apply(null, hiddenOnes.map(function(p) { return Number(p.cost); }));
+        if (hMin < vMin) issues.push({ g: g, diff: vMin - hMin });
+    });
+    if (issues.length === 0) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div class="card" style="border-left:4px solid #e67e22;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px;">' +
+        '<span style="font-size:1.2rem;">⚠️</span>' +
+        '<div style="flex:1;min-width:200px;">' +
+            '<div style="font-weight:700;font-size:0.9rem;">숨긴 매입처가 더 싼 그룹 ' + issues.length + '건</div>' +
+            '<div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">' +
+                issues.map(function(i) { return esc(i.g) + ' (' + i.diff.toLocaleString() + '원↓)'; }).join(' · ') +
+            '</div>' +
+        '</div>' +
+        '<button class="btn btn-primary btn-sm" onclick="switchTab(\'priceCompare\')">비교 화면 열기</button>' +
+        '</div>';
+}
+
+// ============================================================
 // 가격 비교
 // ============================================================
 
@@ -7328,7 +7543,10 @@ async function autoSyncOnLoad() {
             cost: p.cost || 0, sell: p.sell || 0,
             registeredAt: p.registered_at || '', imageUrl: p.image_url || '',
             displayName: p.display_name || '', soldOut: !!p.sold_out, hidden: !!p.hidden,
-            isFrozen: !!p.is_frozen
+            isFrozen: !!p.is_frozen,
+            // 동일품목 그룹 — DB에 same_group 컬럼이 있을 때만 매핑
+            // (마이그레이션 전에는 필드 자체를 안 만들어 payload 에서도 빠지게)
+            ...(p.same_group !== undefined ? { sameGroup: p.same_group } : {})
         }));
 
         // 🚨 안전 가드 (2026-07-21, v3.14): cloud 응답이 빈 배열인데 로컬에 데이터가
