@@ -1153,7 +1153,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.20 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.21 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1183,6 +1183,9 @@ async function erpLogout() {
             </button>
             <button onclick="switchTab('priceCompare')">
                 <span class="nav-icon">&#128202;</span>가격 비교
+            </button>
+            <button onclick="switchTab('vendorCompare')">
+                <span class="nav-icon">&#128279;</span>매입처 비교
             </button>
             <button onclick="switchTab('orderHistory')">
                 <span class="nav-icon">&#128203;</span>발주/견적 기록
@@ -2122,18 +2125,21 @@ async function erpLogout() {
     </div>
 </div>
 
-<!-- 가격 비교 탭 -->
-<div class="tab-content" id="tab-priceCompare">
-    <!-- 동일품목 매입처 비교 -->
+<!-- 매입처 비교 탭 (동일품목 그룹) -->
+<div class="tab-content" id="tab-vendorCompare">
     <div class="card" id="vendorCompareCard">
         <h3>&#128279; 매입처 비교 (동일품목 그룹)</h3>
         <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:12px;">
             품목관리에서 같은 실물 상품 2개 이상을 체크하고 <b>[&#128279; 같은품목 묶기]</b>를 누르면 여기에 그룹이 생깁니다.<br>
-            그룹 안에서 매입처별 단가를 비교하고 <b>[이 매입처로 전환]</b>으로 한쪽만 거래처앱·카탈로그에 노출할 수 있습니다.
+            그룹 안에서 매입처별 단가를 비교하고 <b>[이 매입처로 전환]</b>으로 한쪽만 거래처앱·카탈로그에 노출할 수 있습니다.<br>
+            숨긴 매입처의 단가가 더 싸지면 대시보드에 알림이 표시됩니다 (자동 전환은 하지 않습니다).
         </p>
         <div id="vendorCompareList"></div>
     </div>
+</div>
 
+<!-- 가격 비교 탭 -->
+<div class="tab-content" id="tab-priceCompare">
     <div class="card">
         <h3>가격 비교</h3>
         <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">
@@ -2665,6 +2671,7 @@ const PAGE_TITLES = {
     export: 'ERP 내보내기',
     settings: 'Supabase 설정',
     priceCompare: '가격 비교',
+    vendorCompare: '매입처 비교 (동일품목 그룹)',
     orderHistory: '발주/견적 기록',
     displayName: '표시명 관리',
     priceSchedule: '예약 가격 변경',
@@ -2708,7 +2715,8 @@ function switchTab(tabId) {
     if (tabId === 'images') { imgInitCategoryFilter(); loadUploadedImages(); initNaverKeys(); initStabilityKey(); }
     if (tabId === 'export') { populateExportVendor(); updateExportSelectedInfo(); }
     if (tabId === 'settings') { initSupabase(); }
-    if (tabId === 'priceCompare') { initPriceCompare(); renderVendorCompare(); }
+    if (tabId === 'priceCompare') { initPriceCompare(); }
+    if (tabId === 'vendorCompare') { renderVendorCompare(); }
     if (tabId === 'orderHistory') { initOrderHistory(); }
     if (tabId === 'displayName') { initDisplayNameTab(); }
     if (tabId === 'priceSchedule') { initPriceScheduleTab(); }
@@ -7031,7 +7039,7 @@ async function pgGroupSelected() {
     selectedProductCodes.clear();
     updateQuoteBtn();
     renderProductList();
-    showToast('"' + g + '" 그룹으로 ' + codes.length + '개 묶음 — 가격비교 탭에서 확인하세요', 'success');
+    showToast('"' + g + '" 그룹으로 ' + codes.length + '개 묶음 — 매입처 비교 탭에서 확인하세요', 'success');
 }
 
 /** 그룹 해제 — 품목/숨김 상태는 그대로 두고 묶음만 푼다 */
@@ -7165,7 +7173,7 @@ function renderVendorCompareAlert() {
                 issues.map(function(i) { return esc(i.g) + ' (' + i.diff.toLocaleString() + '원↓)'; }).join(' · ') +
             '</div>' +
         '</div>' +
-        '<button class="btn btn-primary btn-sm" onclick="switchTab(\'priceCompare\')">비교 화면 열기</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="switchTab(\'vendorCompare\')">비교 화면 열기</button>' +
         '</div>';
 }
 
