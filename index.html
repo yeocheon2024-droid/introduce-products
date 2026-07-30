@@ -1153,7 +1153,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.21 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.22 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1381,6 +1381,14 @@ async function erpLogout() {
 
 <!-- 분류 체계 -->
 <div class="tab-content" id="tab-categories">
+    <div class="card">
+        <h3>품목군 코드 관리</h3>
+        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:12px;">
+            품목코드 가운데 3자리(예: <b>WI<u>SOS</u>008</b>의 SOS)의 한글명을 관리합니다.<br>
+            여기서 이름을 붙여두면 품목 추가 시 코드 추천 칩에 한글명이 함께 표시됩니다.
+        </p>
+        <div id="itemGroupManager"></div>
+    </div>
     <div class="card">
         <h3>분류 체계</h3>
         <div id="categoryTree"></div>
@@ -2425,6 +2433,8 @@ async function erpLogout() {
                 <select id="pmVendor" onchange="onVendorChange()"></select>
             </div>
         </div>
+        <!-- 품목군 코드 추천 칩 — 매입처 선택 시 그 매입처의 품목군별 다음 번호 자동 추천 -->
+        <div id="pmCodeChips" style="display:none;margin:-6px 0 12px 0;padding:8px 10px;background:var(--bg);border-radius:var(--radius-sm);border:1px solid var(--border-light);font-size:0.78rem;line-height:2;"></div>
         <div class="form-row">
             <div class="form-group" style="flex:2;position:relative;">
                 <label>품목명 * <span id="pmNameHint" style="font-size:0.72rem;color:var(--text-muted);font-weight:400;margin-left:4px;"></span></label>
@@ -2708,7 +2718,7 @@ function switchTab(tabId) {
     if (tabId === 'dashboard') renderDashboard();
     if (tabId === 'products') { initCategoryFilters(); renderProductList(); }
     if (tabId === 'vendors') renderVendors();
-    if (tabId === 'categories') renderCategoryTree();
+    if (tabId === 'categories') { renderCategoryTree(); renderItemGroupManager(); }
     if (tabId === 'margins') { renderMargins(); renderNoSellProducts(); }
     if (tabId === 'vegMargin') { initVegMarginTab(); }
     if (tabId === 'quote') { loadApiKey(); populateQuoteVendor(); }
@@ -3108,6 +3118,8 @@ function openAddProductModal() {
     updateCardPricePreview();
     populateVendorSelect();
     populateMajorSelect();
+    pmRenderCodeChips();      // 품목군 코드 추천 칩
+    loadDeletedCodes();       // 삭제 코드 캐시 미리 로드 (중복탐지·번호추천용)
     loadProductModalImage(null);
     // 추천 드롭다운/힌트 리셋
     var sb = document.getElementById('pmSuggestBox'); if (sb) sb.style.display = 'none';
@@ -3126,6 +3138,8 @@ function editProduct(code) {
     populateMajorSelect();
     document.getElementById('pmCode').value = p.code;
     document.getElementById('pmVendor').value = p.vendorCode || '';
+    pmRenderCodeChips();
+    loadDeletedCodes();
     document.getElementById('pmName').value = p.name;
     document.getElementById('pmSpec').value = p.spec || '';
     document.getElementById('pmUnit').value = p.unit || '';
@@ -3208,6 +3222,10 @@ function pmCheckCodeDuplicate() {
     if (dup) {
         hint.textContent = '⚠️ 이미 사용 중: ' + (dup.name || '').slice(0, 15);
         hint.style.color = 'var(--danger)';
+    } else if (deletedCodesCache && deletedCodesCache.has(code)) {
+        // 삭제된 코드 재사용 → 옛 발주기록·이미지가 새 품목에 잘못 연결될 수 있음
+        hint.textContent = '⚠️ 과거 삭제된 코드 — 재사용 비권장';
+        hint.style.color = '#e67e22';
     } else {
         hint.textContent = '✓ 사용 가능';
         hint.style.color = 'var(--success)';
@@ -3492,6 +3510,7 @@ async function deleteProduct(code) {
         // 스냅샷에서도 제거 — 같은 코드 재등록 시 diff 가 '변화 없음'으로 오판해
         // 업로드를 건너뛰는 일 방지
         if (syncBaseline) syncBaseline.delete(code);
+        if (deletedCodesCache) deletedCodesCache.add((code || '').toUpperCase());
         saveAll();
         renderProductList();
         showToast('삭제 완료', 'success');
@@ -3826,7 +3845,7 @@ function calcSellingPrice() {
     }
 }
 
-function onVendorChange() { calcSellingPrice(); }
+function onVendorChange() { calcSellingPrice(); pmRenderCodeChips(); }
 
 // 현금할인가(sell) → 정상가(카드가) 자동 계산
 // 카드 결제는 수수료 3%가 붙어서 현금할인가의 103%, 10원 단위 반올림
@@ -4279,6 +4298,215 @@ function generateProductCode(vendorCode, categoryAbbr) {
         }
     });
     return prefix + String(maxNum + 1).padStart(3, '0');
+}
+
+// ============================================================
+// 품목코드 추천 — 코드 체계: 매입처(2자) + 품목군(3자) + 일련번호(3자리)
+// 예: WI + SOS + 008. 자체매입 숫자코드도 "마지막 3자리=일련번호"로 동일 처리.
+// 품목군 한글명은 item_group_codes 테이블에 저장 (분류체계 탭에서 관리).
+// ============================================================
+let itemGroupNames = {};      // 품목군 코드 → 한글명
+let deletedCodesCache = null; // 삭제된 코드 Set (재사용 방지용, 최초 1회 로드)
+
+async function loadItemGroupNames() {
+    if (!db) return;
+    try {
+        var { data, error } = await db.from('item_group_codes').select('code,name');
+        if (error || !data) return; // 테이블 미생성 등 — 이름 없이도 기능 동작
+        itemGroupNames = {};
+        data.forEach(function(r) { itemGroupNames[r.code] = r.name; });
+    } catch (e) { /* 무시 */ }
+}
+
+async function loadDeletedCodes() {
+    if (deletedCodesCache) return deletedCodesCache;
+    deletedCodesCache = new Set();
+    if (!db) return deletedCodesCache;
+    try {
+        var { data } = await db.from('deleted_products').select('code');
+        if (data) data.forEach(function(r) { deletedCodesCache.add((r.code || '').toUpperCase()); });
+    } catch (e) { /* 무시 */ }
+    return deletedCodesCache;
+}
+
+/** 접두어 기준 다음 일련번호 코드 — 삭제된 코드도 건너뛴다 (재사용 금지) */
+async function pmNextCode(prefix) {
+    var del = await loadDeletedCodes();
+    var maxNum = 0;
+    function scan(code) {
+        code = (code || '').toUpperCase();
+        if (!code.startsWith(prefix)) return;
+        var rest = code.substring(prefix.length);
+        if (!/^\d{3}$/.test(rest)) return;
+        var n = parseInt(rest, 10);
+        if (n > maxNum) maxNum = n;
+    }
+    products.forEach(function(p) { scan(p.code); });
+    del.forEach(scan);
+    if (maxNum >= 999) {
+        alert('⚠️ ' + prefix + ' 품목군의 번호가 999에 도달했습니다.\n새 품목군 코드를 만들어주세요.');
+        return null;
+    }
+    return prefix + String(maxNum + 1).padStart(3, '0');
+}
+
+/** 매입처 선택 시 — 그 매입처의 품목군 칩 렌더링 */
+function pmRenderCodeChips() {
+    var box = document.getElementById('pmCodeChips');
+    if (!box) return;
+    var vSel = document.getElementById('pmVendor');
+    var vendorCode = ((vSel && vSel.value) || '').toUpperCase();
+    if (!vendorCode) { box.style.display = 'none'; box.innerHTML = ''; return; }
+
+    // 이 매입처 품목에서 "접두어 + 숫자3자리" 패턴 수집
+    var stats = {}; // prefix → {count, sample}
+    products.forEach(function(p) {
+        if (((p.vendorCode || '')).toUpperCase() !== vendorCode) return;
+        var m = /^(.+?)(\d{3})$/.exec((p.code || '').toUpperCase());
+        if (!m) return;
+        var s = stats[m[1]] = stats[m[1]] || { count: 0, sample: '' };
+        s.count++;
+        if (!s.sample) s.sample = p.name || '';
+    });
+    var prefixes = Object.keys(stats).sort();
+
+    var chips = prefixes.map(function(pre) {
+        // 품목군 = 접두어에서 매입처 코드를 뗀 나머지 (예: WISOS → SOS)
+        var mid = pre.startsWith(vendorCode) ? pre.slice(vendorCode.length) : pre;
+        var nm = itemGroupNames[mid] || '';
+        return '<button type="button" class="btn btn-outline btn-sm" ' +
+            'style="font-size:0.72rem;padding:2px 9px;margin:1px 2px;" ' +
+            'title="대표 품목: ' + esc(stats[pre].sample) + '" ' +
+            'onclick="pmApplyCodeSuggest(\'' + esc(pre) + '\')">' +
+            esc(mid) + (nm ? ' <span style="color:var(--text-muted);">' + esc(nm) + '</span>' : '') +
+            ' ·' + stats[pre].count + '</button>';
+    }).join('');
+    chips += '<button type="button" class="btn btn-outline btn-sm" ' +
+        'style="font-size:0.72rem;padding:2px 9px;margin:1px 2px;border-style:dashed;" ' +
+        'onclick="pmNewGroupCode()">+ 새 품목군</button>';
+
+    box.innerHTML = '<span style="color:var(--text-muted);font-weight:600;">품목군 클릭 → 다음 번호 자동 입력:</span> ' + chips;
+    box.style.display = '';
+}
+
+/** 칩 클릭 — 접두어의 다음 번호를 코드칸에 입력 */
+async function pmApplyCodeSuggest(prefix) {
+    var next = await pmNextCode(prefix);
+    if (!next) return;
+    var input = document.getElementById('pmCode');
+    if (input) { input.value = next; pmCheckCodeDuplicate(); }
+}
+
+/** 새 품목군 만들기 — 3자리 코드 + 한글명(선택) 입력 후 001번 추천 */
+async function pmNewGroupCode() {
+    var vSel = document.getElementById('pmVendor');
+    var vendorCode = ((vSel && vSel.value) || '').toUpperCase();
+    if (!vendorCode) { alert('먼저 매입처를 선택해주세요.'); return; }
+    var mid = prompt('새 품목군 코드 (영문 3자리, 예: SOS / OIL / CAN):');
+    if (mid === null) return;
+    mid = mid.trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(mid)) { alert('영문 3자리로 입력해주세요. (예: SOS)'); return; }
+    var nm = prompt('"' + mid + '" 품목군의 한글명 (예: 소스류) — 비워두면 이름 없이 사용:', '');
+    if (nm && nm.trim() && db) {
+        var res = await db.from('item_group_codes').upsert({ code: mid, name: nm.trim() }, { onConflict: 'code' });
+        if (res.error) {
+            if (/item_group_codes/i.test(res.error.message) || /relation/i.test(res.error.message)) {
+                alert('한글명 저장 실패 — item_group_codes 테이블이 없습니다.\nmigration_output/add_item_group_codes_20260728.sql 을 실행해주세요.\n(코드는 이름 없이 계속 사용 가능합니다)');
+            }
+        } else {
+            itemGroupNames[mid] = nm.trim();
+        }
+    }
+    await pmApplyCodeSuggest(vendorCode + mid);
+    pmRenderCodeChips();
+}
+
+/** 분류체계 탭 — 품목군 코드 한글명 관리 */
+function renderItemGroupManager() {
+    var el = document.getElementById('itemGroupManager');
+    if (!el) return;
+    // 사용 중인 품목군 수집: 매입처(2자) + 품목군(3자) + 번호(3자리) 패턴만
+    var usage = {}; // mid → {count, sample}
+    products.forEach(function(p) {
+        var m = /^([A-Z]{2})([A-Z]{3})(\d{3})$/.exec((p.code || '').toUpperCase());
+        if (!m) return;
+        var u = usage[m[2]] = usage[m[2]] || { count: 0, sample: '' };
+        u.count++;
+        if (!u.sample) u.sample = p.name || '';
+    });
+    // 사용 중 + 이름만 등록된 것 합집합
+    var keys = Object.keys(usage);
+    Object.keys(itemGroupNames).forEach(function(k) { if (keys.indexOf(k) === -1) keys.push(k); });
+    keys.sort();
+
+    var rows = keys.map(function(k) {
+        var u = usage[k] || { count: 0, sample: '' };
+        return '<tr>' +
+            '<td style="padding:6px 10px;font-weight:700;color:var(--accent);">' + esc(k) + '</td>' +
+            '<td style="padding:6px 10px;"><input type="text" id="igcName_' + esc(k) + '" value="' + esc(itemGroupNames[k] || '') + '" placeholder="한글명 입력" style="width:140px;padding:4px 8px;font-size:0.82rem;"></td>' +
+            '<td style="padding:6px 10px;color:var(--text-muted);" title="' + esc(u.sample) + '">' + (u.count ? u.count + '개 사용 중' : '<span style="color:#e67e22;">미사용</span>') + '</td>' +
+            '<td style="padding:6px 10px;"><button class="btn btn-outline btn-sm" style="font-size:0.72rem;padding:2px 10px;" onclick="igcSaveName(\'' + esc(k) + '\')">저장</button></td>' +
+            '</tr>';
+    }).join('');
+
+    el.innerHTML =
+        '<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:0.85rem;">' +
+        '<thead><tr style="background:var(--bg);border-bottom:1px solid var(--border-light);color:var(--text-muted);font-size:0.75rem;">' +
+        '<th style="padding:6px 10px;text-align:left;">코드</th><th style="padding:6px 10px;text-align:left;">한글명</th>' +
+        '<th style="padding:6px 10px;text-align:left;">사용 현황</th><th style="padding:6px 10px;"></th></tr></thead>' +
+        '<tbody>' + (rows || '<tr><td colspan="4" style="padding:16px;color:var(--text-muted);">아직 품목군 코드가 없습니다.</td></tr>') + '</tbody></table></div>' +
+        '<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+        '<input type="text" id="igcNewCode" placeholder="새 코드 (예: SOS)" maxlength="3" style="width:110px;padding:5px 8px;font-size:0.82rem;text-transform:uppercase;">' +
+        '<input type="text" id="igcNewName" placeholder="한글명 (예: 소스류)" style="width:150px;padding:5px 8px;font-size:0.82rem;">' +
+        '<button class="btn btn-primary btn-sm" style="font-size:0.78rem;" onclick="igcAdd()">+ 추가</button>' +
+        '</div>';
+}
+
+async function igcSaveName(code) {
+    var input = document.getElementById('igcName_' + code);
+    if (!input) return;
+    var name = input.value.trim();
+    if (!db) { alert('Supabase 연결이 필요합니다.'); return; }
+    var res;
+    if (!name) {
+        res = await db.from('item_group_codes').delete().eq('code', code);
+        if (!res.error) delete itemGroupNames[code];
+    } else {
+        res = await db.from('item_group_codes').upsert({ code: code, name: name }, { onConflict: 'code' });
+        if (!res.error) itemGroupNames[code] = name;
+    }
+    if (res.error) {
+        if (/relation|item_group_codes/i.test(res.error.message)) {
+            alert('저장 실패 — item_group_codes 테이블이 없습니다.\nmigration_output/add_item_group_codes_20260728.sql 을 Supabase SQL Editor에서 먼저 실행해주세요.');
+        } else {
+            alert('저장 실패: ' + res.error.message);
+        }
+        return;
+    }
+    showToast('"' + code + '" ' + (name ? '이름 저장됨' : '이름 삭제됨'), 'success');
+    renderItemGroupManager();
+}
+
+async function igcAdd() {
+    var codeEl = document.getElementById('igcNewCode');
+    var nameEl = document.getElementById('igcNewName');
+    var code = (codeEl.value || '').trim().toUpperCase();
+    var name = (nameEl.value || '').trim();
+    if (!/^[A-Z]{3}$/.test(code)) { alert('코드는 영문 3자리로 입력해주세요. (예: SOS)'); return; }
+    if (!name) { alert('한글명을 입력해주세요.'); return; }
+    if (!db) { alert('Supabase 연결이 필요합니다.'); return; }
+    var res = await db.from('item_group_codes').upsert({ code: code, name: name }, { onConflict: 'code' });
+    if (res.error) {
+        if (/relation|item_group_codes/i.test(res.error.message)) {
+            alert('저장 실패 — item_group_codes 테이블이 없습니다.\nmigration_output/add_item_group_codes_20260728.sql 을 먼저 실행해주세요.');
+        } else {
+            alert('저장 실패: ' + res.error.message);
+        }
+        return;
+    }
+    itemGroupNames[code] = name;
+    showToast('"' + code + ' ' + name + '" 추가됨', 'success');
+    renderItemGroupManager();
 }
 
 // 드래그앤드롭 초기화
@@ -9881,6 +10109,7 @@ initSupabase();
 initDragDrop();
 renderDashboard();
 autoSyncOnLoad();
+loadItemGroupNames(); // 품목군 코드 한글명 사전
 // ERP 접속 시 예약 가격 자동 체크 (Supabase 연결 후 1초 뒤)
 setTimeout(function() { checkAndApplyScheduledPrices(false); }, 1500);
 </script>
