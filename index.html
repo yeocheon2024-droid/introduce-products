@@ -1153,7 +1153,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.22 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.23 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1201,6 +1201,9 @@ async function erpLogout() {
             </button>
             <button onclick="switchTab('vegMargin')">
                 <span class="nav-icon">&#129388;</span>야채 마진율
+            </button>
+            <button onclick="switchTab('vegPriceCompare')">
+                <span class="nav-icon">&#128200;</span>야채 가격비교
             </button>
             <button onclick="switchTab('images')">
                 <span class="nav-icon">&#128247;</span>이미지 관리
@@ -1427,6 +1430,40 @@ async function erpLogout() {
                     </tr>
                 </thead>
                 <tbody id="noSellTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 야채 가격비교 (경매가 변동 감시) -->
+<div class="tab-content" id="tab-vegPriceCompare">
+    <div class="card">
+        <h3>&#128200; 야채 가격비교 <span id="vpcTitle" style="font-size:0.8rem;font-weight:400;color:var(--text-muted);"></span></h3>
+        <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:14px;">
+            중도매인이 입력한 경매가의 <b>전일 대비 변동</b>을 감시합니다. 급등락·자릿수 실수(0 하나 더/덜)를 자동으로 위에 뽑아줍니다.
+            <br>2단계(가락시장 공식 시세 대조)는 공공데이터 API 승인 데이터가 들어오면 추가됩니다.
+        </p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px;background:#f5f7fa;border:1px solid var(--border-light);border-radius:8px;margin-bottom:12px;">
+            <strong style="font-size:0.85rem;">급등락 기준 &plusmn;</strong>
+            <input type="number" id="vpcThreshold" value="30" style="width:70px;padding:6px 8px;" onchange="vpcRender()">
+            <span style="font-size:0.85rem;">%</span>
+            <button class="btn btn-primary btn-sm" onclick="initVegPriceCompareTab()">&#8635; 새로고침</button>
+            <label style="font-size:0.8rem;margin-left:8px;"><input type="checkbox" id="vpcOnlyWarn" onchange="vpcRender()"> 경고만 보기</label>
+            <span id="vpcStatus" style="font-size:0.8rem;color:var(--text-muted);margin-left:auto;"></span>
+        </div>
+        <div style="overflow:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+                <thead>
+                    <tr style="border-bottom:2px solid var(--border);text-align:left;color:var(--text-muted);font-size:0.78rem;">
+                        <th style="padding:6px 8px;">상태</th>
+                        <th style="padding:6px 8px;">관리코드</th>
+                        <th style="padding:6px 8px;">품목</th>
+                        <th style="padding:6px 8px;text-align:right;">전일가</th>
+                        <th style="padding:6px 8px;text-align:right;">오늘가</th>
+                        <th style="padding:6px 8px;text-align:right;">변동</th>
+                    </tr>
+                </thead>
+                <tbody id="vpcTbody"></tbody>
             </table>
         </div>
     </div>
@@ -2686,7 +2723,8 @@ const PAGE_TITLES = {
     displayName: '표시명 관리',
     priceSchedule: '예약 가격 변경',
     sortOrder: '정렬 관리 (카테고리·품목 순서)',
-    vegMargin: '야채 마진율 관리'
+    vegMargin: '야채 마진율 관리',
+    vegPriceCompare: '야채 가격비교'
 };
 
 function switchTab(tabId) {
@@ -2721,6 +2759,7 @@ function switchTab(tabId) {
     if (tabId === 'categories') { renderCategoryTree(); renderItemGroupManager(); }
     if (tabId === 'margins') { renderMargins(); renderNoSellProducts(); }
     if (tabId === 'vegMargin') { initVegMarginTab(); }
+    if (tabId === 'vegPriceCompare') { initVegPriceCompareTab(); }
     if (tabId === 'quote') { loadApiKey(); populateQuoteVendor(); }
     if (tabId === 'images') { imgInitCategoryFilter(); loadUploadedImages(); initNaverKeys(); initStabilityKey(); }
     if (tabId === 'export') { populateExportVendor(); updateExportSelectedInfo(); }
@@ -8972,6 +9011,119 @@ async function vmRefreshTargetDate() {
 
 function vmGetVegProducts() {
     return products.filter(function(p) { return p.majorName === '야채'; });
+}
+
+// ============================================================
+// 야채 가격비교 (1단계: 전일 대비 내부 변동 감시)
+//   veg_auction_prices(날짜별 경매가) 를 최근 것 2일 비교 → 급등락/자릿수 실수 표시
+// ============================================================
+var vpcRaw = null; // 최근 경매가 이력 (원본)
+
+async function initVegPriceCompareTab() {
+    var st = document.getElementById('vpcStatus');
+    if (!db) { if (st) st.textContent = 'Supabase 미연결'; return; }
+    if (st) st.textContent = '불러오는 중...';
+    try {
+        // veg_auction_prices 는 RLS 로 잠겨있어 직접 못 읽는다 → SECURITY DEFINER RPC 사용
+        var res = await db.rpc('veg_price_history', { p_days: 21 });
+        if (res.error) throw new Error(res.error.message);
+        vpcRaw = (res.data || []).map(function(r) {
+            return { auction_date: r.auction_date, product_code: r.product_code, cost: r.cost, no_stock: r.no_stock };
+        });
+        vpcRender();
+    } catch (e) {
+        if (st) st.textContent = 'sql/veg_price_history.sql 을 먼저 적용해주세요. (' + e.message + ')';
+    }
+}
+
+function vpcRender() {
+    if (!vpcRaw) return;
+    var st = document.getElementById('vpcStatus');
+    var tbody = document.getElementById('vpcTbody');
+    var title = document.getElementById('vpcTitle');
+    var thr = Number(document.getElementById('vpcThreshold').value) || 30;
+    var onlyWarn = !!(document.getElementById('vpcOnlyWarn') || {}).checked;
+
+    // 날짜 최신순 → 오늘 / 전일
+    var dates = [];
+    vpcRaw.forEach(function(r) { if (dates.indexOf(r.auction_date) === -1) dates.push(r.auction_date); });
+    dates.sort().reverse();
+    var today = dates[0], prev = dates[1];
+    if (!today) { tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-muted);">경매가 이력이 없습니다.</td></tr>'; if (title) title.textContent = ''; return; }
+
+    // 품목별 오늘/전일 값
+    var byCode = {};
+    vpcRaw.forEach(function(r) {
+        if (!byCode[r.product_code]) byCode[r.product_code] = {};
+        if (r.auction_date === today) byCode[r.product_code].t = r;
+        if (r.auction_date === prev) byCode[r.product_code].p = r;
+    });
+    // 품목명 맵
+    var nameMap = {};
+    vmGetVegProducts().forEach(function(p) { nameMap[String(p.code).trim()] = p; });
+
+    var rows = [];
+    Object.keys(byCode).forEach(function(code) {
+        var t = byCode[code].t, p = byCode[code].p;
+        var tc = (t && !t.no_stock && Number(t.cost) > 0) ? Number(t.cost) : null;
+        var pc = (p && !p.no_stock && Number(p.cost) > 0) ? Number(p.cost) : null;
+        var pct = (tc != null && pc != null) ? ((tc - pc) / pc * 100) : null;
+        var flag = 'ok', rank = 9;
+        if (t && t.no_stock) { flag = 'nostock'; rank = 8; }
+        else if (tc != null && pc == null) { flag = 'new'; rank = 5; }
+        else if (tc != null && pc != null) {
+            var ratio = tc / pc;
+            if (ratio >= 8 || ratio <= 0.125) { flag = 'digit'; rank = 0; }
+            else if (Math.abs(pct) >= thr) { flag = (pct > 0 ? 'up' : 'down'); rank = 1; }
+        }
+        var pinfo = nameMap[code];
+        rows.push({
+            code: code,
+            name: pinfo ? (pinfo.name || code) : code,
+            spec: pinfo ? (pinfo.spec || pinfo.unit || '') : '',
+            tc: tc, pc: pc, pct: pct, flag: flag, rank: rank
+        });
+    });
+
+    // 정렬: 위험도(rank) → |변동%| 큰 순
+    rows.sort(function(a, b) {
+        if (a.rank !== b.rank) return a.rank - b.rank;
+        return Math.abs(b.pct || 0) - Math.abs(a.pct || 0);
+    });
+
+    var FLAG = {
+        digit:   { t: '🔴 자릿수 의심', c: '#c0392b', bg: '#fdecea' },
+        up:      { t: '🔴 급등',       c: '#c0392b', bg: '#fdecea' },
+        down:    { t: '🔵 급락',       c: '#2471a3', bg: '#eaf2fb' },
+        'new':   { t: '🆕 신규',       c: '#7d6608', bg: '#fef9e7' },
+        nostock: { t: '💤 입하없음',   c: '#7f8c8d', bg: '#f4f6f6' },
+        ok:      { t: '',             c: '#2c3e50', bg: '' }
+    };
+
+    var warnCount = rows.filter(function(r) { return r.rank <= 1; }).length;
+    var shown = onlyWarn ? rows.filter(function(r) { return r.rank <= 5; }) : rows;
+
+    var fmt = function(n) { return n == null ? '-' : Number(n).toLocaleString(); };
+    tbody.innerHTML = shown.map(function(r) {
+        var f = FLAG[r.flag] || FLAG.ok;
+        var pctTxt = '-';
+        if (r.pct != null) {
+            var sign = r.pct > 0 ? '+' : '';
+            var col = Math.abs(r.pct) >= thr ? f.c : 'var(--text-muted)';
+            pctTxt = '<span style="color:' + col + ';font-weight:700;">' + sign + (Math.round(r.pct * 10) / 10) + '%</span>';
+        }
+        return '<tr style="border-bottom:1px solid var(--border-light);background:' + (f.bg || 'transparent') + ';">' +
+            '<td style="padding:6px 8px;white-space:nowrap;color:' + f.c + ';font-weight:700;font-size:0.8rem;">' + f.t + '</td>' +
+            '<td style="padding:6px 8px;font-family:monospace;color:var(--text-muted);">' + esc(r.code) + '</td>' +
+            '<td style="padding:6px 8px;">' + esc(r.name) + (r.spec ? ' <span style="color:var(--text-muted);font-size:0.78rem;">' + esc(r.spec) + '</span>' : '') + '</td>' +
+            '<td style="padding:6px 8px;text-align:right;color:var(--text-muted);">' + fmt(r.pc) + '</td>' +
+            '<td style="padding:6px 8px;text-align:right;font-weight:700;">' + fmt(r.tc) + '</td>' +
+            '<td style="padding:6px 8px;text-align:right;">' + pctTxt + '</td>' +
+            '</tr>';
+    }).join('') || '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-muted);">표시할 품목이 없습니다.</td></tr>';
+
+    if (title) title.textContent = '오늘 ' + today + (prev ? ' vs 전일 ' + prev : ' (비교할 전일 없음)') + ' · 경고 ' + warnCount + '건';
+    if (st) st.textContent = '총 ' + rows.length + '개';
 }
 
 function initVegMarginTab() {
