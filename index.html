@@ -1153,7 +1153,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.25 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.26 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -9485,26 +9485,31 @@ async function vmApplyPrices() {
             targets.push({ p: p, cost: null, sell: null, noStock: true });
         }
     });
-    // ── (상) 입하없음 → (특) 대체 출고 (특 가격으로 확정) ──────────────────
-    //   정책: "(상) 입하없을시 (특)으로 출고" (거래처는 특 값 부담, 앱에 고지됨).
-    //   상이 입하없음이고, 이름에서 (상)→(특) 로 바꾼 짝 품목에 오늘 가격이 있으면
-    //   → 그 상 품목을 특 원가/판매가로 대체한다. (상 주문이 특 값으로 확정됨)
+    // ── (상) 입하없음 → (특) 대체 출고 (가격은 '상짜리 가격' 유지) ──────────────
+    //   정책: 상이 입하없으면 물건은 특으로 대체 출고하되, 값은 '상짜리 가격'으로 받는다.
+    //         (특·상 가격이 같으면 소비자가 굳이 상을 시킬 이유가 없음)
+    //   구현: 실제 매입원가는 특의 경매가이므로 상.cost = 특 경매가로 두고, 거기에
+    //         '상의 마진'을 적용해 상짜리 가격을 만든다. (특보다 싼 상 가격이 유지됨)
+    //         품절 처리하지 않아 계속 주문 가능 — 내일 상이 입하되면 자연히 정상 복귀.
     var vmSubCnt = 0;
     (function() {
-        var sellByName = {};   // 오늘 가격 있는 품목: 이름 → {cost, sell}
+        var costByName = {};   // 오늘 경매가 있는 품목: 이름 → 매입원가(cost)
         targets.forEach(function(t) {
-            if (!t.noStock && t.sell > 0) sellByName[(t.p.name || '').trim()] = { cost: t.cost, sell: t.sell };
+            if (!t.noStock && t.cost > 0) costByName[(t.p.name || '').trim()] = t.cost;
         });
         targets.forEach(function(t) {
             if (t.noStock && /\(상\)/.test(t.p.name || '')) {
                 var teukName = (t.p.name || '').replace('(상)', '(특)').trim();
-                var sub = sellByName[teukName];
-                if (sub) {
-                    t.noStock = false;    // 특으로 대체 출고 → 판매 가능
-                    t.cost = sub.cost;    // 특 경매가(원가)
-                    t.sell = sub.sell;    // 특 값으로 확정
-                    t.substituted = true; // 대체 표시용
-                    vmSubCnt++;
+                var teukCost = costByName[teukName];
+                if (teukCost > 0 && t.p.marginType) {
+                    var sSell = vmCalcSell(t.p, teukCost);  // 특 원가에 '상의 마진' 적용
+                    if (sSell) {
+                        t.noStock = false;      // 특으로 대체 출고 → 판매 가능
+                        t.cost = teukCost;      // 실매입원가 = 특 경매가
+                        t.sell = sSell;         // 상짜리 가격 (상 마진 적용)
+                        t.substituted = true;   // 대체 표시용
+                        vmSubCnt++;
+                    }
                 }
             }
         });
@@ -9518,7 +9523,7 @@ async function vmApplyPrices() {
     if (!confirm('야채 ' + targets.length + '개 품목 가격을 적용합니다.\n' +
                  '· 가격변경 ' + (targets.length - noStockCnt) + '건\n' +
                  '· 입하없음 ' + noStockCnt + '건\n' +
-                 (vmSubCnt ? '· (상)→(특) 대체 출고 ' + vmSubCnt + '건 (특 값으로 확정)\n' : '') +
+                 (vmSubCnt ? '· (상)→(특) 대체 출고 ' + vmSubCnt + '건 (상짜리 가격 유지)\n' : '') +
                  (noMargin ? '· 마진 미설정으로 제외 ' + noMargin + '건\n' : '') +
                  '\n거래처 앱에 즉시 반영됩니다. 계속할까요?')) return;
 
