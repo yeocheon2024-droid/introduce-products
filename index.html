@@ -1153,7 +1153,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.23 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.24 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1504,6 +1504,7 @@ async function erpLogout() {
 
         <!-- 필터 -->
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+            <select id="vmVendorFilter" onchange="renderVegMarginList()" style="padding:6px 8px;"><option value="">중도매인 전체</option></select>
             <select id="vmMinorFilter" onchange="renderVegMarginList()" style="padding:6px 8px;"><option value="">중분류 전체</option></select>
             <input type="text" id="vmSearch" placeholder="품목명 · 관리코드 검색" oninput="renderVegMarginList()" style="padding:6px 10px;flex:1;min-width:160px;">
             <label style="font-size:0.8rem;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="vmCheckAll" onchange="vmToggleAll(this)"> 전체선택</label>
@@ -9126,6 +9127,9 @@ function vpcRender() {
     if (st) st.textContent = '총 ' + rows.length + '개';
 }
 
+// 중도매인 코드(관리코드 앞3자리) → 이름 (필터 표기용)
+var VM_VENDOR_NAMES = { '295': '엽채·일반', '284': '구황작물', '237': '무', '490': '나물집' };
+
 function initVegMarginTab() {
     var sel = document.getElementById('vmMinorFilter');
     if (sel) {
@@ -9138,16 +9142,32 @@ function initVegMarginTab() {
             return '<option value="' + esc(m) + '">' + esc(m) + '</option>';
         }).join('');
     }
+    // 중도매인 필터 — 야채 품목의 관리코드 앞3자리에서 실제 존재하는 것만
+    var vsel = document.getElementById('vmVendorFilter');
+    if (vsel) {
+        var prefixes = [];
+        vmGetVegProducts().forEach(function(p) {
+            var v = String(p.code).slice(0, 3);
+            if (v && prefixes.indexOf(v) === -1) prefixes.push(v);
+        });
+        prefixes.sort();
+        vsel.innerHTML = '<option value="">중도매인 전체</option>' + prefixes.map(function(v) {
+            return '<option value="' + v + '">' + v + (VM_VENDOR_NAMES[v] ? ' ' + VM_VENDOR_NAMES[v] : '') + '</option>';
+        }).join('');
+    }
     renderVegMarginList();
     vmRefreshTargetDate();
 }
 
 function vmFiltered() {
+    var vendorEl = document.getElementById('vmVendorFilter');
     var minorEl = document.getElementById('vmMinorFilter');
     var searchEl = document.getElementById('vmSearch');
+    var vendor = vendorEl ? vendorEl.value : '';   // 중도매인 = 관리코드 앞 3자리
     var minor = minorEl ? minorEl.value : '';
     var q = (searchEl ? searchEl.value : '').trim().toLowerCase();
     return vmGetVegProducts().filter(function(p) {
+        if (vendor && String(p.code).slice(0, 3) !== vendor) return false;
         if (minor && p.minorName !== minor) return false;
         if (q && ((p.code || '') + ' ' + (p.name || '')).toLowerCase().indexOf(q) === -1) return false;
         return true;
