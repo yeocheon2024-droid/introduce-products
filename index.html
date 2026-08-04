@@ -1153,7 +1153,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.24 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.25 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -9485,6 +9485,30 @@ async function vmApplyPrices() {
             targets.push({ p: p, cost: null, sell: null, noStock: true });
         }
     });
+    // ── (상) 입하없음 → (특) 대체 출고 (특 가격으로 확정) ──────────────────
+    //   정책: "(상) 입하없을시 (특)으로 출고" (거래처는 특 값 부담, 앱에 고지됨).
+    //   상이 입하없음이고, 이름에서 (상)→(특) 로 바꾼 짝 품목에 오늘 가격이 있으면
+    //   → 그 상 품목을 특 원가/판매가로 대체한다. (상 주문이 특 값으로 확정됨)
+    var vmSubCnt = 0;
+    (function() {
+        var sellByName = {};   // 오늘 가격 있는 품목: 이름 → {cost, sell}
+        targets.forEach(function(t) {
+            if (!t.noStock && t.sell > 0) sellByName[(t.p.name || '').trim()] = { cost: t.cost, sell: t.sell };
+        });
+        targets.forEach(function(t) {
+            if (t.noStock && /\(상\)/.test(t.p.name || '')) {
+                var teukName = (t.p.name || '').replace('(상)', '(특)').trim();
+                var sub = sellByName[teukName];
+                if (sub) {
+                    t.noStock = false;    // 특으로 대체 출고 → 판매 가능
+                    t.cost = sub.cost;    // 특 경매가(원가)
+                    t.sell = sub.sell;    // 특 값으로 확정
+                    t.substituted = true; // 대체 표시용
+                    vmSubCnt++;
+                }
+            }
+        });
+    })();
     if (targets.length === 0) {
         alert('적용할 가격이 없습니다.\n\n경매가 엑셀을 업로드하거나 표에서 직접 입력해주세요.' +
               (noMargin ? '\n(마진 미설정 ' + noMargin + '건은 제외됨)' : ''));
@@ -9494,6 +9518,7 @@ async function vmApplyPrices() {
     if (!confirm('야채 ' + targets.length + '개 품목 가격을 적용합니다.\n' +
                  '· 가격변경 ' + (targets.length - noStockCnt) + '건\n' +
                  '· 입하없음 ' + noStockCnt + '건\n' +
+                 (vmSubCnt ? '· (상)→(특) 대체 출고 ' + vmSubCnt + '건 (특 값으로 확정)\n' : '') +
                  (noMargin ? '· 마진 미설정으로 제외 ' + noMargin + '건\n' : '') +
                  '\n거래처 앱에 즉시 반영됩니다. 계속할까요?')) return;
 
