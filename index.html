@@ -1153,7 +1153,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.26 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.27 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1500,6 +1500,7 @@ async function erpLogout() {
             <input type="file" id="vmPriceFile" accept=".xlsx,.xls,.csv" onchange="vmHandlePriceUpload(event)" style="font-size:0.8rem;">
             <button class="btn btn-outline btn-sm" onclick="vmDownloadFormat()">&#128229; 배포양식 받기</button>
             <span id="vmUploadStatus" style="font-size:0.78rem;color:var(--primary);font-weight:600;"></span>
+            <button class="btn btn-outline btn-sm" style="margin-left:auto;border-color:#2e7d32;color:#2e7d32;" onclick="vmExportPurchaseXls()">&#128228; 매입 엑셀 (외상매입)</button>
         </div>
 
         <!-- 필터 -->
@@ -9584,6 +9585,80 @@ async function vmApplyPrices() {
     alert('✅ 가격 적용 완료\n성공 ' + ok + '건' + (fail ? '\n실패 ' + fail + '건' : '') +
           (db ? '\n\n거래처 앱(지구오더)에 반영되었습니다.' : '\n\n※ Supabase 미연결 — 로컬에만 반영됨') +
           confirmMsg);
+}
+
+// ============================================================
+// 매입 엑셀(외상매입) — 자체 ERP EDI 일반양식(.xls) 다운로드
+//   그날 배송분 야채 주문을 중도매인별 외상매입 전표로 뽑는다.
+//   RLS 때문에 브라우저가 주문·경매가를 직접 못 읽으므로 veg_purchase_lines RPC 로 집계 결과를 받고,
+//   거래처 ERP 코드 매핑·계정·부가세·날짜형식은 여기서 붙여 SheetJS 로 .xls(97-2003) 생성.
+// ============================================================
+// 중도매인(관리코드 앞3자리) → ERP 거래처관리코드 매핑 (사용자 제공)
+var VM_PURCHASE_VENDOR = {
+    '295': { erp: '2603', name: '엽채류·일반채소' },
+    '284': { erp: '2891', name: '구황작물' },
+    '237': { erp: '6065', name: '무 종류' },
+    '490': { erp: '6066', name: '나물집' }
+};
+async function vmExportPurchaseXls() {
+    if (!db) { alert('Supabase 미연결 — 매입 엑셀은 온라인 연결이 필요합니다.'); return; }
+    if (!vmTargetDate) await vmRefreshTargetDate();
+    var date = vmTargetDate;
+    if (!date) { alert('대상 납품일을 확인할 수 없습니다. 먼저 [중도매인 입력분 불러오기]를 눌러주세요.'); return; }
+
+    var hint = document.getElementById('vmApplyHint');
+    if (hint) hint.textContent = '매입 엑셀 생성 중...';
+    try {
+        var res = await db.rpc('veg_purchase_lines', { p_date: date });
+        if (res.error) {
+            if (hint) hint.textContent = '';
+            alert('매입 데이터 조회 실패: ' + res.error.message +
+                  '\n\n(Supabase에 veg_purchase_lines RPC를 적용했는지 확인해주세요)');
+            return;
+        }
+        var lines = res.data || [];
+        if (lines.length === 0) {
+            if (hint) hint.textContent = '';
+            alert(date + ' 배송분 야채 주문이 없거나 매입가가 잡힌 품목이 없습니다.');
+            return;
+        }
+
+        var HEADERS = ['날짜','전표번호','계정코드','계정','거래처관리코드(필수)','거래처',
+                       '대체_코드','대체_상호','품목코드(필수)','품명','규격','수량',
+                       '단가','금액','부가세','전표적요','사원코드','사원'];
+        var rows = [HEADERS];
+        var unmapped = [];
+        var byVendor = {};
+        lines.forEach(function(l) {
+            var v = VM_PURCHASE_VENDOR[String(l.vendor_prefix)];
+            if (!v) { unmapped.push(l.product_code + ' ' + (l.product_name || '')); return; }
+            var qty = Number(l.qty) || 0;
+            var cost = Number(l.unit_cost) || 0;
+            var amt = qty * cost;
+            rows.push([
+                date.replace(/-/g, '.'), '', 4, '외상매입', v.erp, v.name, '', '',
+                l.product_code, l.product_name, l.spec || '', qty, cost, amt, 0, '', '', ''
+            ]);
+            byVendor[v.name] = (byVendor[v.name] || 0) + amt;
+        });
+
+        var ws = XLSX.utils.aoa_to_sheet(rows);
+        var wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+        XLSX.writeFile(wb, '야채매입_' + date + '.xls', { bookType: 'biff8' });
+
+        if (hint) hint.textContent = '';
+        var total = rows.slice(1).reduce(function(s, r) { return s + (Number(r[13]) || 0); }, 0);
+        var vsum = Object.keys(byVendor).map(function(k) { return '· ' + k + ' ' + byVendor[k].toLocaleString() + '원'; }).join('\n');
+        alert('✅ 매입 엑셀 생성 완료 (외상매입 · 면세)\n' +
+              date + ' 배송분 · ' + (rows.length - 1) + '라인 · 총 ' + total.toLocaleString() + '원\n\n' +
+              vsum +
+              (unmapped.length ? '\n\n⚠️ 중도매인 매핑 없는 품목 ' + unmapped.length + '건 제외:\n' + unmapped.join('\n') : '') +
+              '\n\n다운로드 폴더에 [야채매입_' + date + '.xls] 저장됨.');
+    } catch (e) {
+        if (hint) hint.textContent = '';
+        alert('매입 엑셀 생성 오류: ' + (e && e.message ? e.message : e));
+    }
 }
 
 // ============================================================
