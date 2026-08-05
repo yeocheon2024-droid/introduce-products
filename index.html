@@ -1153,7 +1153,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.27 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.28 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1500,7 +1500,8 @@ async function erpLogout() {
             <input type="file" id="vmPriceFile" accept=".xlsx,.xls,.csv" onchange="vmHandlePriceUpload(event)" style="font-size:0.8rem;">
             <button class="btn btn-outline btn-sm" onclick="vmDownloadFormat()">&#128229; 배포양식 받기</button>
             <span id="vmUploadStatus" style="font-size:0.78rem;color:var(--primary);font-weight:600;"></span>
-            <button class="btn btn-outline btn-sm" style="margin-left:auto;border-color:#2e7d32;color:#2e7d32;" onclick="vmExportPurchaseXls()">&#128228; 매입 엑셀 (외상매입)</button>
+            <label style="margin-left:auto;font-size:0.75rem;color:var(--text-muted);display:flex;align-items:center;gap:4px;">매입일 <input type="date" id="vmPurchaseDate" style="font-size:0.78rem;padding:3px 5px;border:1px solid var(--border);border-radius:5px;"></label>
+            <button class="btn btn-outline btn-sm" style="border-color:#2e7d32;color:#2e7d32;" onclick="vmExportPurchaseXls()">&#128228; 매입 엑셀 (외상매입)</button>
         </div>
 
         <!-- 필터 -->
@@ -9005,6 +9006,9 @@ async function vmRefreshTargetDate() {
             el.textContent = vmTargetDate ? ('납품일 ' + vmTargetDate) : '대기중인 야채 주문 없음';
             el.style.color = vmTargetDate ? 'var(--primary)' : 'var(--text-muted)';
         }
+        // 매입 엑셀 날짜칸 기본값 = 납품일 (비어있을 때만 — 사용자가 바꾼 값은 유지)
+        var dp = document.getElementById('vmPurchaseDate');
+        if (dp && vmTargetDate && !dp.value) dp.value = vmTargetDate;
     } catch (e) {
         vmTargetDate = null;
         if (el) el.textContent = '납품일 확인 실패';
@@ -9603,8 +9607,10 @@ var VM_PURCHASE_VENDOR = {
 async function vmExportPurchaseXls() {
     if (!db) { alert('Supabase 미연결 — 매입 엑셀은 온라인 연결이 필요합니다.'); return; }
     if (!vmTargetDate) await vmRefreshTargetDate();
-    var date = vmTargetDate;
-    if (!date) { alert('대상 납품일을 확인할 수 없습니다. 먼저 [중도매인 입력분 불러오기]를 눌러주세요.'); return; }
+    // 날짜칸에 지정한 값 우선, 없으면 납품일(vmTargetDate)
+    var dp = document.getElementById('vmPurchaseDate');
+    var date = (dp && dp.value) ? dp.value : vmTargetDate;
+    if (!date) { alert('매입일을 선택하거나 [중도매인 입력분 불러오기]로 납품일을 먼저 확인해주세요.'); return; }
 
     var hint = document.getElementById('vmApplyHint');
     if (hint) hint.textContent = '매입 엑셀 생성 중...';
