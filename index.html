@@ -1153,7 +1153,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.28 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.30 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -3368,7 +3368,36 @@ async function saveProduct() {
             // 코드가 변경된 경우 옛 코드 정리 — autoSyncToSupabase 는 upsert 만
             // 하므로 DB에 옛 코드 행이 그대로 남아 거래처 앱에서 두 개로 노출되는
             // 버그 발생. 코드 변경 시 옛 행 + 관련 이력을 직접 정리.
+            //
+            // 🚨 사고 이력 (2026-08-11): 아래 update 들이 '0행 반영' 으로 조용히 실패했는데
+            //    error 가 안 떠서 그냥 넘어갔다. 화면엔 '수정 완료' 만 뜨니 옮겨진 줄 알았고,
+            //    실제로는 주문 5건·발주서 9건이 죽은 코드를 물고 있어 출고합산·매입엑셀에서
+            //    품목이 통째로 빠질 뻔했다 (무 237110001 → 237090001 건).
+            //    → 이제 반영된 행수를 세어 확인하고, 못 옮긴 게 있으면 바로 붙여넣을
+            //      SQL 을 클립보드에 담아 알려준다. 조용한 실패를 없애는 게 핵심.
             if (editingProductCode !== code && db) {
+                const moveDone = [];   // 옮긴 것  ['주문 5건', ...]
+                const moveFail = [];   // 못 옮긴 것 (0행 반영 / 에러 / 확인 불가)
+                // 이력 테이블 하나를 새 코드로 이전하고 '실제로 반영됐는지' 까지 확인한다.
+                //   update 만 하면 RLS 로 0행 반영돼도 성공처럼 보이므로 반드시 행수를 본다.
+                async function moveRefs(table, label) {
+                    try {
+                        const cnt = await db.from(table)
+                            .select('product_code', { count: 'exact', head: true })
+                            .eq('product_code', editingProductCode);
+                        const expected = cnt.error ? null : (cnt.count || 0);
+                        if (expected === 0) return;              // 옮길 게 없음 — 정상
+                        const res = await db.from(table)
+                            .update({ product_code: code })
+                            .eq('product_code', editingProductCode)
+                            .select('product_code');
+                        const moved = (res.error || !res.data) ? 0 : res.data.length;
+                        if (moved > 0) moveDone.push(label + ' ' + moved + '건');
+                        else moveFail.push(label + (expected ? ' ' + expected + '건' : ''));
+                    } catch (e) {
+                        moveFail.push(label);
+                    }
+                }
                 try {
                     // 1) R2 이미지를 새 코드 이름으로 이전 (rename).
                     //    옛 코드로 저장된 이미지를 그대로 새 코드로 옮겨서 카탈로그/거래처앱에서
@@ -3392,28 +3421,81 @@ async function saveProduct() {
                         }
                     }
                     // 2) product_code 가 외래 참조되는 테이블의 이력을 새 코드로 이전.
-                    await db.from('order_items').update({ product_code: code }).eq('product_code', editingProductCode);
-                    await db.from('purchase_order_items').update({ product_code: code }).eq('product_code', editingProductCode);
-                    await db.from('purchase_request_items').update({ product_code: code }).eq('product_code', editingProductCode);
-                    const cpRes = await db.from('customer_pricing').update({ product_code: code }).eq('product_code', editingProductCode);
-                    if (cpRes.error) await db.from('customer_pricing').delete().eq('product_code', editingProductCode);
-                    const cfRes = await db.from('customer_favorites').update({ product_code: code }).eq('product_code', editingProductCode);
-                    if (cfRes.error) await db.from('customer_favorites').delete().eq('product_code', editingProductCode);
-                    await db.from('showcase_products').update({ product_code: code }).eq('product_code', editingProductCode);
-                    await db.from('price_schedule').update({ product_code: code }).eq('product_code', editingProductCode);
+                    //    예전엔 거래처단가·즐겨찾기가 update 실패 시 그냥 delete 했는데,
+                    //    조용한 데이터 삭제라 더 위험하다 → 이제 '못 옮김' 으로 보고만 한다.
+                    await moveRefs('order_items', '주문');
+                    await moveRefs('purchase_order_items', '발주서');
+                    await moveRefs('purchase_request_items', '구매요청');
+                    await moveRefs('customer_pricing', '거래처단가');
+                    await moveRefs('customer_favorites', '즐겨찾기');
+                    await moveRefs('showcase_products', '쇼케이스');
+                    await moveRefs('price_schedule', '예약가격');
                     // 3) products 테이블에서 옛 코드 행 삭제
                     await db.from('products').delete().eq('code', editingProductCode);
                     if (syncBaseline) syncBaseline.delete(editingProductCode);
-                    // 4) 삭제 로그 등록 — 실제 컬럼명은 'product_name'
-                    await db.from('deleted_products').upsert({
+                    // 4) 삭제 로그 등록 — 다른 PC 의 오래된 localStorage 가 옛 코드를 다시
+                    //    올려 거래처 앱에 같은 물건이 2개로 뜨는 사고를 막는 장치다.
+                    //    ⚠ deleted_products 컬럼은 code / product_name / deleted_at 뿐.
+                    //      없는 컬럼(note)을 같이 넣으면 요청 전체가 실패해 로그가 아예 안 남는다
+                    //      (2026-08-11 이것 때문에 로그가 통째로 빠져 있었음).
+                    const delLogRes = await db.from('deleted_products').upsert({
                         code: editingProductCode,
-                        product_name: data.name,
-                        note: '코드 변경 → ' + code,
+                        product_name: (data.name || '') + ' (코드변경 → ' + code + ')',
                         deleted_at: new Date().toISOString()
                     }, { onConflict: 'code' });
+                    if (delLogRes.error) moveFail.push('삭제로그');
                 } catch (e) {
                     console.warn('코드 변경 시 옛 코드 정리 실패:', e.message);
-                    alert('옛 코드 정리 중 오류가 발생했습니다. 콘솔을 확인하세요.\n' + e.message);
+                    moveFail.push('정리 중단(' + ((e && e.message) || '오류') + ')');
+                }
+
+                // 5) 결과 보고 — 못 옮긴 게 있거나 야채면 '붙여넣을 SQL' 을 만들어 준다.
+                //    야채 경매가(veg_auction_prices)는 RLS 로 잠겨 ERP 가 아예 접근을 못 하므로
+                //    (anon 키로 1427건 중 0건) 코드만 바꾸면 전일값 참고가 끊긴다 → 항상 안내.
+                const isVegProduct = (data.majorName === '야채');
+                if (moveFail.length || isVegProduct) {
+                    const esc = function(s) { return String(s || '').replace(/'/g, "''"); };
+                    const sqlLines = [
+                        '-- 품목코드 변경 마무리 : ' + editingProductCode + ' → ' + code + '  (' + (data.name || '') + ')',
+                        '--   ERP 가 권한(RLS) 때문에 못 옮긴 이력을 여기서 직접 이전한다.',
+                        'BEGIN;',
+                        ''
+                    ];
+                    ['order_items', 'purchase_order_items', 'purchase_request_items',
+                     'customer_pricing', 'customer_favorites', 'showcase_products', 'price_schedule']
+                        .forEach(function(t) {
+                            sqlLines.push('UPDATE ' + t + " SET product_code = '" + code +
+                                "' WHERE product_code = '" + editingProductCode + "';");
+                        });
+                    if (isVegProduct) {
+                        sqlLines.push('');
+                        sqlLines.push('-- 야채 경매가 이력 — RLS 로 잠겨 ERP 는 손도 못 댄다. 이 줄이 핵심.');
+                        sqlLines.push("UPDATE veg_auction_prices SET product_code = '" + code +
+                            "' WHERE product_code = '" + editingProductCode + "';");
+                    }
+                    sqlLines.push('');
+                    sqlLines.push('-- 옛 코드 부활(거래처 앱에 같은 물건 2개로 노출) 차단용 삭제 로그');
+                    sqlLines.push('INSERT INTO deleted_products (code, product_name, deleted_at)');
+                    sqlLines.push("VALUES ('" + editingProductCode + "', '" + esc(data.name) +
+                        ' (코드변경 → ' + code + ")', now())");
+                    sqlLines.push('ON CONFLICT (code) DO UPDATE');
+                    sqlLines.push('  SET product_name = EXCLUDED.product_name, deleted_at = EXCLUDED.deleted_at;');
+                    sqlLines.push('');
+                    sqlLines.push('COMMIT;');
+                    const sqlText = sqlLines.join('\n');
+                    console.log(sqlText);
+                    try { await navigator.clipboard.writeText(sqlText); } catch (e) { /* 클립보드 거부 — 콘솔에 있음 */ }
+                    alert(
+                        '품목코드가 ' + code + ' 로 바뀌었습니다.\n\n' +
+                        (moveDone.length ? '✅ 옮김 : ' + moveDone.join(' · ') + '\n' : '') +
+                        (moveFail.length ? '❌ 못 옮김 : ' + moveFail.join(' · ') + '\n' : '') +
+                        (isVegProduct ? '⚠ 야채 경매가 이력은 ERP 권한으로 못 옮깁니다.\n' : '') +
+                        '\n마무리 SQL 을 클립보드에 복사했습니다.\n' +
+                        'Supabase → SQL Editor 에 붙여넣고 Run 해주세요.\n' +
+                        '(전체 내용은 F12 콘솔에도 찍혀 있습니다)'
+                    );
+                } else if (moveDone.length) {
+                    showToast('이력 이전 완료 — ' + moveDone.join(' · '), 'success');
                 }
             }
         } else {
@@ -9091,9 +9173,14 @@ function vpcRender() {
         });
     });
 
-    // 정렬: 위험도(rank) → |변동%| 큰 순
+    // 정렬: 위험도(rank) → 급락 먼저(낙폭 큰 순) → 급등(상승폭 큰 순) → 나머지
+    //   급등락이 섞여 나오면 "많이 떨어진 것"을 한눈에 못 본다. 급락을 통째로 위로 몰아준다.
+    var subOrder = function(r) { return r.flag === 'down' ? 0 : (r.flag === 'up' ? 1 : 2); };
     rows.sort(function(a, b) {
         if (a.rank !== b.rank) return a.rank - b.rank;
+        var sa = subOrder(a), sb = subOrder(b);
+        if (sa !== sb) return sa - sb;
+        if (sa === 0) return (a.pct || 0) - (b.pct || 0); // 급락: -46% 가 -41% 보다 위
         return Math.abs(b.pct || 0) - Math.abs(a.pct || 0);
     });
 
@@ -9136,6 +9223,27 @@ function vpcRender() {
 var VM_VENDOR_NAMES = { '295': '엽채·일반', '284': '구황작물', '237': '무', '490': '나물집' };
 
 function initVegMarginTab() {
+    // 기본 마진 칸 — 지난번에 적용한 값이 그대로 뜨게 한다.
+    //   별도 설정 저장소(localStorage)를 두지 않고 **품목 마진의 최빈값**에서 역산한다.
+    //   그래야 PC 를 바꿔도 따라오고, 서버가 실제로 쓰는 값과 절대 어긋나지 않는다.
+    //   (주말 자동 반영 크론 veg_apply_prices 도 이 서버 마진을 그대로 쓴다)
+    (function() {
+        var valEl = document.getElementById('vmBulkValue');
+        var typeEl = document.getElementById('vmBulkType');
+        if (!valEl || !typeEl) return;
+        var cnt = {}, best = null, bestN = 0;
+        vmGetVegProducts().forEach(function(p) {
+            if (!p.marginType || p.marginValue === null || p.marginValue === undefined) return;
+            var k = p.marginType + '|' + p.marginValue;
+            cnt[k] = (cnt[k] || 0) + 1;
+        });
+        Object.keys(cnt).forEach(function(k) { if (cnt[k] > bestN) { bestN = cnt[k]; best = k; } });
+        if (!best) return;
+        var parts = best.split('|');
+        typeEl.value = parts[0];
+        valEl.value = parts[1];
+    })();
+
     var sel = document.getElementById('vmMinorFilter');
     if (sel) {
         var minors = [];
@@ -9272,6 +9380,15 @@ function vmApplyBulkMargin(selectedOnly) {
     }
     target.forEach(function(p) { p.marginType = type; p.marginValue = val; });
     renderVegMarginList();
+    // [전체 적용] 은 서버에 바로 저장한다.
+    //   예전엔 "[마진만 저장] 을 누르세요" 안내만 띄웠는데, 그걸 안 누르고 [가격 적용] 으로
+    //   넘어가면 서버 마진이 옛 값으로 남는다. 주말 자동 반영(veg_apply_prices 크론)은
+    //   서버 마진을 그대로 쓰므로, 어긋나면 토·일 앱 가격이 옛 마진으로 계산된다.
+    //   선택 적용은 부분 변경이라 지금처럼 수동 저장으로 둔다.
+    if (!selectedOnly) {
+        vmSaveMarginsOnly();
+        return;
+    }
     alert(target.length + '개 품목 마진 설정 완료.\n\n※ [마진만 저장] 을 눌러야 서버에 반영됩니다.');
 }
 
@@ -9545,6 +9662,13 @@ async function vmApplyPrices() {
             var results = await Promise.all(targets.slice(i, i + 20).map(function(t) {
                 var upd = { sold_out: !!t.noStock };
                 if (!t.noStock) { upd.cost = t.cost; upd.sell = t.sell; }
+                // 마진도 같이 올린다 — 화면에서 마진을 바꾸고 [가격 적용] 만 눌러도
+                // 서버가 최신이 되게. 주말 자동 반영이 서버 마진을 그대로 쓰기 때문.
+                if (t.p.marginType) {
+                    upd.margin_type = t.p.marginType;
+                    upd.margin_value = (t.p.marginValue === null || t.p.marginValue === undefined)
+                        ? null : Number(t.p.marginValue);
+                }
                 return db.from('products').update(upd).eq('code', t.p.code);
             }));
             results.forEach(function(r) { if (r.error) fail++; else ok++; });
