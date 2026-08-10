@@ -1153,7 +1153,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.31 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.32 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -9361,6 +9361,16 @@ function renderVegMarginList() {
         var mType = p.marginType || 'rate';
         var mVal = (p.marginValue === null || p.marginValue === undefined) ? '' : p.marginValue;
         var c = esc(p.code);
+        // 경매가 칸 아래 꼬리표 — 오늘 값이 아니면 언제 것인지, 자릿수가 의심되면 왜 그런지 보여준다.
+        //   숫자만 보면 오늘 받은 값인지 지난 값인지 구분이 안 돼서 옛 값이 조용히 살아남았다.
+        var badge = '';
+        if (t.suspect) {
+            badge = '<div style="font-size:0.68rem;color:var(--danger);font-weight:700;margin-top:2px;white-space:nowrap;">' +
+                    '⚠ 자릿수 의심 (전일 ' + Number(t.prevCost).toLocaleString() + ') · 적용 제외</div>';
+        } else if (t.fromDate) {
+            badge = '<div style="font-size:0.68rem;color:#8a6d3b;margin-top:2px;white-space:nowrap;">' +
+                    String(t.fromDate).slice(5) + ' 시세 (' + t.daysAgo + '일 전)</div>';
+        }
         return '<tr' + (noStock ? ' style="background:#fff5f5;"' : '') + '>' +
             '<td><input type="checkbox" class="vm-chk" data-code="' + c + '"></td>' +
             '<td style="font-weight:600;color:var(--accent);font-size:0.76rem;">' + c + '</td>' +
@@ -9373,8 +9383,9 @@ function renderVegMarginList() {
                     '<option value="rate"' + (mType === 'rate' ? ' selected' : '') + '>%</option>' +
                     '<option value="amount"' + (mType === 'amount' ? ' selected' : '') + '>원</option>' +
                 '</select></div></td>' +
-            '<td class="text-right"><input type="number" value="' + (cost || '') + '" onchange="vmSetCost(\'' + c + '\', this.value)" style="width:88px;padding:4px 6px;text-align:right;font-size:0.8rem;"></td>' +
-            '<td class="text-right" style="font-weight:700;color:' + (sell ? '#0066cc' : 'var(--text-muted)') + ';">' + (sell ? sell.toLocaleString() : '-') + '</td>' +
+            '<td class="text-right"><input type="number" value="' + (cost || '') + '" onchange="vmSetCost(\'' + c + '\', this.value)" style="width:88px;padding:4px 6px;text-align:right;font-size:0.8rem;' +
+                (t.suspect ? 'border:2px solid var(--danger);background:#fdecea;' : (t.fromDate ? 'background:#fdf6e3;' : '')) + '">' + badge + '</td>' +
+            '<td class="text-right" style="font-weight:700;color:' + (t.suspect ? 'var(--text-muted)' : (sell ? '#0066cc' : 'var(--text-muted)')) + ';' + (t.suspect ? 'text-decoration:line-through;' : '') + '">' + (sell ? sell.toLocaleString() : '-') + '</td>' +
             '<td class="text-center"><input type="checkbox" ' + (noStock ? 'checked' : '') + ' onchange="vmSetNoStock(\'' + c + '\', this.checked)"></td>' +
             '</tr>';
     }).join('');
@@ -9392,6 +9403,9 @@ function vmSetMargin(code, value, type) {
 function vmSetCost(code, value) {
     if (!vmTodayPrice[code]) vmTodayPrice[code] = {};
     vmTodayPrice[code].cost = (value === '' ? null : Number(value));
+    // 사장님이 직접 고친 값은 확인을 거친 값이다 → 자릿수 의심·지난시세 꼬리표를 푼다.
+    vmTodayPrice[code].suspect = false;
+    vmTodayPrice[code].fromDate = null;
     renderVegMarginList();
 }
 
@@ -9537,8 +9551,65 @@ async function vmLoadAuctionPrices() {
             if (noStock) noStockN++;
             n++;
         });
-        st.textContent = '✅ 중도매인 입력분 ' + n + '건 불러옴 (입하없음 ' + noStockN + '건)' +
-                         (miss ? ' · 미등록코드 ' + miss + '건 건너뜀' : '');
+
+        // ── 과거 경매가로 두 가지를 보정한다 (2026-08-11 추가) ───────────────────
+        //   ① 오늘 안 들어온 품목 → '마지막 실제 경매가' 로 채운다.
+        //      중도매인은 시세 변동이 없으면 그냥 안 치고 넘어간다. 그러면 예전엔 그 품목을
+        //      통째로 건너뛰어 products.cost 에 박힌 옛 값이 그대로 앱에 남았다.
+        //      (실제 사고: 8/6 자릿수 오입력 900원이 8/8·8/10 정상 입력에도 안 지워지고
+        //       앱에 990원으로 노출됨 — 원가 9,000원짜리를 10배 싸게)
+        //   ② 오늘 값이 전일 대비 8배 이상 튀면 '자릿수 의심' 으로 표시하고 적용에서 뺀다.
+        //      ①만 하면 '마지막 값' 자체가 오입력일 때 그게 계속 살아남는다.
+        //   입하없음(no_stock) 행은 가격이 아니라 '물건 없음' 이므로 값으로 치지 않고
+        //   그 이전의 실제 가격까지 거슬러 올라간다.
+        var fallbackN = 0, suspectN = 0;
+        try {
+            var hres = await db.rpc('veg_price_history', { p_days: 21 });
+            if (hres.error) throw new Error(hres.error.message);
+            // 품목별 (대상일 이전) 실제 가격 이력을 최신순으로
+            var hist = {};
+            (hres.data || []).forEach(function(r) {
+                if (r.no_stock || !(Number(r.cost) > 0)) return;
+                if (String(r.auction_date) >= String(vmTargetDate)) return;   // 오늘 것은 제외
+                var code = String(r.product_code || '').trim();
+                if (!hist[code] || String(r.auction_date) > String(hist[code].date)) {
+                    hist[code] = { date: String(r.auction_date), cost: Number(r.cost) };
+                }
+            });
+            var dayDiff = function(a, b) {
+                return Math.round((new Date(a) - new Date(b)) / 86400000);
+            };
+            vmGetVegProducts().forEach(function(p) {
+                var code = String(p.code).trim();
+                var t = vmTodayPrice[code];
+                var h = hist[code];
+                if (!h) return;
+                if (!t) {
+                    // ① 오늘 미입력 → 마지막 실제 경매가로 채움
+                    vmTodayPrice[code] = {
+                        cost: h.cost, noStock: false,
+                        fromDate: h.date, daysAgo: dayDiff(vmTargetDate, h.date)
+                    };
+                    fallbackN++;
+                } else if (!t.noStock && Number(t.cost) > 0) {
+                    // ② 자릿수 의심 — 0 을 하나 더 치거나 덜 친 경우를 잡는다
+                    var ratio = Number(t.cost) / h.cost;
+                    if (ratio >= 8 || ratio <= 0.125) {
+                        t.suspect = true;
+                        t.prevCost = h.cost;
+                        t.prevDate = h.date;
+                        suspectN++;
+                    }
+                }
+            });
+        } catch (e) {
+            console.warn('과거 경매가 보정 실패(건너뜀):', e && e.message);
+        }
+
+        st.innerHTML = '✅ 중도매인 입력분 ' + n + '건 불러옴 (입하없음 ' + noStockN + '건)' +
+                       (miss ? ' · 미등록코드 ' + miss + '건 건너뜀' : '') +
+                       (fallbackN ? ' · <b style="color:#8a6d3b;">지난 시세로 채움 ' + fallbackN + '건</b>' : '') +
+                       (suspectN ? ' · <b style="color:var(--danger);">⚠ 자릿수 의심 ' + suspectN + '건 (적용 제외)</b>' : '');
         st.style.color = 'var(--primary)';
         renderVegMarginList();
     } catch (e) {
@@ -9634,9 +9705,14 @@ async function vmSaveMarginsOnly() {
 async function vmApplyPrices() {
     var targets = [];
     var noMargin = 0;
+    var suspects = [];   // 자릿수 의심으로 뺀 품목 — 적용 후 사장님께 목록으로 보여준다
     vmGetVegProducts().forEach(function(p) {
         var t = vmTodayPrice[p.code];
         if (!t) return; // 오늘 안 올라온 품목은 손대지 않음
+        // 자릿수 의심(전일 대비 8배 이상)은 적용하지 않는다. 0 하나 더/덜 친 값이
+        // 그대로 거래처 앱에 나가면 원가의 1/10 로 팔리는 사고가 난다 (2026-08-06 실제 발생).
+        // 숫자를 직접 고치면 vmSetCost 가 의심 표시를 풀어주므로 그다음 적용된다.
+        if (t.suspect) { suspects.push(p.name + ' (전일 ' + Number(t.prevCost).toLocaleString() + ' → ' + Number(t.cost).toLocaleString() + ')'); return; }
         var noStock = !!t.noStock;
         var cost = (t.cost === null || t.cost === undefined || t.cost === '') ? null : Number(t.cost);
         if (!noStock) {
@@ -9754,7 +9830,13 @@ async function vmApplyPrices() {
     if (typeof renderProductList === 'function') renderProductList();
     alert('✅ 가격 적용 완료\n성공 ' + ok + '건' + (fail ? '\n실패 ' + fail + '건' : '') +
           (db ? '\n\n거래처 앱(지구오더)에 반영되었습니다.' : '\n\n※ Supabase 미연결 — 로컬에만 반영됨') +
-          confirmMsg);
+          confirmMsg +
+          (suspects.length
+            ? '\n\n⚠️ 자릿수 의심 ' + suspects.length + '건은 적용하지 않았습니다.\n' +
+              suspects.slice(0, 10).map(function(s) { return '· ' + s; }).join('\n') +
+              (suspects.length > 10 ? '\n· 외 ' + (suspects.length - 10) + '건' : '') +
+              '\n\n중도매인에게 확인하거나, 경매가 칸에 올바른 값을 직접 입력한 뒤 다시 [가격 적용] 하세요.'
+            : ''));
 }
 
 // ============================================================
