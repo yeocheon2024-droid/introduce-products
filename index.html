@@ -1153,7 +1153,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.30 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.31 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1448,6 +1448,7 @@ async function erpLogout() {
             <input type="number" id="vpcThreshold" value="30" style="width:70px;padding:6px 8px;" onchange="vpcRender()">
             <span style="font-size:0.85rem;">%</span>
             <button class="btn btn-primary btn-sm" onclick="initVegPriceCompareTab()">&#8635; 새로고침</button>
+            <label style="font-size:0.82rem;margin-left:8px;font-weight:700;color:#1e6f3c;"><input type="checkbox" id="vpcOnlyOrdered" checked onchange="vpcRender()"> &#128722; 주문 들어온 것만</label>
             <label style="font-size:0.8rem;margin-left:8px;"><input type="checkbox" id="vpcOnlyWarn" onchange="vpcRender()"> 경고만 보기</label>
             <span id="vpcStatus" style="font-size:0.8rem;color:var(--text-muted);margin-left:auto;"></span>
         </div>
@@ -1458,6 +1459,7 @@ async function erpLogout() {
                         <th style="padding:6px 8px;">상태</th>
                         <th style="padding:6px 8px;">관리코드</th>
                         <th style="padding:6px 8px;">품목</th>
+                        <th style="padding:6px 8px;text-align:right;">주문</th>
                         <th style="padding:6px 8px;text-align:right;">전일가</th>
                         <th style="padding:6px 8px;text-align:right;">오늘가</th>
                         <th style="padding:6px 8px;text-align:right;">변동</th>
@@ -9105,7 +9107,9 @@ function vmGetVegProducts() {
 // 야채 가격비교 (1단계: 전일 대비 내부 변동 감시)
 //   veg_auction_prices(날짜별 경매가) 를 최근 것 2일 비교 → 급등락/자릿수 실수 표시
 // ============================================================
-var vpcRaw = null; // 최근 경매가 이력 (원본)
+var vpcRaw = null;     // 최근 경매가 이력 (원본)
+var vpcQty = null;     // 그날 품목별 주문 수량 { 관리코드: 수량 }. null = RPC 미적용/실패
+var vpcQtyDate = null; // 그 수량이 어느 날짜 기준인지
 
 async function initVegPriceCompareTab() {
     var st = document.getElementById('vpcStatus');
@@ -9118,6 +9122,29 @@ async function initVegPriceCompareTab() {
         vpcRaw = (res.data || []).map(function(r) {
             return { auction_date: r.auction_date, product_code: r.product_code, cost: r.cost, no_stock: r.no_stock };
         });
+
+        // 그날 주문 수량도 같이 받아둔다 — 실제로 가격을 손보는 건 '주문 들어온 품목'뿐이라
+        // 전 품목(240개)을 다 띄우면 손볼 것을 못 찾는다.
+        //   orders/order_items 도 RLS 로 anon 이 직접 못 읽으므로 RPC 우회 (sql/veg_order_qty.sql).
+        //   기준 날짜는 표에서 쓰는 '오늘'(가장 최근 경매일)과 반드시 맞춘다 — 어긋나면
+        //   가격은 오늘 건데 수량은 어제 것이 되어 엉뚱한 품목을 조정하게 된다.
+        vpcQty = null;
+        vpcQtyDate = null;
+        var days = [];
+        vpcRaw.forEach(function(r) { if (days.indexOf(r.auction_date) === -1) days.push(r.auction_date); });
+        days.sort().reverse();
+        if (days[0]) {
+            var q = await db.rpc('veg_order_qty', { p_date: days[0] });
+            if (q.error) {
+                console.warn('veg_order_qty 미적용 — 주문 필터 사용 불가:', q.error.message);
+            } else {
+                vpcQty = {};
+                (q.data || []).forEach(function(r) {
+                    vpcQty[String(r.product_code).trim()] = Number(r.qty) || 0;
+                });
+                vpcQtyDate = days[0];
+            }
+        }
         vpcRender();
     } catch (e) {
         if (st) st.textContent = 'sql/veg_price_history.sql 을 먼저 적용해주세요. (' + e.message + ')';
@@ -9131,13 +9158,16 @@ function vpcRender() {
     var title = document.getElementById('vpcTitle');
     var thr = Number(document.getElementById('vpcThreshold').value) || 30;
     var onlyWarn = !!(document.getElementById('vpcOnlyWarn') || {}).checked;
+    // 주문 필터는 수량을 받아왔을 때만 동작한다 (RPC 미적용이면 전체를 보여줘야 함 —
+    // 조용히 빈 화면이 되면 "왜 아무것도 없지" 가 된다)
+    var onlyOrdered = !!(document.getElementById('vpcOnlyOrdered') || {}).checked && !!vpcQty;
 
     // 날짜 최신순 → 오늘 / 전일
     var dates = [];
     vpcRaw.forEach(function(r) { if (dates.indexOf(r.auction_date) === -1) dates.push(r.auction_date); });
     dates.sort().reverse();
     var today = dates[0], prev = dates[1];
-    if (!today) { tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-muted);">경매가 이력이 없습니다.</td></tr>'; if (title) title.textContent = ''; return; }
+    if (!today) { tbody.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--text-muted);">경매가 이력이 없습니다.</td></tr>'; if (title) title.textContent = ''; return; }
 
     // 품목별 오늘/전일 값
     var byCode = {};
@@ -9169,6 +9199,7 @@ function vpcRender() {
             code: code,
             name: pinfo ? (pinfo.name || code) : code,
             spec: pinfo ? (pinfo.spec || pinfo.unit || '') : '',
+            qty: vpcQty ? (vpcQty[code] || 0) : null,   // null = 수량 조회 안 됨
             tc: tc, pc: pc, pct: pct, flag: flag, rank: rank
         });
     });
@@ -9194,7 +9225,10 @@ function vpcRender() {
     };
 
     var warnCount = rows.filter(function(r) { return r.rank <= 1; }).length;
-    var shown = onlyWarn ? rows.filter(function(r) { return r.rank <= 5; }) : rows;
+    var orderedCount = vpcQty ? rows.filter(function(r) { return r.qty > 0; }).length : 0;
+    var shown = rows;
+    if (onlyOrdered) shown = shown.filter(function(r) { return r.qty > 0; });
+    if (onlyWarn)    shown = shown.filter(function(r) { return r.rank <= 5; });
 
     var fmt = function(n) { return n == null ? '-' : Number(n).toLocaleString(); };
     tbody.innerHTML = shown.map(function(r) {
@@ -9209,14 +9243,22 @@ function vpcRender() {
             '<td style="padding:6px 8px;white-space:nowrap;color:' + f.c + ';font-weight:700;font-size:0.8rem;">' + f.t + '</td>' +
             '<td style="padding:6px 8px;font-family:monospace;color:var(--text-muted);">' + esc(r.code) + '</td>' +
             '<td style="padding:6px 8px;">' + esc(r.name) + (r.spec ? ' <span style="color:var(--text-muted);font-size:0.78rem;">' + esc(r.spec) + '</span>' : '') + '</td>' +
+            '<td style="padding:6px 8px;text-align:right;font-weight:700;color:' + (r.qty > 0 ? '#1e6f3c' : 'var(--text-muted)') + ';">' + (r.qty > 0 ? r.qty : '-') + '</td>' +
             '<td style="padding:6px 8px;text-align:right;color:var(--text-muted);">' + fmt(r.pc) + '</td>' +
             '<td style="padding:6px 8px;text-align:right;font-weight:700;">' + fmt(r.tc) + '</td>' +
             '<td style="padding:6px 8px;text-align:right;">' + pctTxt + '</td>' +
             '</tr>';
-    }).join('') || '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-muted);">표시할 품목이 없습니다.</td></tr>';
+    }).join('') || '<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--text-muted);">' +
+        (onlyOrdered ? '오늘 주문 들어온 품목이 없습니다. (체크를 풀면 전체가 보입니다)' : '표시할 품목이 없습니다.') + '</td></tr>';
 
-    if (title) title.textContent = '오늘 ' + today + (prev ? ' vs 전일 ' + prev : ' (비교할 전일 없음)') + ' · 경고 ' + warnCount + '건';
-    if (st) st.textContent = '총 ' + rows.length + '개';
+    if (title) title.textContent = '오늘 ' + today + (prev ? ' vs 전일 ' + prev : ' (비교할 전일 없음)') +
+        ' · 경고 ' + warnCount + '건' + (vpcQty ? ' · 주문 ' + orderedCount + '품목' : '');
+    if (st) {
+        st.textContent = vpcQty
+            ? (onlyOrdered ? '주문 ' + orderedCount + '개만 표시중 (전체 ' + rows.length + '개)'
+                           : '총 ' + rows.length + '개 · 주문 ' + orderedCount + '개')
+            : '총 ' + rows.length + '개 · 주문 필터를 쓰려면 sql/veg_order_qty.sql 을 적용하세요';
+    }
 }
 
 // 중도매인 코드(관리코드 앞3자리) → 이름 (필터 표기용)
