@@ -1153,7 +1153,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.32 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.33 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -9792,6 +9792,31 @@ async function vmApplyPrices() {
             results.forEach(function(r) { if (r.error) fail++; else ok++; });
         }
     }
+    // 2-1) 중도매인이 찍어둔 대체품목으로 주문 라인을 바꾼다 (금액 확정 전에!)
+    //      쪽파(대) 입하없어 쪽파(소)로 준 것처럼 이름 규칙으로 못 잡는 대체.
+    //      여기서 라인이 대체품으로 바뀌므로, 바로 아래 금액 확정이 대체품 가격으로 계산한다.
+    var subMsg = '';
+    if (db) {
+        hint.textContent = '대체 출고 확인 중...';
+        if (!vmTargetDate) await vmRefreshTargetDate();
+        try {
+            var sb = await db.rpc('veg_apply_substitutions', { p_delivery_date: vmTargetDate });
+            if (sb.error) {
+                // 아직 sql/veg_vendor_substitute.sql 을 안 돌렸을 수 있다 → 알리기만 하고 계속 진행
+                subMsg = '\n\n⚠️ 대체 출고 확인 실패: ' + sb.error.message;
+            } else if ((sb.data || []).length > 0) {
+                var subs = sb.data;
+                subMsg = '\n\n🔄 대체 출고 ' + subs.length + '건 반영\n' +
+                         subs.slice(0, 10).map(function(s) {
+                             return '· ' + s.from_name + ' → ' + s.to_name + ' ' + s.qty + '개';
+                         }).join('\n') +
+                         (subs.length > 10 ? '\n· 외 ' + (subs.length - 10) + '건' : '');
+            }
+        } catch (e) {
+            subMsg = '\n\n⚠️ 대체 출고 확인 중 오류: ' + e.message;
+        }
+    }
+
     // 3) 어제 들어온 야채 주문(오늘 배송분)의 금액을 오늘 경매가로 확정
     //    거래처는 주문할 때 '예상가'만 봤으므로, 실제 경매가가 나온 지금 확정해준다.
     var confirmMsg = '';
@@ -9830,6 +9855,7 @@ async function vmApplyPrices() {
     if (typeof renderProductList === 'function') renderProductList();
     alert('✅ 가격 적용 완료\n성공 ' + ok + '건' + (fail ? '\n실패 ' + fail + '건' : '') +
           (db ? '\n\n거래처 앱(지구오더)에 반영되었습니다.' : '\n\n※ Supabase 미연결 — 로컬에만 반영됨') +
+          subMsg +
           confirmMsg +
           (suspects.length
             ? '\n\n⚠️ 자릿수 의심 ' + suspects.length + '건은 적용하지 않았습니다.\n' +
