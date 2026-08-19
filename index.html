@@ -260,6 +260,30 @@
         .text-right { text-align: right; }
         .text-center { text-align: center; }
 
+        /* ===== 품목 테이블 개편 (v3.34) — 관리 열 잘림 방지 ===== */
+        /* 관리 열을 오른쪽에 고정: 가로 스크롤해도 품절/표시/수정/삭제 버튼이 항상 보임 */
+        #productTable td:last-child {
+            position: sticky;
+            right: 0;
+            z-index: 1;
+            background: #fff; /* 행 배경이 비치지 않게 불투명 (숨김 행은 인라인으로 덮음) */
+            box-shadow: -8px 0 8px -8px rgba(0,0,0,0.18);
+        }
+        #productTable thead th:last-child {
+            right: 0;            /* th 는 이미 sticky top — 오른쪽도 함께 고정 */
+            z-index: 3;
+            box-shadow: -8px 0 8px -8px rgba(0,0,0,0.18);
+        }
+        /* 규격은 길면 말줄임 (전체 내용은 마우스 올리면 툴팁) */
+        #productTable .spec-cell {
+            max-width: 110px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        /* 분류: 대분류 위 / 중분류 아래 두 줄로 압축 */
+        #productTable .cat-cell { line-height: 1.3; white-space: nowrap; }
+        #productTable .cat-cell small { display: block; color: var(--text-muted); font-size: 0.72rem; }
+
         /* ===== BUTTONS ===== */
         .btn {
             padding: 9px 18px;
@@ -1153,7 +1177,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.33 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.34 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1326,12 +1350,12 @@ async function erpLogout() {
     <!-- PC: 테이블뷰 -->
     <div class="card pc-only">
         <div class="table-wrap" style="max-height: 600px; overflow-y: auto;">
-            <table>
+            <table id="productTable">
                 <thead>
                     <tr>
                         <th style="width:24px;padding:8px 4px;"><input type="checkbox" id="selectAllCheck" onclick="toggleSelectAll(this.checked)" title="전체 선택"></th>
-                        <th style="width:40px;">이미지</th><th>품목코드</th><th>품목명</th><th>규격</th><th>대분류</th><th>중분류</th>
-                        <th>과세</th><th>매입처</th><th class="text-right">매입단가</th>
+                        <th style="width:40px;">이미지</th><th>품목코드</th><th>품목명</th><th>규격</th><th>분류</th>
+                        <th>매입처</th><th class="text-right">매입단가</th>
                         <th class="text-right">현금할인가</th><th class="text-right">정상가<br><span style="font-weight:400;font-size:0.65rem;color:var(--text-muted);">(카드,자동)</span></th><th class="text-right">마진율</th><th class="text-center">관리</th>
                     </tr>
                 </thead>
@@ -1832,8 +1856,8 @@ async function erpLogout() {
             </div>
             <div class="card" style="margin-bottom:0;border:2px solid var(--border-light);cursor:pointer;text-align:center;" onclick="exportForGyeongbaksa()">
                 <div style="font-size:1.5rem;margin-bottom:8px;">+</div>
-                <h4 style="font-size:0.95rem;margin-bottom:6px;color:var(--info);">경영박사 양식</h4>
-                <p style="font-size:0.78rem;color:var(--text-muted);">품명, 규격, 단위, 관리코드,<br>매입가, 소비자가, 과세구분 7컬럼</p>
+                <h4 style="font-size:0.95rem;margin-bottom:6px;color:var(--info);">경영박사 양식 (.xls)</h4>
+                <p style="font-size:0.78rem;color:var(--text-muted);">공식 샘플 11컬럼 — 품명·규격·단위·박스입수·관리코드<br>매입가·소비자가(현금할인가)·과세구분·제조구분</p>
             </div>
         </div>
     </div>
@@ -2897,7 +2921,7 @@ function renderProductList() {
 
     const tbody = document.getElementById('productTableBody');
     tbody.innerHTML = pageData.length === 0
-        ? '<tr><td colspan="15" style="text-align:center;color:var(--text-muted);padding:40px;">품목이 없습니다.</td></tr>'
+        ? '<tr><td colspan="12" style="text-align:center;color:var(--text-muted);padding:40px;">품목이 없습니다.</td></tr>'
         : pageData.map(p => {
             const sell = Number(p.sell) || 0;
             const cost = Number(p.cost) || 0;
@@ -2917,17 +2941,15 @@ function renderProductList() {
             <td style="padding:8px 4px;"><input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleProductSelect('${esc(p.code)}', this.checked)"></td>
             <td>${getProductThumbHTML(p.code)}</td>
             <td style="font-weight:600;color:var(--accent);">${esc(p.code)}</td>
-            <td>${p.hidden ? '<span style="background:#6c757d;color:#fff;font-weight:700;font-size:0.65rem;padding:1px 5px;border-radius:3px;margin-right:4px;">숨김</span>' : ''}${p.soldOut ? '<span style="color:var(--danger);font-weight:700;font-size:0.7rem;margin-right:3px;">[품절]</span>' : ''}${p.sameGroup ? '<span style="background:#e7f0ff;color:#0353a4;font-weight:700;font-size:0.65rem;padding:1px 5px;border-radius:3px;margin-right:4px;" title="동일품목 그룹 — 가격비교 탭에서 매입처 비교">&#128279;' + esc(p.sameGroup) + '</span>' : ''}${esc(p.name)}</td>
-            <td style="color:var(--text-secondary);">${esc(p.spec || '')}</td>
-            <td style="color:var(--text-secondary);">${esc(p.majorName || '')}</td>
-            <td style="color:var(--text-secondary);">${esc(p.minorName || '')}</td>
-            <td><span class="badge ${p.tax === '면세' ? 'badge-notax' : 'badge-tax'}">${esc(p.tax || '과세')}</span></td>
+            <td>${p.hidden ? '<span style="background:#6c757d;color:#fff;font-weight:700;font-size:0.65rem;padding:1px 5px;border-radius:3px;margin-right:4px;">숨김</span>' : ''}${p.soldOut ? '<span style="color:var(--danger);font-weight:700;font-size:0.7rem;margin-right:3px;">[품절]</span>' : ''}${p.tax === '면세' ? '<span class="badge badge-notax" style="font-size:0.62rem;padding:1px 5px;margin-right:4px;">면세</span>' : ''}${p.sameGroup ? '<span style="background:#e7f0ff;color:#0353a4;font-weight:700;font-size:0.65rem;padding:1px 5px;border-radius:3px;margin-right:4px;" title="동일품목 그룹 — 가격비교 탭에서 매입처 비교">&#128279;' + esc(p.sameGroup) + '</span>' : ''}${esc(p.name)}</td>
+            <td class="spec-cell" style="color:var(--text-secondary);" title="${esc(p.spec || '')}">${esc(p.spec || '')}</td>
+            <td class="cat-cell" style="color:var(--text-secondary);">${esc(p.majorName || '')}<small>${esc(p.minorName || '')}</small></td>
             <td><span class="badge ${p.vendorType === 'self' ? 'badge-self' : 'badge-external'}">${esc(p.vendorName || '')}</span></td>
             <td class="text-right" style="font-weight:500;">${p.cost ? Number(p.cost).toLocaleString() : '-'}</td>
             <td class="text-right" style="font-weight:600;">${sell ? sell.toLocaleString() : '-'}</td>
             <td class="text-right" style="font-weight:600;color:${sell ? '#0066cc' : 'var(--text-muted)'};">${sell ? calcCardPrice(sell).toLocaleString() : '-'}</td>
             <td class="text-right" style="font-weight:600;color:${marginColor};">${marginText}</td>
-            <td class="text-center" style="white-space:nowrap;">
+            <td class="text-center" style="white-space:nowrap;background:${p.hidden ? '#fff9e6' : '#fff'};">
                 <button class="btn btn-sm" style="background:${p.soldOut ? 'var(--success)' : 'var(--danger)'};color:#fff;font-size:0.68rem;padding:3px 6px;" onclick="toggleSoldOut('${esc(p.code)}')">${p.soldOut ? '판매중' : '품절'}</button>
                 <button class="btn btn-sm" style="background:${p.hidden ? '#28a745' : '#6c757d'};color:#fff;font-size:0.68rem;padding:3px 6px;" onclick="toggleHidden('${esc(p.code)}')" title="${p.hidden ? '클릭하면 공개 사이트에 노출' : '클릭하면 공개 사이트에서 숨김'}">${p.hidden ? '표시하기' : '표시중'}</button>
                 <button class="btn btn-outline btn-sm" onclick="editProduct('${esc(p.code)}')">수정</button>
@@ -5247,17 +5269,29 @@ function exportForGyeongbaksa() {
     const items = getExportProducts();
     if (items.length === 0) { alert('내보낼 품목이 없습니다.'); return; }
 
-    // 경영박사 7컬럼 양식
-    const headers = ['품명(필수)', '규격', '단위', '관리코드', '매입가', '소비자가', '과세구분'];
+    // 경영박사 공식 엑셀등록 샘플 양식 (경영박사_품목_엑셀등록_샘플.xls 기준, v3.34)
+    // 컬럼 11개 · 시트명 '품목-샘플' · 구형 .xls 로 저장 (프로그램 호환)
+    // 코드값: 과세구분 과세=0/면세=1, 제조구분 상품=0 (유통업이므로 전부 상품)
+    // 가격 매핑: 매입가=매입단가, 소비자가=현금할인가, 출고A·B가=빈칸 (2026-08 확정)
+    const headers = ['품명(필수)', '규격', '단위', '박스입수', '관리코드',
+                     '매입가', '소비자가', '출고A가', '출고B가', '과세구분', '제조구분'];
 
     const rows = items.map(p => [
-        p.name, p.spec || '', p.unit || '', p.code,
-        p.cost || '', p.sell || '',
-        p.tax === '면세' ? '1' : '0'
+        p.name || '',
+        p.spec || '',
+        (p.unit || '').slice(0, 20),          // 경영박사 단위 20자 제한
+        p.packSize != null ? p.packSize : '', // 박스입수 (박스당 개수)
+        (p.code || '').slice(0, 40),          // 관리코드 40자 제한
+        p.cost ? Number(p.cost) : '',
+        p.sell ? Number(p.sell) : '',
+        '', '',                               // 출고A가·출고B가 미사용
+        p.tax === '면세' ? 1 : 0,
+        0                                     // 제조구분: 상품
     ]);
 
     showExportPreview(headers, rows);
-    downloadExcel('경영박사_품목등록', headers, rows);
+    // 빈 줄이 중간에 있으면 경영박사가 그 위까지만 읽으므로 rows 는 연속 데이터로만 생성됨
+    downloadExcel('경영박사_품목등록', headers, rows, { sheetName: '품목-샘플', xls: true });
 }
 
 function showExportPreview(headers, rows) {
@@ -5274,12 +5308,19 @@ function showExportPreview(headers, rows) {
         ).join('') + (rows.length > 10 ? `<tr><td colspan="${headers.length}" style="text-align:center;color:var(--text-muted);">... 외 ${rows.length - 10}개</td></tr>` : '');
 }
 
-function downloadExcel(filename, headers, rows) {
+function downloadExcel(filename, headers, rows, opts) {
+    opts = opts || {};
     const wsData = [headers, ...rows];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Sheet');
-    XLSX.writeFile(wb, `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, opts.sheetName || 'Sheet');
+    const date = new Date().toISOString().split('T')[0];
+    if (opts.xls) {
+        // 경영박사 등 구형 프로그램용 .xls (BIFF8)
+        XLSX.writeFile(wb, `${filename}_${date}.xls`, { bookType: 'biff8' });
+    } else {
+        XLSX.writeFile(wb, `${filename}_${date}.xlsx`);
+    }
 }
 
 // ============================================================
