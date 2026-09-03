@@ -282,6 +282,8 @@
         }
         /* 분류: 대분류 위 / 중분류 아래 두 줄로 압축 */
         #productTable .cat-cell { line-height: 1.3; white-space: nowrap; }
+        /* 품목명 말줄임 — 사조푸디스트처럼 긴 이름이 매입가·버튼 열을 밀어내지 않게 (2026-09-03) */
+        #productTable .name-cell { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         #productTable .cat-cell small { display: block; color: var(--text-muted); font-size: 0.72rem; }
 
         /* ===== BUTTONS ===== */
@@ -1177,7 +1179,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.34 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.50 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1228,6 +1230,9 @@ async function erpLogout() {
             </button>
             <button onclick="switchTab('vegPriceCompare')">
                 <span class="nav-icon">&#128200;</span>야채 가격비교
+            </button>
+            <button onclick="switchTab('vegPriceHistory')">
+                <span class="nav-icon">&#128202;</span>야채 시세 이력
             </button>
             <button onclick="switchTab('images')">
                 <span class="nav-icon">&#128247;</span>이미지 관리
@@ -1464,7 +1469,8 @@ async function erpLogout() {
     <div class="card">
         <h3>&#128200; 야채 가격비교 <span id="vpcTitle" style="font-size:0.8rem;font-weight:400;color:var(--text-muted);"></span></h3>
         <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:14px;">
-            중도매인이 입력한 경매가의 <b>전일 대비 변동</b>을 감시합니다. 급등락·자릿수 실수(0 하나 더/덜)를 자동으로 위에 뽑아줍니다.
+            중도매인이 입력한 경매가의 <b>직전 갱신일 대비 변동</b>을 감시합니다. 급등락·자릿수 실수(0 하나 더/덜)를 자동으로 위에 뽑아줍니다.
+            <br>거래처가 보고 주문한 값은 <b>마지막으로 앱 판매가가 갱신된 날의 가격</b>이라, 달력상 어제가 아니라 <b>그 날짜</b>와 비교합니다. 값이 같으면 <b>=</b> 로 표시합니다.
             <br>2단계(가락시장 공식 시세 대조)는 공공데이터 API 승인 데이터가 들어오면 추가됩니다.
         </p>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px;background:#f5f7fa;border:1px solid var(--border-light);border-radius:8px;margin-bottom:12px;">
@@ -1484,7 +1490,7 @@ async function erpLogout() {
                         <th style="padding:6px 8px;">관리코드</th>
                         <th style="padding:6px 8px;">품목</th>
                         <th style="padding:6px 8px;text-align:right;">주문</th>
-                        <th style="padding:6px 8px;text-align:right;">전일가</th>
+                        <th style="padding:6px 8px;text-align:right;">직전가</th>
                         <th style="padding:6px 8px;text-align:right;">오늘가</th>
                         <th style="padding:6px 8px;text-align:right;">변동</th>
                     </tr>
@@ -1492,6 +1498,69 @@ async function erpLogout() {
                 <tbody id="vpcTbody"></tbody>
             </table>
         </div>
+    </div>
+</div>
+
+<!-- 야채 시세 이력 (품목별 변동폭 기록) -->
+<div class="tab-content" id="tab-vegPriceHistory">
+    <div class="card">
+        <h3>&#128202; 야채 시세 이력 <span id="vphTitle" style="font-size:0.8rem;font-weight:400;color:var(--text-muted);"></span></h3>
+        <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:14px;">
+            품목마다 <b>얼마나 출렁이는지</b>를 수치로 봅니다. 마진을 정률로 갈지 정액으로 갈지, 어떤 품목을 밀지 정하는 근거입니다.
+            <br><b>평균 변동</b>은 하루하루 움직인 폭의 평균, <b>위치</b>는 최근 값이 기간 내 최저~최고 중 어디쯤인지입니다 (100%에 가까울수록 비싼 시기).
+        </p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px;background:#f5f7fa;border:1px solid var(--border-light);border-radius:8px;margin-bottom:12px;">
+            <strong style="font-size:0.85rem;">기간</strong>
+            <select id="vphDays" style="padding:6px 8px;" onchange="initVegPriceHistoryTab()">
+                <option value="7">최근 7일</option>
+                <option value="14">최근 14일</option>
+                <option value="30" selected>최근 30일</option>
+                <option value="60">최근 60일</option>
+                <option value="365">전체</option>
+            </select>
+            <strong style="font-size:0.85rem;margin-left:6px;">중도매인</strong>
+            <select id="vphVendor" style="padding:6px 8px;" onchange="vphRender()">
+                <option value="">전체</option>
+                <option value="295">295 엽채·일반</option>
+                <option value="284">284 구황작물</option>
+                <option value="237">237 무</option>
+                <option value="490">490 나물집</option>
+            </select>
+            <strong style="font-size:0.85rem;margin-left:6px;">정렬</strong>
+            <select id="vphSort" style="padding:6px 8px;" onchange="vphRender()">
+                <option value="vol">변동 큰 순</option>
+                <option value="range">최고/최저 배수 순</option>
+                <option value="pos">지금 비싼 순</option>
+                <option value="poslow">지금 싼 순</option>
+                <option value="code">관리코드 순</option>
+            </select>
+            <input type="text" id="vphSearch" placeholder="품목 검색" style="padding:6px 8px;width:140px;" oninput="vphRender()">
+            <label style="font-size:0.82rem;margin-left:6px;font-weight:700;color:#c0392b;" title="평소 가격(중앙값)의 1/5 미만·5배 초과인 값은 오입력으로 보고 통계에서 뺍니다">
+                <input type="checkbox" id="vphExcludeBad" checked onchange="vphRender()"> 오입력 제외</label>
+            <button class="btn btn-outline btn-sm" onclick="vphExport()">&#128229; 엑셀</button>
+            <span id="vphStatus" style="font-size:0.8rem;color:var(--text-muted);margin-left:auto;"></span>
+        </div>
+        <div style="overflow:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+                <thead>
+                    <tr style="border-bottom:2px solid var(--border);text-align:left;color:var(--text-muted);font-size:0.78rem;">
+                        <th style="padding:6px 8px;">관리코드</th>
+                        <th style="padding:6px 8px;">품목</th>
+                        <th style="padding:6px 8px;text-align:center;">일수</th>
+                        <th style="padding:6px 8px;text-align:center;">추이</th>
+                        <th style="padding:6px 8px;text-align:right;">최저</th>
+                        <th style="padding:6px 8px;text-align:right;">최고</th>
+                        <th style="padding:6px 8px;text-align:right;">배수</th>
+                        <th style="padding:6px 8px;text-align:right;">평균 변동</th>
+                        <th style="padding:6px 8px;text-align:right;">최대 변동</th>
+                        <th style="padding:6px 8px;text-align:right;">최근가</th>
+                        <th style="padding:6px 8px;text-align:right;">위치</th>
+                    </tr>
+                </thead>
+                <tbody id="vphTbody"></tbody>
+            </table>
+        </div>
+        <p style="color:var(--text-muted);font-size:0.78rem;margin-top:10px;">품목 줄을 누르면 그 품목의 <b>일별 경매가</b>가 펼쳐집니다. 펼친 뒤 <b>날짜를 누르면 그날 경매가를 수기로 고칠 수 있습니다</b> (관리자 전용 · 0을 넣으면 입하없음).</p>
     </div>
 </div>
 
@@ -1514,7 +1583,7 @@ async function erpLogout() {
             </select>
             <button class="btn btn-primary btn-sm" onclick="vmApplyBulkMargin(false)">전체 적용</button>
             <button class="btn btn-outline btn-sm" onclick="vmApplyBulkMargin(true)">선택 적용</button>
-            <span style="font-size:0.72rem;color:var(--text-muted);">※ 마진만 세팅 (가격 반영은 아래 [가격 적용])</span>
+            <span style="font-size:0.72rem;color:var(--text-muted);">※ 저장하면 새 마진으로 판매가가 다시 계산되어 앱에 반영됩니다</span>
         </div>
 
         <!-- 경매가 업로드 -->
@@ -1535,6 +1604,18 @@ async function erpLogout() {
             <select id="vmVendorFilter" onchange="renderVegMarginList()" style="padding:6px 8px;"><option value="">중도매인 전체</option></select>
             <select id="vmMinorFilter" onchange="renderVegMarginList()" style="padding:6px 8px;"><option value="">중분류 전체</option></select>
             <input type="text" id="vmSearch" placeholder="품목명 · 관리코드 검색" oninput="renderVegMarginList()" style="padding:6px 10px;flex:1;min-width:160px;">
+            <!-- 정렬 — 전일 대비 많이 떨어진 것부터 보면서 값을 조정한다 (2026-09-03 요청).
+                 시세가 급락한 품목이 손볼 게 제일 많으므로 그것부터 위로 올린다. -->
+            <select id="vmSort" onchange="vmSetSort()" style="padding:6px 8px;font-size:0.82rem;font-weight:700;">
+                <option value="">정렬: 기본(코드순)</option>
+                <option value="drop">▼ 전일대비 많이 내린 순</option>
+                <option value="rise">▲ 전일대비 많이 오른 순</option>
+            </select>
+            <!-- 📦 오늘 주문만 — 240개 전체에서 손볼 품목을 찾느라 일일이 검색하던 걸 없앤다.
+                 [중도매인 입력분 불러오기] 를 눌러야 주문 수량이 들어오므로 그전엔 잠겨 있다. -->
+            <label id="vmOrderedOnlyLabel" style="font-size:0.8rem;display:flex;align-items:center;gap:4px;font-weight:700;color:#0a7;opacity:0.4;"
+                   title="오늘 납품분 주문이 들어온 품목만 봅니다. [중도매인 입력분 불러오기] 후에 켜집니다."><input type="checkbox" id="vmOrderedOnly" disabled onchange="renderVegMarginList()"> 📦 오늘 주문만</label>
+            <label style="font-size:0.8rem;display:flex;align-items:center;gap:4px;font-weight:700;color:#8a6d3b;"><input type="checkbox" id="vmLockedOnly" onchange="renderVegMarginList()"> 🔒 고정만</label>
             <label style="font-size:0.8rem;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="vmCheckAll" onchange="vmToggleAll(this)"> 전체선택</label>
         </div>
 
@@ -1546,6 +1627,9 @@ async function erpLogout() {
                         <th style="width:95px;">관리코드</th><th>품목</th><th style="width:80px;">규격</th><th style="width:60px;">단위</th>
                         <th style="width:160px;">마진</th>
                         <th class="text-right" style="width:105px;">오늘 경매가</th>
+                        <!-- 직전에 실제로 값이 들어온 날의 경매가. 중도매인이 시세가 안 변하면
+                             값을 안 넣으므로 '달력상 어제'가 아니라 '마지막으로 저장된 경매가' 다. -->
+                        <th class="text-right" style="width:110px;">전일 경매가</th>
                         <th class="text-right" style="width:105px;">판매가(자동)</th>
                         <th class="text-center" style="width:75px;">입하없음</th>
                     </tr>
@@ -1556,7 +1640,10 @@ async function erpLogout() {
 
         <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap;">
             <span id="vmApplyHint" style="font-size:0.78rem;color:var(--text-muted);"></span>
-            <button class="btn btn-outline" onclick="vmSaveMarginsOnly()">마진만 저장</button>
+            <!-- 2026-09-03 버튼 통합 — 예전엔 [마진 저장 + 판매가 반영] 이 따로 있었다.
+                 오늘 경매가가 안 들어온 품목은 원가가 그대로여서 다시 계산해도 같은 값이
+                 나온다(실측 247건 중 변동 0건). 나눠두면 마진을 바꾼 날 한쪽만 눌러
+                 반쪽 상태가 되는 게 유일한 차이였다 → 하나로 합쳤다. -->
             <button class="btn btn-primary" onclick="vmApplyPrices()">가격 적용 (앱 즉시 반영)</button>
         </div>
     </div>
@@ -2753,7 +2840,8 @@ const PAGE_TITLES = {
     priceSchedule: '예약 가격 변경',
     sortOrder: '정렬 관리 (카테고리·품목 순서)',
     vegMargin: '야채 마진율 관리',
-    vegPriceCompare: '야채 가격비교'
+    vegPriceCompare: '야채 가격비교',
+    vegPriceHistory: '야채 시세 이력'
 };
 
 function switchTab(tabId) {
@@ -2799,6 +2887,7 @@ function switchTab(tabId) {
     if (tabId === 'displayName') { initDisplayNameTab(); }
     if (tabId === 'priceSchedule') { initPriceScheduleTab(); }
     if (tabId === 'sortOrder') { initSortOrderTab(); }
+    if (tabId === 'vegPriceHistory') { initVegPriceHistoryTab(); }
 }
 
 // ============================================================
@@ -2941,7 +3030,7 @@ function renderProductList() {
             <td style="padding:8px 4px;"><input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleProductSelect('${esc(p.code)}', this.checked)"></td>
             <td>${getProductThumbHTML(p.code)}</td>
             <td style="font-weight:600;color:var(--accent);">${esc(p.code)}</td>
-            <td>${p.hidden ? '<span style="background:#6c757d;color:#fff;font-weight:700;font-size:0.65rem;padding:1px 5px;border-radius:3px;margin-right:4px;">숨김</span>' : ''}${p.soldOut ? '<span style="color:var(--danger);font-weight:700;font-size:0.7rem;margin-right:3px;">[품절]</span>' : ''}${p.tax === '면세' ? '<span class="badge badge-notax" style="font-size:0.62rem;padding:1px 5px;margin-right:4px;">면세</span>' : ''}${p.sameGroup ? '<span style="background:#e7f0ff;color:#0353a4;font-weight:700;font-size:0.65rem;padding:1px 5px;border-radius:3px;margin-right:4px;" title="동일품목 그룹 — 가격비교 탭에서 매입처 비교">&#128279;' + esc(p.sameGroup) + '</span>' : ''}${esc(p.name)}</td>
+            <td class="name-cell" title="${esc(p.name)}">${p.hidden ? '<span style="background:#6c757d;color:#fff;font-weight:700;font-size:0.65rem;padding:1px 5px;border-radius:3px;margin-right:4px;">숨김</span>' : ''}${p.soldOut ? '<span style="color:var(--danger);font-weight:700;font-size:0.7rem;margin-right:3px;">[품절]</span>' : ''}${p.tax === '면세' ? '<span class="badge badge-notax" style="font-size:0.62rem;padding:1px 5px;margin-right:4px;">면세</span>' : ''}${p.sameGroup ? '<span style="background:#e7f0ff;color:#0353a4;font-weight:700;font-size:0.65rem;padding:1px 5px;border-radius:3px;margin-right:4px;" title="동일품목 그룹 — 가격비교 탭에서 매입처 비교">&#128279;' + esc(p.sameGroup) + '</span>' : ''}${esc(p.name)}</td>
             <td class="spec-cell" style="color:var(--text-secondary);" title="${esc(p.spec || '')}">${esc(p.spec || '')}</td>
             <td class="cat-cell" style="color:var(--text-secondary);">${esc(p.majorName || '')}<small>${esc(p.minorName || '')}</small></td>
             <td><span class="badge ${p.vendorType === 'self' ? 'badge-self' : 'badge-external'}">${esc(p.vendorName || '')}</span></td>
@@ -5291,7 +5380,8 @@ function exportForGyeongbaksa() {
 
     showExportPreview(headers, rows);
     // 빈 줄이 중간에 있으면 경영박사가 그 위까지만 읽으므로 rows 는 연속 데이터로만 생성됨
-    downloadExcel('경영박사_품목등록', headers, rows, { sheetName: '품목-샘플', xls: true });
+    // noHeader: 경영박사는 머리글 행 없이 1행부터 데이터를 읽음 (미리보기에만 머리글 표시)
+    downloadExcel('경영박사_품목등록', headers, rows, { sheetName: '품목-샘플', xls: true, noHeader: true });
 }
 
 function showExportPreview(headers, rows) {
@@ -5310,7 +5400,7 @@ function showExportPreview(headers, rows) {
 
 function downloadExcel(filename, headers, rows, opts) {
     opts = opts || {};
-    const wsData = [headers, ...rows];
+    const wsData = opts.noHeader ? rows : [headers, ...rows];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, opts.sheetName || 'Sheet');
@@ -5610,6 +5700,11 @@ async function downloadFromSupabase() {
             // 야채 마진 (판매가 = 경매가 + 마진). 'rate'=%, 'amount'=원. 미설정이면 null
             marginType: p.margin_type || null,
             marginValue: (p.margin_value === null || p.margin_value === undefined) ? null : Number(p.margin_value),
+            // 마진 고정(자물쇠) — true 면 [전체 적용] 일괄 변경에서 빠진다
+            marginLocked: p.margin_locked === true,
+            // 마진을 손으로 고친 납품일 — 그날 [전체 적용] 에서 빠진다 ('오늘만 조정').
+            // 다음날이면 날짜가 지나 자동 무시 → 기본 마진으로 복귀.
+            marginTouchedOn: p.margin_touched_on || null,
             // 동일품목 그룹 — 컬럼 존재 시에만
             ...(p.same_group !== undefined ? { sameGroup: p.same_group } : {})
         }));
@@ -5704,7 +5799,9 @@ function buildProductPayload(p) {
         ...(p.marginType ? {
             margin_type: p.marginType,
             margin_value: (p.marginValue === null || p.marginValue === undefined) ? null : Number(p.marginValue)
-        } : {})
+        } : {}),
+        // '오늘만 조정' 표시일 — 있을 때만 전송 (컬럼 마이그레이션 전이어도 upsert 안 깨지게)
+        ...(p.marginTouchedOn ? { margin_touched_on: p.marginTouchedOn } : {})
     };
     // sort_order / pack_size 는 DB에 NOT NULL 제약 + 기본값이 있는 컬럼이라
     // null 을 보내면 not-null constraint 위반으로 upsert 자체가 실패.
@@ -7947,6 +8044,17 @@ async function autoSyncOnLoad() {
             registeredAt: p.registered_at || '', imageUrl: p.image_url || '',
             displayName: p.display_name || '', soldOut: !!p.sold_out, hidden: !!p.hidden,
             isFrozen: !!p.is_frozen,
+            // 🚨 야채 마진 (2026-09-03 수정) — 여기 빠져 있어서 **페이지를 열 때마다 마진과
+            //   자물쇠가 통째로 사라졌다.** 아래에서 products 를 이 객체로 갈아끼우기 때문.
+            //   증상: 야채 마진율 화면 '마진설정 0개', 마진 칸 전부 비어있음, 판매가(자동) 전부 '-',
+            //         무·가지의 🔒 가 풀린 것처럼 보임. 서버에는 멀쩡히 있었다(247건·자물쇠 4건).
+            //   다행히 buildProductPayload 가 'marginType 이 있을 때만 전송' 이라 서버 값이
+            //   지워지지는 않았지만, 그 상태로 [전체 적용] 을 누르면 정액 마진·자물쇠를 모르는
+            //   채 전부 덮어쓴다. 서버에서 읽는 곳이 '수동 전체 다운로드' 한 군데뿐이었다.
+            marginType: p.margin_type || null,
+            marginValue: (p.margin_value === null || p.margin_value === undefined) ? null : Number(p.margin_value),
+            marginLocked: p.margin_locked === true,
+            marginTouchedOn: p.margin_touched_on || null,
             // 동일품목 그룹 — DB에 same_group 컬럼이 있을 때만 매핑
             // (마이그레이션 전에는 필드 자체를 안 만들어 payload 에서도 빠지게)
             ...(p.same_group !== undefined ? { sameGroup: p.same_group } : {})
@@ -9145,12 +9253,64 @@ function vmGetVegProducts() {
 }
 
 // ============================================================
+// 경매가 수기 교정 — 가격비교·시세이력 두 화면에서 같이 쓴다
+//   중도매인이 0 하나를 더/덜 치는 사고가 실제로 두 번 났다(쥬키니 1원·홍파프리카 5원).
+//   veg_auction_prices 는 RLS 로 잠겨 브라우저가 직접 못 고치므로,
+//   owner/manager 만 통과하는 SECURITY DEFINER RPC 로 우회한다.
+//   → sql/veg_admin_set_price.sql (order-admin 저장소)
+// ============================================================
+async function vegEditAuctionPrice(code, date, cur, after) {
+    if (!db) { alert('Supabase 미연결 — [Supabase 설정] 에서 연결해주세요.'); return; }
+    var nameMap = {};
+    vmGetVegProducts().forEach(function(p) { nameMap[String(p.code).trim()] = p; });
+    var pinfo = nameMap[code] || {};
+    var label = (pinfo.name || code) + (pinfo.spec ? ' ' + pinfo.spec : '');
+    var curTxt = (cur == null || cur === '') ? '없음/입하없음' : Number(cur).toLocaleString() + '원';
+
+    var v = prompt('📝 경매가 수기 수정\n\n' + date + '   ' + label + '\n현재값: ' + curTxt +
+                   '\n\n올바른 경매가를 숫자로 입력하세요.\n(입하없음으로 되돌리려면 0)',
+                   (cur == null ? '' : String(cur)));
+    if (v === null) return;
+    v = String(v).replace(/[^0-9]/g, '');
+    if (v === '') { alert('숫자만 입력해주세요.'); return; }
+
+    var num = Number(v);
+    var noStock = (num === 0);
+    var afterTxt = noStock ? '입하없음' : num.toLocaleString() + '원';
+    if (!confirm(date + '   ' + label + '\n\n' + curTxt + '   →   ' + afterTxt + '\n\n저장할까요?')) return;
+
+    try {
+        var res = await db.rpc('veg_admin_set_price', {
+            p_date: date, p_code: code, p_cost: noStock ? 0 : num, p_no_stock: noStock
+        });
+        if (res.error) throw new Error(res.error.message);
+        // 오늘 값을 고쳤으면 판매가는 아직 옛 값이다 — [가격 적용] 을 눌러야 앱에 반영된다.
+        //   (이 함수는 이력만 고친다. 마진·대체출고 계산을 두 곳에서 하면 어긋나므로)
+        var isToday = (typeof getKstDate === 'function' && date === getKstDate(0));
+        alert('✅ 저장했습니다.\n' + date + '  ' + label + '  →  ' + afterTxt +
+              (isToday
+                ? '\n\n⚠️ 오늘 값입니다. [야채 마진율] → [가격 적용] 을 눌러야 거래처 앱에 반영됩니다.'
+                : '\n\n(지난 날짜라 이력만 바뀝니다. 앱 판매가는 그대로입니다)'));
+        if (typeof after === 'function') after();
+    } catch (e) {
+        alert('수정 실패: ' + e.message +
+              '\n\n· 관리자(owner/manager) 계정으로 로그인했는지\n' +
+              '· sql/veg_admin_set_price.sql 을 Supabase 에 적용했는지 확인해주세요.');
+    }
+}
+
+// ============================================================
 // 야채 가격비교 (1단계: 전일 대비 내부 변동 감시)
 //   veg_auction_prices(날짜별 경매가) 를 최근 것 2일 비교 → 급등락/자릿수 실수 표시
 // ============================================================
 var vpcRaw = null;     // 최근 경매가 이력 (원본)
 var vpcQty = null;     // 그날 품목별 주문 수량 { 관리코드: 수량 }. null = RPC 미적용/실패
 var vpcQtyDate = null; // 그 수량이 어느 날짜 기준인지
+// 품목별 '직전에 앱 판매가가 갱신된 날' 의 경매가 { 관리코드: {date, cost, sell} }.
+//   달력상 어제가 아니다 — 무집(237)처럼 주문 있는 날만 넣는 중도매인은 어제 칸이 통째로 비고,
+//   그때 거래처 앱에는 그 이전 가격이 계속 떠 있었다. 거래처가 보고 주문한 값은 그 가격이므로
+//   변동 판정도 반드시 이 날짜 기준이어야 한다. null = RPC 실패 → 달력상 전일로 폴백.
+var vpcPrev = null;
 
 async function initVegPriceCompareTab() {
     var st = document.getElementById('vpcStatus');
@@ -9186,6 +9346,24 @@ async function initVegPriceCompareTab() {
                 vpcQtyDate = days[0];
             }
         }
+        // 품목별 직전 갱신일·그날 경매가 (order-admin 출고합산 화면과 같은 함수)
+        vpcPrev = null;
+        if (days[0]) {
+            var pv = await db.rpc('veg_prev_sell', { p_date: days[0] });
+            if (pv.error) {
+                console.warn('veg_prev_sell 미적용 — 달력상 전일로 폴백:', pv.error.message);
+            } else {
+                vpcPrev = {};
+                (pv.data || []).forEach(function(r) {
+                    if (Number(r.prev_cost) > 0) {
+                        vpcPrev[String(r.product_code).trim()] = {
+                            date: r.prev_date, cost: Number(r.prev_cost), sell: Number(r.prev_sell)
+                        };
+                    }
+                });
+            }
+        }
+
         vpcRender();
     } catch (e) {
         if (st) st.textContent = 'sql/veg_price_history.sql 을 먼저 적용해주세요. (' + e.message + ')';
@@ -9221,19 +9399,49 @@ function vpcRender() {
     var nameMap = {};
     vmGetVegProducts().forEach(function(p) { nameMap[String(p.code).trim()] = p; });
 
+    // 품목별 '평소 가격'(중앙값) — 오입력 판정 기준.
+    //   왜 전일 대비가 아니라 중앙값인가: 잘못된 값이 이틀 연속 들어오면(중도매인이 빈칸
+    //   Enter 로 전일값을 복사) 전일 대비는 0% 라 아무 경고도 안 뜬다. 실제로 홍파프리카가
+    //   26,000 → 5원 → 5원 으로 이틀을 버텨 앱에 6원으로 나갔다 (2026-08-21).
+    //   중앙값은 하루이틀 튄 값에 흔들리지 않아, 며칠을 이어져도 계속 잡아낸다.
+    var medMap = {};
+    var costsByCode = {};
+    vpcRaw.forEach(function(r) {
+        if (r.no_stock || !(Number(r.cost) > 0)) return;
+        (costsByCode[r.product_code] = costsByCode[r.product_code] || []).push(Number(r.cost));
+    });
+    Object.keys(costsByCode).forEach(function(c) {
+        var v = costsByCode[c].slice().sort(function(a, b) { return a - b; });
+        if (v.length < 3) return;   // 이력이 너무 적으면 판정 안 함 (신규 품목 오탐 방지)
+        medMap[c] = v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
+    });
+
     var rows = [];
     Object.keys(byCode).forEach(function(code) {
         var t = byCode[code].t, p = byCode[code].p;
         var tc = (t && !t.no_stock && Number(t.cost) > 0) ? Number(t.cost) : null;
-        var pc = (p && !p.no_stock && Number(p.cost) > 0) ? Number(p.cost) : null;
+        // 직전가 — '마지막으로 값이 들어온 날' 기준 (vpcPrev). RPC 가 안 되면 달력상 전일로 폴백.
+        var pv = vpcPrev ? vpcPrev[code] : null;
+        var pc = pv ? pv.cost : ((p && !p.no_stock && Number(p.cost) > 0) ? Number(p.cost) : null);
+        var pdate = pv ? pv.date : (pc != null ? prev : null);
         var pct = (tc != null && pc != null) ? ((tc - pc) / pc * 100) : null;
         var flag = 'ok', rank = 9;
-        if (t && t.no_stock) { flag = 'nostock'; rank = 8; }
+        // 오입력 의심 — 평소 가격(중앙값)의 1/5 미만이거나 5배 초과.
+        //   2배 안팎 급등은 야채에서 실제로 일어나므로(청피망 43,000→85,000) 건드리지 않는다.
+        //   0 하나 더/덜 친 값만 걸리는 폭이다. 차단은 안 하고 경고만 — 판단은 사장님이.
+        var med = medMap[code];
+        if (t && !t.no_stock && tc != null && med > 0 && (tc < med / 5 || tc > med * 5)) {
+            flag = 'bad'; rank = -1;
+        }
+        else if (t && t.no_stock) { flag = 'nostock'; rank = 8; }
         else if (tc != null && pc == null) { flag = 'new'; rank = 5; }
         else if (tc != null && pc != null) {
             var ratio = tc / pc;
             if (ratio >= 8 || ratio <= 0.125) { flag = 'digit'; rank = 0; }
             else if (Math.abs(pct) >= thr) { flag = (pct > 0 ? 'up' : 'down'); rank = 1; }
+            // 값이 그대로면 '-' 로 비우지 않고 '= 동일' 로 못박는다. 비어 있으면 사장님이
+            // "얼마나 올랐지?" 를 확인할 수 없다 (2026-08-21 요청).
+            else if (tc === pc) { flag = 'same'; rank = 9; }
         }
         var pinfo = nameMap[code];
         rows.push({
@@ -9241,7 +9449,7 @@ function vpcRender() {
             name: pinfo ? (pinfo.name || code) : code,
             spec: pinfo ? (pinfo.spec || pinfo.unit || '') : '',
             qty: vpcQty ? (vpcQty[code] || 0) : null,   // null = 수량 조회 안 됨
-            tc: tc, pc: pc, pct: pct, flag: flag, rank: rank
+            tc: tc, pc: pc, pdate: pdate, pct: pct, flag: flag, rank: rank, med: med
         });
     });
 
@@ -9257,18 +9465,23 @@ function vpcRender() {
     });
 
     var FLAG = {
+        bad:     { t: '🚨 오입력 의심', c: '#fff',    bg: '#c0392b' },
         digit:   { t: '🔴 자릿수 의심', c: '#c0392b', bg: '#fdecea' },
         up:      { t: '🔴 급등',       c: '#c0392b', bg: '#fdecea' },
         down:    { t: '🔵 급락',       c: '#2471a3', bg: '#eaf2fb' },
         'new':   { t: '🆕 신규',       c: '#7d6608', bg: '#fef9e7' },
+        same:    { t: '= 동일',        c: '#7f8c8d', bg: '' },
         nostock: { t: '💤 입하없음',   c: '#7f8c8d', bg: '#f4f6f6' },
         ok:      { t: '',             c: '#2c3e50', bg: '' }
     };
 
     var warnCount = rows.filter(function(r) { return r.rank <= 1; }).length;
     var orderedCount = vpcQty ? rows.filter(function(r) { return r.qty > 0; }).length : 0;
+    var badCount = rows.filter(function(r) { return r.rank <= 0; }).length;
     var shown = rows;
-    if (onlyOrdered) shown = shown.filter(function(r) { return r.qty > 0; });
+    // ★ 오입력·자릿수 의심은 주문이 없어도 반드시 띄운다.
+    //   주문 0건이라 화면에서 가려지는 사이 5원이 그대로 판매가로 나갔던 게 홍파프리카 건이다.
+    if (onlyOrdered) shown = shown.filter(function(r) { return r.qty > 0 || r.rank <= 0; });
     if (onlyWarn)    shown = shown.filter(function(r) { return r.rank <= 5; });
 
     var fmt = function(n) { return n == null ? '-' : Number(n).toLocaleString(); };
@@ -9276,44 +9489,264 @@ function vpcRender() {
         var f = FLAG[r.flag] || FLAG.ok;
         var pctTxt = '-';
         if (r.pct != null) {
-            var sign = r.pct > 0 ? '+' : '';
-            var col = Math.abs(r.pct) >= thr ? f.c : 'var(--text-muted)';
-            pctTxt = '<span style="color:' + col + ';font-weight:700;">' + sign + (Math.round(r.pct * 10) / 10) + '%</span>';
+            var v = Math.round(r.pct * 10) / 10;
+            if (v === 0) v = 0;   // -0 방지
+            var mark = v > 0 ? '▲' : (v < 0 ? '▼' : '=');
+            var sign = v > 0 ? '+' : '';
+            var col = (v !== 0 && Math.abs(r.pct) >= thr) ? f.c : 'var(--text-muted)';
+            pctTxt = '<span style="color:' + col + ';font-weight:700;">' + mark + ' ' + sign + v + '%</span>';
+        }
+        // 직전가 — 숫자 옆에 그 값이 들어온 날짜. 직전 경매일이 아니면(=며칠 묵은 값) 주황으로.
+        var prevTxt = '-';
+        if (r.pc != null) {
+            var dtxt = r.pdate ? String(r.pdate).slice(5).replace('-', '/') : '';
+            var stale = !!(r.pdate && prev && r.pdate !== prev);
+            prevTxt = Number(r.pc).toLocaleString() +
+                (dtxt ? ' <span style="font-size:0.72rem;color:' + (stale ? '#b9770e' : 'var(--text-muted)') +
+                        (stale ? ';font-weight:700' : '') + ';">' + dtxt + '</span>' : '');
         }
         return '<tr style="border-bottom:1px solid var(--border-light);background:' + (f.bg || 'transparent') + ';">' +
             '<td style="padding:6px 8px;white-space:nowrap;color:' + f.c + ';font-weight:700;font-size:0.8rem;">' + f.t + '</td>' +
             '<td style="padding:6px 8px;font-family:monospace;color:var(--text-muted);">' + esc(r.code) + '</td>' +
-            '<td style="padding:6px 8px;">' + esc(r.name) + (r.spec ? ' <span style="color:var(--text-muted);font-size:0.78rem;">' + esc(r.spec) + '</span>' : '') + '</td>' +
+            '<td style="padding:6px 8px;">' + esc(r.name) + (r.spec ? ' <span style="color:var(--text-muted);font-size:0.78rem;">' + esc(r.spec) + '</span>' : '') +
+                (r.flag === 'bad' ? '<br><span style="font-size:0.74rem;color:#c0392b;font-weight:700;">평소 ' + Number(r.med).toLocaleString() + '원대 — 자릿수 확인 필요</span>' : '') + '</td>' +
             '<td style="padding:6px 8px;text-align:right;font-weight:700;color:' + (r.qty > 0 ? '#1e6f3c' : 'var(--text-muted)') + ';">' + (r.qty > 0 ? r.qty : '-') + '</td>' +
-            '<td style="padding:6px 8px;text-align:right;color:var(--text-muted);">' + fmt(r.pc) + '</td>' +
-            '<td style="padding:6px 8px;text-align:right;font-weight:700;">' + fmt(r.tc) + '</td>' +
+            '<td style="padding:6px 8px;text-align:right;white-space:nowrap;">' + prevTxt + '</td>' +
+            '<td style="padding:6px 8px;text-align:right;font-weight:700;white-space:nowrap;">' + fmt(r.tc) +
+                ' <span onclick="vegEditAuctionPrice(\'' + r.code + '\', \'' + today + '\', ' + (r.tc == null ? 'null' : r.tc) + ', initVegPriceCompareTab)"' +
+                ' title="경매가 수기 수정" style="cursor:pointer;color:var(--text-muted);font-weight:400;">&#9998;</span></td>' +
             '<td style="padding:6px 8px;text-align:right;">' + pctTxt + '</td>' +
             '</tr>';
     }).join('') || '<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--text-muted);">' +
         (onlyOrdered ? '오늘 주문 들어온 품목이 없습니다. (체크를 풀면 전체가 보입니다)' : '표시할 품목이 없습니다.') + '</td></tr>';
 
-    if (title) title.textContent = '오늘 ' + today + (prev ? ' vs 전일 ' + prev : ' (비교할 전일 없음)') +
+    if (title) title.textContent = '오늘 ' + today + (vpcPrev ? ' vs 품목별 직전 갱신일' : (prev ? ' vs 전일 ' + prev : ' (비교할 전일 없음)')) +
         ' · 경고 ' + warnCount + '건' + (vpcQty ? ' · 주문 ' + orderedCount + '품목' : '');
     if (st) {
+        var badTxt = badCount ? ' · 🚨 오입력 의심 ' + badCount + '건(주문 없어도 표시)' : '';
         st.textContent = vpcQty
-            ? (onlyOrdered ? '주문 ' + orderedCount + '개만 표시중 (전체 ' + rows.length + '개)'
-                           : '총 ' + rows.length + '개 · 주문 ' + orderedCount + '개')
+            ? (onlyOrdered ? '주문 ' + orderedCount + '개만 표시중 (전체 ' + rows.length + '개)' + badTxt
+                           : '총 ' + rows.length + '개 · 주문 ' + orderedCount + '개' + badTxt)
             : '총 ' + rows.length + '개 · 주문 필터를 쓰려면 sql/veg_order_qty.sql 을 적용하세요';
     }
+}
+
+// ============================================================
+// 야채 시세 이력 — 품목별 변동폭 기록
+//   가격비교(매일 아침 이상 감지)와 목적이 다르다. 이쪽은 '정책 정하기' 용도 —
+//   품목마다 얼마나 출렁이는지 수치로 쌓아두고 마진 방식·취급 여부를 판단한다.
+//   (데이터 자체는 veg_auction_prices 에 매일 쌓이고 있고, 이 탭은 그걸 읽는 도구다)
+// ============================================================
+var vphRaw = null;    // 기간 내 경매가 이력
+var vphOpen = {};     // 펼쳐놓은 품목 { 코드: true }
+
+async function initVegPriceHistoryTab() {
+    var st = document.getElementById('vphStatus');
+    if (!db) { if (st) st.textContent = 'Supabase 미연결'; return; }
+    var days = Number((document.getElementById('vphDays') || {}).value) || 30;
+    if (st) st.textContent = '불러오는 중...';
+    try {
+        var res = await db.rpc('veg_price_history', { p_days: days });
+        if (res.error) throw new Error(res.error.message);
+        vphRaw = res.data || [];
+        vphRender();
+    } catch (e) {
+        if (st) st.textContent = '불러오기 실패: ' + e.message;
+    }
+}
+
+/** 품목별 통계 — 입하없음·0원은 빼고 계산한다 (없는 날을 0으로 세면 변동폭이 뻥튀기됨) */
+function vphStats() {
+    var byCode = {};
+    (vphRaw || []).forEach(function(r) {
+        if (r.no_stock || !(Number(r.cost) > 0)) return;
+        (byCode[r.product_code] = byCode[r.product_code] || []).push({ d: r.auction_date, c: Number(r.cost) });
+    });
+    var nameMap = {};
+    vmGetVegProducts().forEach(function(p) { nameMap[String(p.code).trim()] = p; });
+
+    // 과거 오입력(0 하나 더/덜)이 섞이면 변동폭 통계가 통째로 망가진다.
+    //   실제로 쥬키니 8/8 '1원' 하나 때문에 평균 변동이 213,343% 로 찍혔다.
+    //   그래서 평소 가격(중앙값)에서 5배 이상 벗어난 점은 빼고 계산하고,
+    //   몇 개를 뺐는지는 화면에 ⚠ 로 남겨 고칠 거리를 잃지 않게 한다.
+    var exBad = !!(document.getElementById('vphExcludeBad') || {}).checked;
+
+    var out = [];
+    Object.keys(byCode).forEach(function(code) {
+        var hAll = byCode[code].sort(function(a, b) { return a.d < b.d ? -1 : 1; });
+        var h = hAll;
+        var bad = 0, badDates = {};
+        if (exBad && hAll.length >= 3) {
+            var sorted = hAll.map(function(x) { return x.c; }).sort(function(a, b) { return a - b; });
+            var med = sorted.length % 2 ? sorted[(sorted.length - 1) / 2]
+                                        : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+            if (med > 0) {
+                var kept = hAll.filter(function(x) { return x.c >= med / 5 && x.c <= med * 5; });
+                bad = hAll.length - kept.length;
+                if (kept.length >= 2) {
+                    h = kept;   // 통계는 걸러낸 값으로 (전부 걸러지면 원본 유지 — 판단 불가)
+                    hAll.forEach(function(x) { if (x.c < med / 5 || x.c > med * 5) badDates[x.d] = true; });
+                }
+            }
+        }
+        if (h.length < 2) return;
+        var vals = h.map(function(x) { return x.c; });
+        var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+        var cur = vals[vals.length - 1];
+        var sum = 0, mj = 0;
+        for (var i = 1; i < h.length; i++) {
+            var d = Math.abs((h[i].c - h[i - 1].c) / h[i - 1].c * 100);
+            sum += d; if (d > mj) mj = d;
+        }
+        var pinfo = nameMap[code];
+        out.push({
+            code: code,
+            name: pinfo ? (pinfo.name || code) : code,
+            spec: pinfo ? (pinfo.spec || pinfo.unit || '') : '',
+            n: h.length, bad: bad, hist: h, histAll: hAll, badDates: badDates,
+            min: mn, max: mx, cur: cur,
+            ratio: mn > 0 ? mx / mn : 0,
+            avg: sum / (h.length - 1),
+            maxJump: mj,
+            pos: mx === mn ? 50 : ((cur - mn) / (mx - mn) * 100)
+        });
+    });
+    return out;
+}
+
+/** 추이 스파크라인 (외부 라이브러리 없이 인라인 SVG) */
+function vphSpark(vals) {
+    if (!vals || vals.length < 2) return '';
+    var w = 96, h = 22, mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+    var rng = (mx - mn) || 1;
+    var pts = vals.map(function(v, i) {
+        var x = (i / (vals.length - 1)) * (w - 2) + 1;
+        var y = h - 2 - ((v - mn) / rng) * (h - 4);
+        return (Math.round(x * 10) / 10) + ',' + (Math.round(y * 10) / 10);
+    }).join(' ');
+    return '<svg width="' + w + '" height="' + h + '" style="vertical-align:middle;">' +
+           '<polyline points="' + pts + '" fill="none" stroke="var(--primary)" stroke-width="1.5" ' +
+           'stroke-linejoin="round" stroke-linecap="round"></polyline></svg>';
+}
+
+function vphRender() {
+    if (!vphRaw) return;
+    var tbody = document.getElementById('vphTbody');
+    var st = document.getElementById('vphStatus');
+    var title = document.getElementById('vphTitle');
+    var vendor = (document.getElementById('vphVendor') || {}).value || '';
+    var sortBy = (document.getElementById('vphSort') || {}).value || 'vol';
+    var kw = ((document.getElementById('vphSearch') || {}).value || '').trim().toLowerCase();
+
+    var rows = vphStats();
+    var total = rows.length;
+    if (vendor) rows = rows.filter(function(r) { return r.code.slice(0, 3) === vendor; });
+    if (kw) rows = rows.filter(function(r) { return (r.name + ' ' + r.code).toLowerCase().indexOf(kw) !== -1; });
+
+    rows.sort(function(a, b) {
+        if (sortBy === 'range')  return b.ratio - a.ratio;
+        if (sortBy === 'pos')    return b.pos - a.pos;
+        if (sortBy === 'poslow') return a.pos - b.pos;
+        if (sortBy === 'code')   return a.code < b.code ? -1 : 1;
+        return b.avg - a.avg;   // 기본: 변동 큰 순
+    });
+
+    var fmt = function(v) { return Number(v).toLocaleString(); };
+    tbody.innerHTML = rows.map(function(r) {
+        var posCol = r.pos >= 70 ? '#c0392b' : (r.pos <= 30 ? '#2471a3' : 'var(--text-muted)');
+        var posTxt = r.pos >= 70 ? '비싼편' : (r.pos <= 30 ? '싼편' : '중간');
+        var volCol = r.avg >= 20 ? '#c0392b' : (r.avg >= 10 ? '#b9770e' : 'var(--text-muted)');
+        var main = '<tr onclick="vphToggle(\'' + r.code + '\')" style="border-bottom:1px solid var(--border-light);cursor:pointer;">' +
+            '<td style="padding:6px 8px;font-family:monospace;color:var(--text-muted);">' + esc(r.code) + '</td>' +
+            '<td style="padding:6px 8px;">' + esc(r.name) + (r.spec ? ' <span style="color:var(--text-muted);font-size:0.78rem;">' + esc(r.spec) + '</span>' : '') + '</td>' +
+            '<td style="padding:6px 8px;text-align:center;color:var(--text-muted);">' + r.n +
+                (r.bad ? ' <span style="color:#c0392b;font-weight:700;" title="오입력으로 보고 통계에서 뺀 날">⚠' + r.bad + '</span>' : '') + '</td>' +
+            '<td style="padding:6px 8px;text-align:center;">' + vphSpark(r.hist.map(function(x) { return x.c; })) + '</td>' +
+            '<td style="padding:6px 8px;text-align:right;color:#2471a3;">' + fmt(r.min) + '</td>' +
+            '<td style="padding:6px 8px;text-align:right;color:#c0392b;">' + fmt(r.max) + '</td>' +
+            '<td style="padding:6px 8px;text-align:right;font-weight:700;">' + (Math.round(r.ratio * 100) / 100) + '배</td>' +
+            '<td style="padding:6px 8px;text-align:right;font-weight:700;color:' + volCol + ';">' + (Math.round(r.avg * 10) / 10) + '%</td>' +
+            '<td style="padding:6px 8px;text-align:right;color:var(--text-muted);">' + Math.round(r.maxJump) + '%</td>' +
+            '<td style="padding:6px 8px;text-align:right;font-weight:700;">' + fmt(r.cur) + '</td>' +
+            '<td style="padding:6px 8px;text-align:right;color:' + posCol + ';font-weight:700;">' + Math.round(r.pos) + '% <span style="font-size:0.72rem;font-weight:400;">' + posTxt + '</span></td>' +
+            '</tr>';
+        if (!vphOpen[r.code]) return main;
+
+        // 펼침 — 일별 경매가 (최신순)
+        var days = (r.histAll || r.hist).slice().reverse().map(function(x, i, arr) {
+            var nxt = arr[i + 1];   // 하루 전 (뒤집었으므로 다음 원소가 과거)
+            var d = nxt ? ((x.c - nxt.c) / nxt.c * 100) : null;
+            var mark = d == null ? '' : (d > 0 ? '▲ +' : (d < 0 ? '▼ ' : '= ')) + (Math.round(d * 10) / 10) + '%';
+            var col = d == null ? 'var(--text-muted)' : (d > 0 ? '#c0392b' : (d < 0 ? '#2471a3' : 'var(--text-muted)'));
+            // ★ 통계에서 걸러낸 값도 목록에는 반드시 남긴다 — 그게 고쳐야 할 값이다.
+            //   숨기면 정작 클릭해서 수정할 수가 없다 (2026-08-21 실사용에서 바로 걸림).
+            var isBad = !!(r.badDates && r.badDates[x.d]);
+            return '<span onclick="vegEditAuctionPrice(\'' + r.code + '\', \'' + x.d + '\', ' + x.c + ', initVegPriceHistoryTab)"' +
+                   ' title="누르면 이 날짜 경매가를 고칠 수 있습니다"' +
+                   ' style="display:inline-block;min-width:170px;padding:2px 4px;cursor:pointer;border-radius:4px;' +
+                   (isBad ? 'background:#fdecea;border:1px solid #c0392b;' : '') + '">' +
+                   (isBad ? '<span style="font-size:0.78rem;">&#128680;</span> ' : '') +
+                   '<span style="color:var(--text-muted);">' + x.d.slice(5) + '</span> ' +
+                   '<b' + (isBad ? ' style="color:#c0392b;"' : '') + '>' + fmt(x.c) + '</b> ' +
+                   '<span style="color:' + col + ';font-size:0.78rem;">' + mark + '</span></span>';
+        }).join('');
+        return main + '<tr style="background:#fafbfc;border-bottom:1px solid var(--border-light);">' +
+               '<td colspan="11" style="padding:10px 14px;font-size:0.82rem;line-height:1.9;">' + days + '</td></tr>';
+    }).join('') || '<tr><td colspan="11" style="padding:20px;text-align:center;color:var(--text-muted);">표시할 품목이 없습니다.</td></tr>';
+
+    var dates = [];
+    (vphRaw || []).forEach(function(r) { if (dates.indexOf(r.auction_date) === -1) dates.push(r.auction_date); });
+    dates.sort();
+    if (title) title.textContent = dates.length ? (dates[0] + ' ~ ' + dates[dates.length - 1] + ' · ' + dates.length + '일치') : '';
+    var badSum = rows.reduce(function(a, r) { return a + (r.bad || 0); }, 0);
+    if (st) st.textContent = rows.length + '개 표시중 (전체 ' + total + '개)' +
+        (badSum ? ' · ⚠ 오입력 의심 ' + badSum + '건 제외됨' : '');
+}
+
+function vphToggle(code) {
+    if (vphOpen[code]) delete vphOpen[code]; else vphOpen[code] = true;
+    vphRender();
+}
+
+/** 지금 조건의 통계를 엑셀로 (마진 회의·기록 보관용) */
+function vphExport() {
+    if (!vphRaw) { alert('먼저 이력을 불러와주세요.'); return; }
+    var rows = vphStats();
+    var vendor = (document.getElementById('vphVendor') || {}).value || '';
+    if (vendor) rows = rows.filter(function(r) { return r.code.slice(0, 3) === vendor; });
+    rows.sort(function(a, b) { return b.avg - a.avg; });
+    var aoa = [['관리코드', '품목', '규격', '기록일수', '제외(오입력)', '최저', '최고', '배수', '평균 일변동%', '최대 일변동%', '최근가', '위치%']];
+    rows.forEach(function(r) {
+        aoa.push([r.code, r.name, r.spec, r.n, r.bad || 0, r.min, r.max,
+                  Math.round(r.ratio * 100) / 100, Math.round(r.avg * 10) / 10,
+                  Math.round(r.maxJump), r.cur, Math.round(r.pos)]);
+    });
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), '야채 시세 이력');
+    XLSX.writeFile(wb, '야채_시세이력_' + getKstDate(0) + '.xlsx');
 }
 
 // 중도매인 코드(관리코드 앞3자리) → 이름 (필터 표기용)
 var VM_VENDOR_NAMES = { '295': '엽채·일반', '284': '구황작물', '237': '무', '490': '나물집' };
 
 function initVegMarginTab() {
-    // 기본 마진 칸 — 지난번에 적용한 값이 그대로 뜨게 한다.
-    //   별도 설정 저장소(localStorage)를 두지 않고 **품목 마진의 최빈값**에서 역산한다.
-    //   그래야 PC 를 바꿔도 따라오고, 서버가 실제로 쓰는 값과 절대 어긋나지 않는다.
-    //   (주말 자동 반영 크론 veg_apply_prices 도 이 서버 마진을 그대로 쓴다)
+    // 기본 마진 칸 — 지난번에 쓴 값이 그대로 뜨게 한다.
+    //   ① 이 PC 에서 마지막으로 [전체 적용] 한 값이 있으면 그걸 쓴다
+    //   ② 없으면 **품목 마진의 최빈값**에서 역산한다 (다른 PC 에서 처음 열어도 맞게)
+    //   최빈값만 쓰던 때는, 로컬 품목 데이터가 아직 옛 상태면 계속 10% 가 떠서
+    //   매번 11 을 다시 치셔야 했다 (2026-08-28).
     (function() {
         var valEl = document.getElementById('vmBulkValue');
         var typeEl = document.getElementById('vmBulkType');
         if (!valEl || !typeEl) return;
+        try {
+            var last = JSON.parse(localStorage.getItem('vm_bulk_last') || 'null');
+            if (last && last.value !== null && last.value !== undefined && last.value !== '') {
+                typeEl.value = last.type === 'amount' ? 'amount' : 'rate';
+                valEl.value = last.value;
+                return;
+            }
+        } catch (e) { /* 저장값이 깨졌으면 최빈값으로 */ }
         var cnt = {}, best = null, bestN = 0;
         vmGetVegProducts().forEach(function(p) {
             if (!p.marginType || p.marginValue === null || p.marginValue === undefined) return;
@@ -9355,6 +9788,47 @@ function initVegMarginTab() {
     vmRefreshTargetDate();
 }
 
+/**
+ * 오늘(대상 납품일) 주문이 들어온 품목의 수량. { 관리코드: 수량 }
+ *   불러오기 때 veg_order_qty RPC 로 채운다. null 이면 아직 안 불러온 것.
+ *   orders/order_items 는 RLS 로 브라우저가 직접 못 읽어 RPC 로 우회한다
+ *   (야채 가격비교 화면이 쓰는 것과 같은 함수 — sql/veg_order_qty.sql).
+ */
+var vmOrderQty = null;
+var vmOrderQtyDate = null;
+
+/**
+ * 직전에 실제로 값이 들어온 날의 경매가. { 관리코드: { date, cost } }
+ *   '달력상 어제' 가 아니다 — 중도매인은 시세가 안 변하면 값을 안 넣고, 나물집·구황작물은
+ *   주문 있는 날만 넣는다. 그래서 '마지막으로 저장된 경매가' 를 쓴다.
+ *   불러오기 때 veg_price_history 로 이미 만들고 있던 값을 화면에서도 쓰려고 밖으로 뺐다.
+ */
+var vmPrevPrice = null;
+
+/**
+ * 지금 고른 정렬. 새로고침해도 유지되도록 이 PC 에 기억해둔다 —
+ * 아침마다 다시 고르게 하면 "정렬이 안 된다" 로 보인다 (2026-09-03).
+ */
+function vmSortValue() {
+    var el = document.getElementById('vmSort');
+    if (!el) return '';
+    if (!el.dataset.restored) {
+        el.dataset.restored = '1';
+        try {
+            var saved = localStorage.getItem('vm_sort');
+            if (saved && el.value !== saved) el.value = saved;
+        } catch (e) { /* 저장소 접근 실패해도 정렬 자체는 동작 */ }
+    }
+    return el.value || '';
+}
+
+/** 정렬 바꿀 때 — 기억해두고 다시 그린다 */
+function vmSetSort() {
+    var el = document.getElementById('vmSort');
+    try { localStorage.setItem('vm_sort', el ? el.value : ''); } catch (e) {}
+    renderVegMarginList();
+}
+
 function vmFiltered() {
     var vendorEl = document.getElementById('vmVendorFilter');
     var minorEl = document.getElementById('vmMinorFilter');
@@ -9362,21 +9836,55 @@ function vmFiltered() {
     var vendor = vendorEl ? vendorEl.value : '';   // 중도매인 = 관리코드 앞 3자리
     var minor = minorEl ? minorEl.value : '';
     var q = (searchEl ? searchEl.value : '').trim().toLowerCase();
-    return vmGetVegProducts().filter(function(p) {
+    var lockedOnly = !!(document.getElementById('vmLockedOnly') || {}).checked;
+    // 📦 오늘 주문만 — 240개를 다 훑지 않고 실제로 손볼 품목만 본다 (2026-09-03 요청)
+    var orderedOnly = !!(document.getElementById('vmOrderedOnly') || {}).checked;
+    var out = vmGetVegProducts().filter(function(p) {
+        if (lockedOnly && !p.marginLocked) return false;
+        if (orderedOnly && !(vmOrderQty && vmOrderQty[String(p.code).trim()] > 0)) return false;
         if (vendor && String(p.code).slice(0, 3) !== vendor) return false;
         if (minor && p.minorName !== minor) return false;
         if (q && ((p.code || '') + ' ' + (p.name || '')).toLowerCase().indexOf(q) === -1) return false;
         return true;
     });
+
+    // 변동률 정렬 — 비교 불가(전일값 없음·입하없음·자릿수의심)는 항상 맨 아래로 보낸다.
+    var sortBy = vmSortValue();
+    if (sortBy === 'drop' || sortBy === 'rise') {
+        out = out.slice().sort(function(a, b) {
+            var ca = vmChangePct(a), cb = vmChangePct(b);
+            if (ca === null && cb === null) return String(a.code).localeCompare(String(b.code));
+            if (ca === null) return 1;
+            if (cb === null) return -1;
+            return sortBy === 'drop' ? (ca - cb) : (cb - ca);
+        });
+    }
+    return out;
 }
 
 /** 판매가 = 경매가 + 마진. 마진 미설정이면 0 반환(적용 대상에서 제외) */
+/**
+ * 판매가 = 경매가 + 마진, 그리고 **100원 단위 올림**.
+ *   1,630 -> 1,700 · 1,760 -> 1,800 · 1,600 -> 1,600 (이미 100단위면 그대로)
+ *
+ * 왜: 마진율이 11% 같은 값이면 1,776 원처럼 끝자리가 지저분해진다. 거래처가 보는
+ *     가격은 100원 단위로 떨어지는 게 읽기 쉽다 (2026-08-27 사장님 결정).
+ *     저가 품목이 상대적으로 많이 오르는 것(550 -> 600, +9%)은 감수하기로 함.
+ *
+ * ★ 같은 규칙이 sql/veg_apply_prices.sql(주말 크론) · sql/veg_prev_sell.sql(어제 단가)
+ *   에도 들어 있다. **한 곳만 고치면 "어제 1,776 / 오늘 1,800" 같은 가짜 변동이 뜬다.**
+ */
 function vmCalcSell(p, cost) {
     if (!cost || cost <= 0) return 0;
     var v = Number(p.marginValue) || 0;
-    if (p.marginType === 'amount') return Math.round(cost + v);
-    if (p.marginType === 'rate') return Math.round(cost * (1 + v / 100));
-    return 0;
+    var raw = 0;
+    if (p.marginType === 'amount') raw = cost + v;
+    else if (p.marginType === 'rate') raw = cost * (1 + v / 100);
+    else return 0;
+    // ★ 먼저 1원 단위로 반올림한 뒤 올린다.
+    //   22,000 x 1.1 은 실수 계산에서 24200.000000000004 가 나와, 바로 올리면
+    //   24,300 이 된다 (100원을 더 받게 됨). 반올림 한 번이면 24,200 -> 24,200.
+    return Math.ceil(Math.round(raw) / 100) * 100;
 }
 
 function renderVegMarginList() {
@@ -9387,10 +9895,21 @@ function renderVegMarginList() {
     var cntEl = document.getElementById('vmCount');
     if (cntEl) {
         var setCnt = all.filter(function(p) { return p.marginType; }).length;
-        cntEl.textContent = '(전체 ' + all.length + '개 · 마진설정 ' + setCnt + '개 · 표시 ' + list.length + '개)';
+        var lockCnt = all.filter(function(p) { return p.marginLocked; }).length;
+        var ordCnt = vmOrderQty ? all.filter(function(p) { return vmOrderQty[String(p.code).trim()] > 0; }).length : 0;
+        var touchCnt = all.filter(function(p) { return !p.marginLocked && vmTouchedToday(p); }).length;
+        var sv = vmSortValue();
+        var cmpCnt = (sv === 'drop' || sv === 'rise')
+            ? list.filter(function(p) { return vmChangePct(p) !== null; }).length : 0;
+        cntEl.textContent = '(전체 ' + all.length + '개 · 마진설정 ' + setCnt + '개 · 표시 ' + list.length + '개' +
+                            (ordCnt ? ' · 📦 오늘 주문 ' + ordCnt + '개' : '') +
+                            (touchCnt ? ' · ⏳ 오늘조정 ' + touchCnt + '개' : '') +
+                            (lockCnt ? ' · 🔒 고정 ' + lockCnt + '개' : '') +
+                            (sv === 'drop' ? ' · ▼ 많이 내린 순 (' + cmpCnt + '개 비교가능)' : '') +
+                            (sv === 'rise' ? ' · ▲ 많이 오른 순 (' + cmpCnt + '개 비교가능)' : '') + ')';
     }
     if (list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px;">야채 품목이 없습니다.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:30px;">야채 품목이 없습니다.</td></tr>';
         return;
     }
     tbody.innerHTML = list.map(function(p) {
@@ -9401,6 +9920,7 @@ function renderVegMarginList() {
         var noStock = (t.noStock !== undefined) ? !!t.noStock : !!p.soldOut;
         var mType = p.marginType || 'rate';
         var mVal = (p.marginValue === null || p.marginValue === undefined) ? '' : p.marginValue;
+        var touchedToday = vmTouchedToday(p);
         var c = esc(p.code);
         // 경매가 칸 아래 꼬리표 — 오늘 값이 아니면 언제 것인지, 자릿수가 의심되면 왜 그런지 보여준다.
         //   숫자만 보면 오늘 받은 값인지 지난 값인지 구분이 안 돼서 옛 값이 조용히 살아남았다.
@@ -9412,33 +9932,144 @@ function renderVegMarginList() {
             badge = '<div style="font-size:0.68rem;color:#8a6d3b;margin-top:2px;white-space:nowrap;">' +
                     String(t.fromDate).slice(5) + ' 시세 (' + t.daysAgo + '일 전)</div>';
         }
-        return '<tr' + (noStock ? ' style="background:#fff5f5;"' : '') + '>' +
+        // 전일 경매가 — '마지막으로 값이 들어온 날' 기준. 오늘 값과 나란히 놓아
+        //   얼마나 올랐는지/내렸는지 보고 그 자리에서 마진을 조정할 수 있게 한다.
+        //   오늘 값이 지난 시세로 채워진 경우(t.fromDate)는 그게 곧 '전일 값' 이라 중복이니 비운다.
+        var pv = (vmPrevPrice && !t.fromDate) ? vmPrevPrice[String(p.code).trim()] : null;
+        var prevCell = '<span style="color:var(--text-muted);">-</span>';
+        if (pv && pv.cost > 0) {
+            var diffTxt = '';
+            var chg = vmChangePct(p);
+            if (chg !== null) {
+                var pct = Math.round(chg);
+                if (pct > 0)      diffTxt = '<span style="color:var(--danger);font-weight:700;">▲' + pct + '%</span>';
+                else if (pct < 0) diffTxt = '<span style="color:#0066cc;font-weight:700;">▼' + Math.abs(pct) + '%</span>';
+                else              diffTxt = '<span style="color:var(--text-muted);">=</span>';
+            }
+            prevCell = '<div style="font-size:0.8rem;font-weight:600;">' + pv.cost.toLocaleString() +
+                       (diffTxt ? ' ' + diffTxt : '') + '</div>' +
+                       '<div style="font-size:0.68rem;color:var(--text-muted);white-space:nowrap;">' +
+                       String(pv.date).slice(5) + '</div>';
+        }
+
+        // 📦 오늘 주문 수량 — 값을 고칠 때 "이건 실제로 오늘 나가는 물건" 임을 바로 알게 한다
+        var oq = vmOrderQty ? (vmOrderQty[String(p.code).trim()] || 0) : 0;
+        var oqBadge = oq > 0
+            ? ' <span title="오늘 납품분 주문 수량" style="font-size:0.7rem;font-weight:700;color:#0a7;background:#e6f7f1;border-radius:4px;padding:1px 5px;white-space:nowrap;">📦 ' + oq + '</span>'
+            : '';
+        return '<tr' + (noStock ? ' style="background:#fff5f5;"' : (oq > 0 ? ' style="background:#f4fbf8;"' : '')) + '>' +
             '<td><input type="checkbox" class="vm-chk" data-code="' + c + '"></td>' +
             '<td style="font-weight:600;color:var(--accent);font-size:0.76rem;">' + c + '</td>' +
-            '<td>' + esc(p.name) + '</td>' +
+            '<td>' + esc(p.name) + oqBadge + '</td>' +
             '<td style="color:var(--text-secondary);font-size:0.76rem;">' + esc(p.spec || '') + '</td>' +
             '<td style="font-size:0.76rem;">' + esc(p.unit || '') + '</td>' +
-            '<td><div style="display:flex;gap:4px;">' +
-                '<input type="number" value="' + mVal + '" onchange="vmSetMargin(\'' + c + '\', this.value, null)" style="width:68px;padding:4px 6px;font-size:0.8rem;">' +
+            '<td><div style="display:flex;gap:4px;align-items:center;">' +
+                '<span onclick="vmToggleMarginLock(\'' + c + '\')" title="' + (p.marginLocked ? '고정 해제 — [전체 적용] 에 다시 포함됩니다' : '고정하기 — [전체 적용] 에서 제외됩니다') + '" ' +
+                    'style="cursor:pointer;font-size:0.95rem;line-height:1;user-select:none;opacity:' + (p.marginLocked ? '1' : '0.25') + ';">' +
+                    (p.marginLocked ? '🔒' : '🔓') + '</span>' +
+                // ⏳ 오늘만 조정 — 오늘 [전체 적용] 에서 빠지고 내일이면 자동 복귀
+                (touchedToday ? '<span title="오늘 조정함 — 오늘 [전체 적용] 에서 빠집니다. 내일이면 기본 마진으로 돌아갑니다." ' +
+                    'style="font-size:0.9rem;line-height:1;user-select:none;">⏳</span>' : '') +
+                '<input type="number" value="' + mVal + '" onchange="vmSetMargin(\'' + c + '\', this.value, null)" style="width:64px;padding:4px 6px;font-size:0.8rem;' + (p.marginLocked ? 'background:#fff8e1;font-weight:700;' : (touchedToday ? 'background:#eef6ff;font-weight:700;' : '')) + '">' +
                 '<select onchange="vmSetMargin(\'' + c + '\', null, this.value)" style="padding:4px;font-size:0.78rem;">' +
                     '<option value="rate"' + (mType === 'rate' ? ' selected' : '') + '>%</option>' +
                     '<option value="amount"' + (mType === 'amount' ? ' selected' : '') + '>원</option>' +
                 '</select></div></td>' +
             '<td class="text-right"><input type="number" value="' + (cost || '') + '" onchange="vmSetCost(\'' + c + '\', this.value)" style="width:88px;padding:4px 6px;text-align:right;font-size:0.8rem;' +
                 (t.suspect ? 'border:2px solid var(--danger);background:#fdecea;' : (t.fromDate ? 'background:#fdf6e3;' : '')) + '">' + badge + '</td>' +
+            '<td class="text-right">' + prevCell + '</td>' +
             '<td class="text-right" style="font-weight:700;color:' + (t.suspect ? 'var(--text-muted)' : (sell ? '#0066cc' : 'var(--text-muted)')) + ';' + (t.suspect ? 'text-decoration:line-through;' : '') + '">' + (sell ? sell.toLocaleString() : '-') + '</td>' +
             '<td class="text-center"><input type="checkbox" ' + (noStock ? 'checked' : '') + ' onchange="vmSetNoStock(\'' + c + '\', this.checked)"></td>' +
             '</tr>';
     }).join('');
 }
 
-function vmSetMargin(code, value, type) {
+/**
+ * 개별 마진 수정 — 값·종류만 바꾸고 **자물쇠는 건드리지 않는다**.
+ *
+ * 2026-08-28 에는 손으로 고치면 자동으로 잠갔다. [전체 적용] 이 새벽에 잡아둔 상추
+ * 정액 마진을 덮어쓴 사고 때문이었다. 그런데 그러면 **변동폭이 큰 품목을 그날 하루만
+ * 조정하는 것도 전부 잠겨버려서**, 다음날 [전체 적용] 에서 빠진 채로 굳는다.
+ * → 2026-09-03 사장님 결정: 자동 잠금 제거. 잠그는 것은 자물쇠 🔒 를 눌렀을 때만.
+ *   "그날그날 조정" 과 "계속 지킬 값" 을 사장님이 직접 가른다.
+ *
+ * ⚠ 그래서 개별 조정은 [전체 적용] **뒤에** 하셔야 한다. 먼저 조정하고 전체 적용을
+ *   누르면 덮어써진다 (그게 8/28 사고였다). 계속 지켜야 할 값은 자물쇠를 잠글 것.
+ *
+ * 고친 값은 그 자리에서 서버에 남긴다 — 예전엔 메모리에만 두어서, 아무 버튼도 안 누르고
+ * 새로고침하면 값이 날아갔다.
+ */
+async function vmSetMargin(code, value, type) {
     var p = products.find(function(x) { return x.code === code; });
     if (!p) return;
     if (value !== null) p.marginValue = (value === '' ? null : Number(value));
     if (type !== null) p.marginType = type;
     if (!p.marginType) p.marginType = 'rate';
+    // '오늘만 조정' 도장 — 그날 [전체 적용] 에서 빠진다. 다음날이면 자동 무시(11% 복귀).
+    p.marginTouchedOn = vmDayKey();
     renderVegMarginList();
+    saveAll();
+    if (!db) return;
+    // margin_locked 는 보내지 않는다 — 잠금 상태는 자물쇠 버튼만 바꾼다.
+    var r = await db.from('products').update({
+        margin_type: p.marginType,
+        margin_value: (p.marginValue === null || p.marginValue === undefined) ? null : Number(p.marginValue),
+        margin_touched_on: p.marginTouchedOn
+    }).eq('code', code);
+    if (r.error) {
+        alert('마진 저장 실패: ' + r.error.message +
+              '\n\n화면에는 반영됐습니다. [가격 적용] 을 누르면 다시 시도됩니다.' +
+              (/margin_touched_on/.test(r.error.message)
+                ? '\n\n※ supabase_야채_오늘조정_컬럼추가.sql 을 먼저 실행해주세요.' : ''));
+    }
+}
+
+/**
+ * '오늘' 의 기준일 — 대상 납품일(vmTargetDate). 새벽에 작업하므로 달력 날짜와
+ * 어긋날 수 있어서, 경매가·주문 수량이 쓰는 것과 같은 날짜를 써야 한다.
+ * 아직 못 받았으면 KST 오늘로 폴백.
+ */
+function vmDayKey() {
+    if (vmTargetDate) return vmTargetDate;
+    return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+/** 이 품목이 '오늘' 손으로 조정된 것인지 — [전체 적용] 제외 판단 */
+function vmTouchedToday(p) {
+    return !!p.marginTouchedOn && String(p.marginTouchedOn) === vmDayKey();
+}
+
+/**
+ * 전일 대비 경매가 변동률(%). 비교할 수 없으면 null.
+ *   ★ '화면의 오늘 경매가 칸에 보이는 값' 과 비교한다. 예전엔 vmTodayPrice 에 값이
+ *     있을 때만 계산해서, 불러오기 전이거나 그 값이 없으면 ▲▼ 가 통째로 안 나왔다.
+ *   지난 시세로 채운 칸(fromDate)·자릿수 의심(suspect)은 비교 대상이 아니다.
+ */
+function vmChangePct(p) {
+    var t = vmTodayPrice[p.code] || {};
+    if (t.suspect || t.fromDate || t.noStock) return null;
+    var pv = vmPrevPrice ? vmPrevPrice[String(p.code).trim()] : null;
+    if (!pv || !(Number(pv.cost) > 0)) return null;
+    var hasT = (t.cost !== undefined && t.cost !== null && t.cost !== '');
+    var cur = hasT ? Number(t.cost) : Number(p.cost || 0);
+    if (!(cur > 0)) return null;
+    return (cur - Number(pv.cost)) / Number(pv.cost) * 100;
+}
+
+/** 자물쇠 토글 — 누르면 바로 서버에 저장한다 (마진 값은 그대로) */
+async function vmToggleMarginLock(code) {
+    var p = products.find(function(x) { return x.code === code; });
+    if (!p) return;
+    p.marginLocked = !p.marginLocked;
+    renderVegMarginList();
+    saveAll();
+    if (!db) return;
+    var r = await db.from('products').update({ margin_locked: !!p.marginLocked }).eq('code', code);
+    if (r.error) {
+        alert('고정 상태 저장 실패: ' + r.error.message);
+        p.marginLocked = !p.marginLocked;
+        renderVegMarginList();
+    }
 }
 
 function vmSetCost(code, value) {
@@ -9475,10 +10106,48 @@ function vmApplyBulkMargin(selectedOnly) {
         target = vmFiltered();
         if (!confirm('현재 표시된 ' + target.length + '개 품목의 마진을\n[' + val + (type === 'rate' ? '%' : '원') + '] 으로 일괄 변경합니다.\n\n계속할까요?')) return;
     }
+    // 🔒 고정된 품목은 이 버튼으로 절대 바뀌지 않는다 (2026-09-03).
+    //   예전엔 [취소] 가 '잠금까지 풀고 전부 변경' 이었다. 그런데 브라우저 confirm 은
+    //   ESC 키·창 닫기도 [취소] 로 처리한다 → 물러서려던 동작이 자물쇠를 통째로 날렸다.
+    //   (가지(상) 3,000원 정액이 11% 로 덮여 있던 건)
+    //   → 이제 [취소] 는 아무것도 하지 않는다. 고정을 풀려면 목록에서 자물쇠 🔒 를
+    //     직접 눌러야 한다 (누르는 즉시 서버 저장). "내가 풀지 않는 이상 유지" 원칙.
+    //   ⏳ '오늘만 조정' 도 같이 뺀다 (2026-09-03). 시세가 크게 움직인 날 그 품목만
+    //   따로 손보는데, 뒤이어 [전체 적용] 을 누르면 11% 로 되돌아가던 문제.
+    //   → 조정 순서를 신경 쓸 필요가 없어진다. 내일이면 날짜가 지나 자동 복귀.
+    var locked = target.filter(function(p) { return p.marginLocked; });
+    var touched = target.filter(function(p) { return !p.marginLocked && vmTouchedToday(p); });
+    var kept = locked.concat(touched);
+    if (kept.length > 0) {
+        var lineOf = function(p) {
+            return '  · ' + (p.marginLocked ? '🔒 ' : '⏳ ') + p.name + '  ' +
+                   (p.marginValue == null ? '-' : Number(p.marginValue).toLocaleString()) +
+                   (p.marginType === 'amount' ? '원' : '%');
+        };
+        var sample = kept.slice(0, 6).map(lineOf).join('\n');
+        var rest = target.length - kept.length;
+        if (!confirm(
+            '따로 잡아두신 마진이 ' + kept.length + '건 있습니다.\n' +
+            (locked.length ? '  🔒 계속 고정 ' + locked.length + '건\n' : '') +
+            (touched.length ? '  ⏳ 오늘만 조정 ' + touched.length + '건 (내일 자동 복귀)\n' : '') +
+            '\n' + sample +
+            (kept.length > 6 ? '\n  · 외 ' + (kept.length - 6) + '건' : '') +
+            '\n\n이 ' + kept.length + '건은 건드리지 않고, 나머지 ' + rest + '개만 ' +
+            val + (type === 'rate' ? '%' : '원') + ' 로 바꿉니다.\n\n' +
+            '[확인] 진행    [취소] 아무것도 안 함'
+        )) return;
+        target = target.filter(function(p) { return !p.marginLocked && !vmTouchedToday(p); });
+        if (target.length === 0) { alert('바꿀 품목이 없습니다. (표시된 품목이 모두 고정·오늘조정 상태입니다)'); return; }
+    }
+    // 이 PC 에서 마지막으로 쓴 기본 마진을 기억한다 (다음에 탭 열면 그대로 뜨게)
+    try {
+        localStorage.setItem('vm_bulk_last', JSON.stringify({ type: type, value: val }));
+    } catch (e) { /* 저장 실패해도 적용에는 지장 없음 */ }
+
     target.forEach(function(p) { p.marginType = type; p.marginValue = val; });
     renderVegMarginList();
     // [전체 적용] 은 서버에 바로 저장한다.
-    //   예전엔 "[마진만 저장] 을 누르세요" 안내만 띄웠는데, 그걸 안 누르고 [가격 적용] 으로
+    //   예전엔 "[마진 저장 + 판매가 반영] 을 누르세요" 안내만 띄웠는데, 그걸 안 누르고 [가격 적용] 으로
     //   넘어가면 서버 마진이 옛 값으로 남는다. 주말 자동 반영(veg_apply_prices 크론)은
     //   서버 마진을 그대로 쓰므로, 어긋나면 토·일 앱 가격이 옛 마진으로 계산된다.
     //   선택 적용은 부분 변경이라 지금처럼 수동 저장으로 둔다.
@@ -9486,7 +10155,7 @@ function vmApplyBulkMargin(selectedOnly) {
         vmSaveMarginsOnly();
         return;
     }
-    alert(target.length + '개 품목 마진 설정 완료.\n\n※ [마진만 저장] 을 눌러야 서버에 반영됩니다.');
+    alert(target.length + '개 품목 마진 설정 완료.\n\n※ [가격 적용 (앱 즉시 반영)] 을 눌러야 서버에 반영됩니다.');
 }
 
 /**
@@ -9617,6 +10286,7 @@ async function vmLoadAuctionPrices() {
                     hist[code] = { date: String(r.auction_date), cost: Number(r.cost) };
                 }
             });
+            vmPrevPrice = hist;   // 표의 '전일 경매가' 칸에서 그대로 쓴다
             var dayDiff = function(a, b) {
                 return Math.round((new Date(a) - new Date(b)) / 86400000);
             };
@@ -9647,10 +10317,37 @@ async function vmLoadAuctionPrices() {
             console.warn('과거 경매가 보정 실패(건너뜀):', e && e.message);
         }
 
+        // ── 오늘 주문 수량 — [📦 오늘 주문만] 필터·표시용 ────────────────────────
+        //   전 품목 240개를 다 띄우면 정작 손볼 것을 못 찾는다 (2026-09-03 사장님 요청).
+        //   경매가와 같은 납품일로 받아야 한다 — 어긋나면 가격은 오늘 건데 수량은
+        //   어제 것이 되어 엉뚱한 품목을 조정하게 된다.
+        vmOrderQty = null;
+        vmOrderQtyDate = null;
+        var orderedN = 0;
+        try {
+            var oq = await db.rpc('veg_order_qty', { p_date: vmTargetDate });
+            if (oq.error) throw new Error(oq.error.message);
+            vmOrderQty = {};
+            (oq.data || []).forEach(function(r) {
+                var qv = Number(r.qty) || 0;
+                if (qv > 0) { vmOrderQty[String(r.product_code).trim()] = qv; orderedN++; }
+            });
+            vmOrderQtyDate = vmTargetDate;
+        } catch (e) {
+            console.warn('veg_order_qty 실패 — [오늘 주문만] 필터 사용 불가:', e && e.message);
+        }
+        var ordChk = document.getElementById('vmOrderedOnly');
+        if (ordChk) {
+            ordChk.disabled = !vmOrderQty;
+            var ordLbl = document.getElementById('vmOrderedOnlyLabel');
+            if (ordLbl) ordLbl.style.opacity = vmOrderQty ? '1' : '0.4';
+        }
+
         st.innerHTML = '✅ 중도매인 입력분 ' + n + '건 불러옴 (입하없음 ' + noStockN + '건)' +
                        (miss ? ' · 미등록코드 ' + miss + '건 건너뜀' : '') +
                        (fallbackN ? ' · <b style="color:#8a6d3b;">지난 시세로 채움 ' + fallbackN + '건</b>' : '') +
-                       (suspectN ? ' · <b style="color:var(--danger);">⚠ 자릿수 의심 ' + suspectN + '건 (적용 제외)</b>' : '');
+                       (suspectN ? ' · <b style="color:var(--danger);">⚠ 자릿수 의심 ' + suspectN + '건 (적용 제외)</b>' : '') +
+                       (vmOrderQty ? ' · <b style="color:#0a7;">📦 오늘 주문 ' + orderedN + '품목</b>' : '');
         st.style.color = 'var(--primary)';
         renderVegMarginList();
     } catch (e) {
@@ -9719,27 +10416,96 @@ function vmHandlePriceUpload(e) {
     e.target.value = '';
 }
 
-/** 마진만 서버 저장 (가격은 안 건드림) */
+/**
+ * 마진 저장 + 판매가 재계산.
+ *
+ * ★ 2026-09-03 부터 화면 버튼이 아니다. [전체 적용] 이 내부에서만 부른다.
+ *   (전체 적용 → 서버 마진 즉시 저장. 주말 자동 반영 크론이 서버 마진을 그대로 쓰기 때문)
+ *   사장님이 누르는 버튼은 [가격 적용 (앱 즉시 반영)] 하나뿐이고, 그쪽이 이 일까지 한다.
+ *
+ * 왜 판매가까지 건드리나 (2026-08-27 변경):
+ *   예전엔 마진 숫자만 저장했다. 판매가는 [가격 적용] 이 '그날 경매가가 들어온 품목' 만
+ *   다시 계산했다. 그런데 중도매인은 시세가 안 변하면 값을 안 넣는다 — 나물집·구황작물은
+ *   주문 있는 날만 넣는다. 그래서 마진을 10% → 11% 로 바꿔도 **경매가가 안 들어온 품목은
+ *   옛 마진(10%)에 갇혀** 있었다 (염장연근 3,080원이 그대로 남아 있던 사고).
+ *   → 마진을 바꾸면 저장된 원가로 판매가도 같이 다시 계산한다.
+ *
+ * 손대지 않는 것:
+ *   · 원가가 없는 품목 (계산할 근거가 없다)
+ *   · 품절(입하없음) 여부 — 판매가만 고치고 상태는 그대로 둔다
+ *   · 이미 확정된 주문 금액 — order_items 에 박힌 단가는 건드리지 않는다. 앞으로 들어올
+ *     주문부터 새 가격이다.
+ *
+ * 그다음 아침에 [가격 적용] 을 누르면 그날 경매가가 들어온 품목만 새 원가로 다시 계산된다.
+ */
 async function vmSaveMarginsOnly() {
     var veg = vmGetVegProducts().filter(function(p) { return p.marginType; });
     if (veg.length === 0) { alert('설정된 마진이 없습니다.'); return; }
+
+    // 새 판매가를 미리 계산해 둔다 (원가 없으면 대상 아님)
+    //   ★ 오늘 경매가가 화면에 올라와 있으면 저장된 원가 대신 그 값을 쓴다 (2026-08-31)
+    //     안 그러면 이 버튼이 [가격 적용] 이나 화면의 '판매가(자동)' 칸과 다른 값을 낸다.
+    //     (비포오이 오늘 경매가 16,000 인데 8/29 원가 10,000 으로 계산해 18,000 대신
+    //      12,000 을 내놓던 사고. 쥬키니는 13,000 대신 21,000)
+    //     그 값으로 값을 매겼으면 원가도 같이 갱신해야 마진 역산이 어긋나지 않는다.
+    //   입하없음·자릿수 의심은 [가격 적용] 과 똑같이 오늘값을 쓰지 않는다 (저장된 원가로 폴백).
+    var repriced = [];
+    var usedToday = 0;
+    veg.forEach(function(p) {
+        var t = vmTodayPrice[p.code];
+        var todayCost = (t && !t.noStock && !t.suspect) ? (Number(t.cost) || 0) : 0;
+        var cost = todayCost > 0 ? todayCost : (Number(p.cost) || 0);
+        if (cost <= 0) return;
+        var sell = vmCalcSell(p, cost);
+        if (!sell || sell === Number(p.sell)) return;
+        if (todayCost > 0) usedToday++;
+        repriced.push({ p: p, sell: sell, cost: todayCost > 0 ? todayCost : null });
+    });
+
+    if (repriced.length > 0) {
+        if (!confirm('마진 ' + veg.length + '건을 저장합니다.\n\n' +
+                     '판매가 ' + repriced.length + '건이 새 마진으로 다시 계산되어\n' +
+                     '거래처 앱에 즉시 반영됩니다.\n\n' +
+                     '예) ' + repriced.slice(0, 3).map(function(r) {
+                         return r.p.name + ' ' + Number(r.p.sell || 0).toLocaleString() + ' → ' + r.sell.toLocaleString();
+                     }).join('\n     ') +
+                     (repriced.length > 3 ? '\n     외 ' + (repriced.length - 3) + '건' : '') +
+                     (usedToday ? '\n\n(오늘 경매가가 올라온 ' + usedToday + '건은 오늘 경매가로 계산했습니다)' : '') +
+                     '\n\n계속할까요?')) return;
+    }
+
+    repriced.forEach(function(r) { r.p.sell = r.sell; if (r.cost) r.p.cost = r.cost; });
     saveAll();
     if (!db) { alert('로컬에 저장했습니다.\n(Supabase 미연결 — [Supabase 설정] 에서 연결하면 서버에도 반영됩니다)'); return; }
     var hint = document.getElementById('vmApplyHint');
     hint.textContent = '마진 저장 중...';
+    var sellByCode = {}, costByCode = {};
+    repriced.forEach(function(r) {
+        sellByCode[r.p.code] = r.sell;
+        if (r.cost) costByCode[r.p.code] = r.cost;   // 오늘 경매가로 매긴 건 원가도 같이
+    });
     var ok = 0, fail = 0;
     for (var i = 0; i < veg.length; i += 20) {
         var results = await Promise.all(veg.slice(i, i + 20).map(function(p) {
-            return db.from('products').update({
+            // margin_locked 는 보내지 않는다 (2026-09-03) — 자물쇠는 자물쇠 버튼만 바꾼다.
+            //   여기서 같이 밀어 올리면, 로컬이 자물쇠를 모르는 상태(로드 누락·다른 PC)일 때
+            //   그 false 가 서버의 🔒 를 지운다. 실제로 가지(상) 자물쇠가 그렇게 풀렸다.
+            var patch = {
                 margin_type: p.marginType || null,
-                margin_value: (p.marginValue === null || p.marginValue === undefined) ? null : Number(p.marginValue)
-            }).eq('code', p.code);
+                margin_value: (p.marginValue === null || p.marginValue === undefined) ? null : Number(p.marginValue),
+                margin_touched_on: p.marginTouchedOn || null
+            };
+            if (sellByCode[p.code]) patch.sell = sellByCode[p.code];
+            if (costByCode[p.code]) patch.cost = costByCode[p.code];
+            return db.from('products').update(patch).eq('code', p.code);
         }));
         results.forEach(function(r) { if (r.error) fail++; else ok++; });
     }
     hint.textContent = '';
     renderVegMarginList();
-    alert('마진 저장 완료\n성공 ' + ok + '건' + (fail ? '\n실패 ' + fail + '건' : ''));
+    if (typeof renderProductList === 'function') renderProductList();
+    alert('마진 저장 완료\n성공 ' + ok + '건' + (fail ? '\n실패 ' + fail + '건' : '') +
+          (repriced.length ? '\n\n판매가 ' + repriced.length + '건이 앱에 반영되었습니다.' : '\n\n판매가는 이미 새 마진과 같아 바뀐 것이 없습니다.'));
 }
 
 /** 오늘 경매가로 판매가 계산 → 즉시 적용 (거래처앱 실시간 반영) */
@@ -9795,16 +10561,37 @@ async function vmApplyPrices() {
             }
         });
     })();
-    if (targets.length === 0) {
+
+    // ── 오늘 경매가가 안 들어온 품목 — 마지막 원가 × 지금 마진으로 판매가를 맞춘다 ──
+    //   (2026-09-03 버튼 통합) 중도매인은 시세가 안 변하면 값을 안 넣는다. 나물집·구황작물은
+    //   주문 있는 날만 넣는다. 그 품목을 손대지 않으면 마진을 바꾼 날 옛 마진에 갇힌다
+    //   (염장연근 3,080원 사고). 원가가 그대로면 계산 결과도 그대로라 평소엔 0건이고,
+    //   마진을 바꾼 날에만 값이 움직인다 — 실측(9/3): 마진 걸린 247건 중 변동 0건.
+    //   → 그래서 [마진 저장 + 판매가 반영] 을 따로 둘 이유가 없어 이 버튼에 합쳤다.
+    var repriced = [];
+    var todayCodes = {};
+    targets.forEach(function(t) { todayCodes[t.p.code] = 1; });
+    vmGetVegProducts().forEach(function(p) {
+        if (todayCodes[p.code]) return;         // 오늘 값이 있는 건 위에서 이미 처리
+        if (!p.marginType) return;              // 마진 미설정 — 계산 근거 없음
+        var c = Number(p.cost) || 0;
+        if (c <= 0) return;                     // 원가 없음 — 계산 근거 없음
+        var s = vmCalcSell(p, c);
+        if (!s || s === Number(p.sell)) return; // 이미 같은 값이면 건드리지 않는다
+        repriced.push({ p: p, sell: s });
+    });
+
+    if (targets.length === 0 && repriced.length === 0) {
         alert('적용할 가격이 없습니다.\n\n경매가 엑셀을 업로드하거나 표에서 직접 입력해주세요.' +
               (noMargin ? '\n(마진 미설정 ' + noMargin + '건은 제외됨)' : ''));
         return;
     }
     var noStockCnt = targets.filter(function(t) { return t.noStock; }).length;
-    if (!confirm('야채 ' + targets.length + '개 품목 가격을 적용합니다.\n' +
-                 '· 가격변경 ' + (targets.length - noStockCnt) + '건\n' +
+    if (!confirm('야채 가격을 적용합니다.\n' +
+                 '· 오늘 경매가로 변경 ' + (targets.length - noStockCnt) + '건\n' +
                  '· 입하없음 ' + noStockCnt + '건\n' +
                  (vmSubCnt ? '· (상)→(특) 대체 출고 ' + vmSubCnt + '건 (상짜리 가격 유지)\n' : '') +
+                 (repriced.length ? '· 오늘 경매가 없는 품목을 새 마진으로 재계산 ' + repriced.length + '건\n' : '') +
                  (noMargin ? '· 마진 미설정으로 제외 ' + noMargin + '건\n' : '') +
                  '\n거래처 앱에 즉시 반영됩니다. 계속할까요?')) return;
 
@@ -9814,21 +10601,40 @@ async function vmApplyPrices() {
         if (!t.noStock) { t.p.cost = t.cost; t.p.sell = t.sell; }
         t.p.soldOut = t.noStock;
     });
+    repriced.forEach(function(r) { r.p.sell = r.sell; });
     saveAll();
     var ok = 0, fail = 0;
     if (db) {
-        for (var i = 0; i < targets.length; i += 20) {
-            var results = await Promise.all(targets.slice(i, i + 20).map(function(t) {
-                var upd = { sold_out: !!t.noStock };
-                if (!t.noStock) { upd.cost = t.cost; upd.sell = t.sell; }
-                // 마진도 같이 올린다 — 화면에서 마진을 바꾸고 [가격 적용] 만 눌러도
-                // 서버가 최신이 되게. 주말 자동 반영이 서버 마진을 그대로 쓰기 때문.
-                if (t.p.marginType) {
-                    upd.margin_type = t.p.marginType;
-                    upd.margin_value = (t.p.marginValue === null || t.p.marginValue === undefined)
-                        ? null : Number(t.p.marginValue);
-                }
-                return db.from('products').update(upd).eq('code', t.p.code);
+        // 한 품목당 update 한 번으로 모은다 (마진 · 오늘 경매가 · 재계산 판매가)
+        var patchByCode = {};
+        var pick = function(code) { return (patchByCode[code] = patchByCode[code] || {}); };
+
+        // ① 마진 — 마진이 걸린 야채 전부.
+        //    주말 자동 반영(veg_apply_prices 크론)이 서버 마진을 그대로 쓰므로 항상 최신이어야 한다.
+        //    ★ margin_locked 는 보내지 않는다 (2026-09-03). 자물쇠는 자물쇠 버튼만 바꾼다 —
+        //      누르는 즉시 서버에 저장되므로 여기서 또 올릴 이유가 없고, 로컬이 자물쇠를 모르는
+        //      상태(로드 누락·다른 PC)에서 이 버튼을 누르면 그 false 가 서버의 🔒 를 지운다.
+        vmGetVegProducts().forEach(function(p) {
+            if (!p.marginType) return;
+            var u = pick(p.code);
+            u.margin_type = p.marginType;
+            u.margin_value = (p.marginValue === null || p.marginValue === undefined)
+                ? null : Number(p.marginValue);
+            u.margin_touched_on = p.marginTouchedOn || null;
+        });
+        // ② 오늘 경매가가 들어온 품목 — 원가 · 판매가 · 품절
+        targets.forEach(function(t) {
+            var u = pick(t.p.code);
+            u.sold_out = !!t.noStock;
+            if (!t.noStock) { u.cost = t.cost; u.sell = t.sell; }
+        });
+        // ③ 오늘 값 없는 품목 — 판매가만 새 마진으로
+        repriced.forEach(function(r) { pick(r.p.code).sell = r.sell; });
+
+        var codes = Object.keys(patchByCode);
+        for (var i = 0; i < codes.length; i += 20) {
+            var results = await Promise.all(codes.slice(i, i + 20).map(function(code) {
+                return db.from('products').update(patchByCode[code]).eq('code', code);
             }));
             results.forEach(function(r) { if (r.error) fail++; else ok++; });
         }
@@ -9894,7 +10700,11 @@ async function vmApplyPrices() {
     if (st) st.textContent = '';
     renderVegMarginList();
     if (typeof renderProductList === 'function') renderProductList();
-    alert('✅ 가격 적용 완료\n성공 ' + ok + '건' + (fail ? '\n실패 ' + fail + '건' : '') +
+    alert('✅ 가격 적용 완료' +
+          '\n· 오늘 경매가로 변경 ' + (targets.length - noStockCnt) + '건' +
+          (noStockCnt ? '\n· 입하없음 ' + noStockCnt + '건' : '') +
+          (repriced.length ? '\n· 새 마진으로 재계산 ' + repriced.length + '건' : '') +
+          '\n· 마진 저장 ' + ok + '건' + (fail ? ' (실패 ' + fail + '건)' : '') +
           (db ? '\n\n거래처 앱(지구오더)에 반영되었습니다.' : '\n\n※ Supabase 미연결 — 로컬에만 반영됨') +
           subMsg +
           confirmMsg +

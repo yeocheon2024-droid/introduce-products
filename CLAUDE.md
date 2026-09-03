@@ -42,8 +42,8 @@ product-site/                 ← 제품 소개 (Next.js)
 5. `default-products.js` 수정 시 localStorage 갱신 플래그(`price_updated_vN`) 버전업 필요
 6. 관련 사이트 `.env.local`에 Supabase 키 필요: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
-## 주요 기능 (12개 탭)
-대시보드 | 품목관리 | 매입처 | 분류체계 | 마진율 | 이미지관리 | 엑셀업로드 | 견적서분석 | ERP내보내기 | 가격비교 | 발주/견적기록 | Supabase설정
+## 주요 기능 (13개 탭)
+대시보드 | 품목관리 | 매입처 | 분류체계 | 마진율 | 이미지관리 | 엑셀업로드 | 견적서분석 | ERP내보내기 | 가격비교 | 발주/견적기록 | 표시명관리 | 예약가격 | Supabase설정
 
 ## 상세 문서
 - @.claude/database.md — DB 스키마, 동기화 패턴, 단가 구조, 품목코드 규칙
