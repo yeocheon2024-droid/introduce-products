@@ -1179,7 +1179,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.50 · Supabase Auth</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.51 · Supabase Auth</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -9796,6 +9796,14 @@ function initVegMarginTab() {
  */
 var vmOrderQty = null;
 var vmOrderQtyDate = null;
+/**
+ * 몫별 경매가 — { 관리코드: [{biz_code, biz_name, note, cost, qty}] }
+ *
+ * 같은 품목이라도 "특A급으로" 를 부탁한 집과 "저렴한 걸로" 를 부탁한 집은
+ * 중도매인이 다르게 잡아온다. 그 값을 품목 줄 아래에 몫마다 한 줄씩 편다.
+ * 값을 안 나눈 품목은 아무것도 안 뜬다 — 화면은 지금과 똑같다.
+ */
+var vmBizPrice = null;
 
 /**
  * 직전에 실제로 값이 들어온 날의 경매가. { 관리코드: { date, cost } }
@@ -9980,8 +9988,74 @@ function renderVegMarginList() {
             '<td class="text-right">' + prevCell + '</td>' +
             '<td class="text-right" style="font-weight:700;color:' + (t.suspect ? 'var(--text-muted)' : (sell ? '#0066cc' : 'var(--text-muted)')) + ';' + (t.suspect ? 'text-decoration:line-through;' : '') + '">' + (sell ? sell.toLocaleString() : '-') + '</td>' +
             '<td class="text-center"><input type="checkbox" ' + (noStock ? 'checked' : '') + ' onchange="vmSetNoStock(\'' + c + '\', this.checked)"></td>' +
-            '</tr>';
+            '</tr>' + vmBizRows(p, sell);
     }).join('');
+}
+
+/**
+ * 몫별 줄 — 품목 줄 바로 밑에 붙는다.
+ *
+ * 대파(특) 7단을 두 곳이 시켰는데 한 곳은 "특A급으로", 한 곳은 "저렴한 걸로" 라면
+ * 중도매인이 5단·2단을 다르게 잡아온다. 그 값과 **같은 마진을 먹인 판매가**를 나란히
+ * 보여줘 그 자리에서 확인·수정할 수 있게 한다.
+ *
+ * ★ 판매가는 vmCalcSell 로 계산한다 — 기본 판매가와 **같은 규칙(100원 올림)** 이어야
+ *   "몫만 끝자리가 다르다" 는 말이 안 나온다.
+ * ★ 거래처 이름은 안 나온다 (업종·지침·수량까지만).
+ * ★ 값을 안 나눈 품목은 줄이 안 붙는다 — 화면은 지금과 똑같다.
+ */
+function vmBizRows(p, baseSell) {
+    if (!vmBizPrice) return '';
+    var lots = vmBizPrice[String(p.code).trim()];
+    if (!lots || lots.length === 0) return '';
+    var c = esc(p.code);
+    return lots.map(function(b, bi) {
+        var lotSell = (b.cost !== null && b.cost > 0) ? vmCalcSell(p, b.cost) : null;
+        var diff = (lotSell && baseSell) ? (lotSell - baseSell) : 0;
+        var diffTxt = '';
+        if (diff > 0)      diffTxt = ' <span style="color:var(--danger);font-weight:700;">+' + diff.toLocaleString() + '</span>';
+        else if (diff < 0) diffTxt = ' <span style="color:#0066cc;font-weight:700;">' + diff.toLocaleString() + '</span>';
+        var label = esc(b.biz_name) + (b.qty ? ' ' + b.qty : '') + (b.note ? ' — ' + esc(b.note) : '');
+        var args = "'" + c + "'," + bi;
+        return '<tr style="background:#f2f8fd;">' +
+            '<td></td><td></td>' +
+            '<td colspan="3" style="font-size:0.78rem;color:#1a5f9e;font-weight:600;padding-left:14px;">' +
+                '\u21b3 \ud83c\udfea ' + label + '</td>' +
+            '<td style="font-size:0.72rem;color:var(--text-muted);">품목 마진 동일</td>' +
+            '<td class="text-right"><input type="number" value="' + (b.cost === null ? '' : b.cost) + '" ' +
+                'onchange="vmSetBizCost(' + args + ', this.value)" ' +
+                'placeholder="기본가" title="비우면 이 몫도 기본 경매가로 갑니다" ' +
+                'style="width:88px;padding:4px 6px;text-align:right;font-size:0.8rem;border-color:#7fb3e0;"></td>' +
+            '<td class="text-right"><span style="color:var(--text-muted);font-size:0.72rem;">-</span></td>' +
+            '<td class="text-right" style="font-weight:700;color:' + (lotSell ? '#1a5f9e' : 'var(--text-muted)') + ';">' +
+                (lotSell ? lotSell.toLocaleString() + diffTxt : '<span style="font-size:0.72rem;">기본가 적용</span>') + '</td>' +
+            '<td></td>' +
+        '</tr>';
+    }).join('');
+}
+
+/** 몫 가격 수기 교정 — 비우면 그 몫도 기본 경매가로 돌아간다 (owner/manager 전용) */
+async function vmSetBizCost(code, bi, value) {
+    if (!db) { alert('Supabase 미연결'); return; }
+    if (!vmTargetDate) { alert('먼저 [불러오기] 를 눌러주세요.'); return; }
+    var lots = vmBizPrice && vmBizPrice[String(code).trim()];
+    var lot = lots && lots[bi];
+    if (!lot) { alert('몫 정보를 찾지 못했습니다. [불러오기] 를 다시 눌러주세요.'); return; }
+    var bizCode = lot.biz_code, note = lot.note;
+    var v = String(value || '').replace(/[^0-9]/g, '');
+    try {
+        var res = await db.rpc('veg_admin_set_biz_price', {
+            p_date: vmTargetDate, p_code: code,
+            p_biz_code: bizCode, p_note: note,
+            p_cost: v === '' ? null : Number(v)
+        });
+        if (res.error) throw new Error(res.error.message);
+        // 화면 값도 맞춰둔다 (다시 불러오지 않아도 판매가가 바로 반영되게)
+        lot.cost = (v === '' ? null : Number(v));
+        renderVegMarginList();
+    } catch (e) {
+        alert('몫 가격 저장 실패: ' + (e && e.message ? e.message : e));
+    }
 }
 
 /**
@@ -10336,6 +10410,29 @@ async function vmLoadAuctionPrices() {
         } catch (e) {
             console.warn('veg_order_qty 실패 — [오늘 주문만] 필터 사용 불가:', e && e.message);
         }
+        // ── 몫별 경매가 ─────────────────────────────────────────────────────
+        //   RLS 로 잠근 테이블이라 브라우저가 직접 못 읽는다 → RPC 로 받는다.
+        //   가격을 아직 안 넣은 몫도 cost = null 로 같이 온다 (여기서 넣을 수 있게).
+        vmBizPrice = null;
+        try {
+            var bz = await db.rpc('veg_biz_prices', { p_date: vmTargetDate });
+            if (bz.error) throw new Error(bz.error.message);
+            vmBizPrice = {};
+            (bz.data || []).forEach(function(r) {
+                var k = String(r.product_code).trim();
+                if (!vmBizPrice[k]) vmBizPrice[k] = [];
+                vmBizPrice[k].push({
+                    biz_code: r.biz_code || '',
+                    biz_name: r.biz_name || '미정',
+                    note: r.note || '',
+                    cost: (r.cost === null || r.cost === undefined) ? null : Number(r.cost),
+                    qty: Number(r.qty) || 0
+                });
+            });
+        } catch (e) {
+            console.warn('veg_biz_prices 실패 — 몫별 가격 표시 불가:', e && e.message);
+        }
+
         var ordChk = document.getElementById('vmOrderedOnly');
         if (ordChk) {
             ordChk.disabled = !vmOrderQty;
