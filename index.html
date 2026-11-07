@@ -1179,7 +1179,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.59 · 이미지 구분·확대</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.60 · 이미지 매입처 필터</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1758,6 +1758,9 @@ async function erpLogout() {
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <input type="text" id="imgSearchInput" placeholder="품목명, 코드, 매입처 검색..." oninput="imgFilterChanged()"
                 style="flex:2;min-width:200px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;font-family:inherit;">
+            <select id="imgVendorFilter" aria-label="이미지관리 매입처" onchange="imgFilterChanged()" style="max-width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.82rem;">
+                <option value="">매입처 전체</option>
+            </select>
             <select id="imgCategoryFilter" onchange="imgFilterChanged()" style="padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.82rem;">
                 <option value="">분류 전체</option>
             </select>
@@ -6521,6 +6524,7 @@ async function bulkShowHiddenWithImage() {
 function imgGetFiltered() {
     const q = (document.getElementById('imgSearchInput')?.value || '').trim().toLowerCase();
     const cat = document.getElementById('imgCategoryFilter')?.value || '';
+    const vendor = document.getElementById('imgVendorFilter')?.value || '';
     const status = document.getElementById('imgStatusFilter')?.value || '';
     const uploaded = imgGetUploaded();
 
@@ -6533,12 +6537,31 @@ function imgGetFiltered() {
             if (!match) return false;
         }
         if (cat && p.majorName !== cat) return false;
+        if (vendor && String(p.vendorCode || '') !== vendor) return false;
         if (status === 'no' && (uploaded.has(p.code) || p.imageUrl)) return false;
         if (status === 'yes' && !uploaded.has(p.code) && !p.imageUrl) return false;
         if (status === 'label-no' && imgHasLabel(uploaded, p.code)) return false;
         if (status === 'label-yes' && !imgHasLabel(uploaded, p.code)) return false;
         return true;
     });
+}
+
+// 실제 품목의 매입처를 코드별로 묶고, 다시 그려도 선택을 유지한다.
+function imgInitVendorFilter() {
+    const select = document.getElementById('imgVendorFilter');
+    if (!select) return;
+    const previous = select.value;
+    const names = new Map();
+    products.forEach(function(p) {
+        const code = String(p.vendorCode || '');
+        if (code && (!names.has(code) || p.vendorName)) names.set(code, p.vendorName || code);
+    });
+    const options = Array.from(names.entries()).sort((a, b) => a[1].localeCompare(b[1], 'ko'));
+    select.replaceChildren(new Option('매입처 전체', ''));
+    options.forEach(function(entry) {
+        select.add(new Option(entry[1] + ' (' + entry[0] + ')', entry[0]));
+    });
+    if (names.has(previous)) select.value = previous;
 }
 
 function imgFilterChanged() {
@@ -6551,6 +6574,7 @@ function imgRenderGrid() {
     const paginationEl = document.getElementById('imgPagination');
     if (!grid) return;
 
+    imgInitVendorFilter();
     const filtered = imgGetFiltered();
     const totalPages = Math.max(1, Math.ceil(filtered.length / IMG_PER_PAGE));
     if (imgPage > totalPages) imgPage = totalPages;
@@ -6561,8 +6585,8 @@ function imgRenderGrid() {
     // 결과 수 표시
     const countEl = document.getElementById('imgResultCount');
     if (countEl) {
-        const noImgCount = products.filter(p => !uploaded.has(p.code) && !p.imageUrl).length;
-        const labelCount = products.filter(p => imgHasLabel(uploaded, p.code)).length;
+        const noImgCount = filtered.filter(p => !uploaded.has(p.code) && !p.imageUrl).length;
+        const labelCount = filtered.filter(p => imgHasLabel(uploaded, p.code)).length;
         countEl.textContent = filtered.length + '개 품목 · 이미지 없음 ' + noImgCount + '개 · 표시사항 ' + labelCount + '개';
     }
 
