@@ -28,6 +28,19 @@ const assert = require('node:assert/strict');
   assert.equal((await call('/thumb/A.png?w=500')).status, 400);
   r = await call('/upload/B.png', { method: 'PUT', body: 'new' }); assert.equal((await r.json()).etag, 'uploaded');
   assert.equal((await (await call('/list')).json()).cursor, 'next');
+  assert.equal((await call('/precompute/B.png', { method: 'POST' })).status, 401);
+  env.IMAGE_PRECOMPUTE_TOKEN = 'unit-token';
+  const nativeFetch = global.fetch;
+  global.fetch = async () => new Response('small', { headers: { 'Content-Type': 'image/webp' } });
+  const maintenance = { method: 'POST', headers: { Authorization: 'Bearer unit-token' } };
+  assert.equal((await (await call('/precompute/B.png', maintenance)).json()).variants, 2);
+  assert.equal((await (await call('/precompute/B.png', maintenance)).json()).status, 'existing');
+  assert.equal((await call('/precompute/data.json', maintenance)).status, 400);
+  data.set('C.png', object('before', 'source'));
+  global.fetch = async () => { data.set('C.png', object('after', 'changed')); return new Response('small', { headers: { 'Content-Type': 'image/webp' } }); };
+  assert.equal((await call('/precompute/C.png', maintenance)).status, 409);
+  assert.equal(data.has('_optimized/v1/before/w400.webp'), false);
+  global.fetch = nativeFetch;
 
   const uploads = [], sizes = []; let closed = 0;
   const context = { R2_WORKER_URL: 'https://images.test', console,
