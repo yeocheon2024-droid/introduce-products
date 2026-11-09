@@ -121,7 +121,7 @@ export default {
         }
         const source = await env.BUCKET.head(filename);
         if (!source) return new Response('Not Found', { status: 404, headers: { ...corsHeaders, 'Cache-Control': 'no-store' } });
-        const cacheKey = new Request(`${url.origin}/_cached-thumb/v1/${source.etag}/${width}`);
+        const cacheKey = new Request(`${url.origin}/_cached-thumb/v2/${source.etag}/${width}`);
         const cached = await caches.default.match(cacheKey);
         if (cached) {
           if (request.headers.get('If-None-Match') === cached.headers.get('ETag')) return new Response(null, { status: 304, headers: cached.headers });
@@ -136,6 +136,7 @@ export default {
           'Cache-Control': variant && url.searchParams.has('v') ? 'public, max-age=31536000, immutable' : 'no-store',
           'ETag': object.httpEtag,
           'X-Image-Variant': variant ? 'webp' : 'original',
+          'Content-Length': String(object.size),
         };
         if (request.headers.get('If-None-Match') === object.httpEtag) return new Response(null, { status: 304, headers });
         const response = new Response(request.method === 'HEAD' ? null : object.body, { headers });
@@ -161,6 +162,7 @@ export default {
             'Content-Type': object.httpMetadata?.contentType || 'image/png',
             'Cache-Control': 'public, max-age=31536000',
             'ETag': object.httpEtag,
+            'Content-Length': String(object.size),
           },
         });
       }

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
   const source = fs.readFileSync('r2-proxy/worker.js', 'utf8');
   const worker = (await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'))).default;
   const data = new Map();
-  const object = (etag, body, type = 'image/png') => ({ etag, httpEtag: `"${etag}"`, body, httpMetadata: { contentType: type } });
+  const object = (etag, body, type = 'image/png') => ({ etag, httpEtag: `"${etag}"`, body, size: Buffer.byteLength(body), httpMetadata: { contentType: type } });
   const env = { BUCKET: {
     head: async key => data.get(key) || null,
     get: async key => data.get(key) || null,
@@ -25,6 +25,7 @@ const assert = require('node:assert/strict');
   assert.equal(r.headers.get('X-Image-Variant'), 'original'); assert.equal(r.headers.get('Cache-Control'), 'no-store');
   data.set('_optimized/v1/one/w800.webp', object('small', 'webp', 'image/webp'));
   r = await call('/thumb/A.png?w=800&v=1'); assert.equal(await r.text(), 'webp'); assert.match(r.headers.get('Cache-Control'), /immutable/);
+  assert.equal(r.headers.get('Content-Length'), '4');
   assert.equal((await call('/thumb/A.png?w=800&v=1', { headers: { 'If-None-Match': '"small"' } })).status, 304);
   assert.equal(await (await call('/thumb/A.png?w=800&v=1', { method: 'HEAD' })).text(), '');
   data.set('A.png', object('two', 'replacement'));
