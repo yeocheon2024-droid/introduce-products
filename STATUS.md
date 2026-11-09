@@ -215,3 +215,12 @@ Cloudflare   Cloudflare
 - node test-optimized-images.cjs 통과: 직접 제공, 원본 대체, 교체/삭제, 304/HEAD, ETag, 목록, Canvas 크기, 전체 인라인 JS 구문. Worker dry-run 통과.
 - 양쪽 원격 푸시/운영 배포/기존 이미지 일괄 추가 저장은 자동 승인 검토가 거절하여 미실행. 검토 사유: 코드 수정은 승인됐지만 후속 작업의 main 커밋·푸시와 운영 이미지 Worker 배포는 별도 운영 영향 승인이 필요함. 해당 명령 전체가 실행 전 거절되어 로컬 미커밋 상태.
 - 다음: 사용자 운영 승인 후 최신 원격과 대조하여 커밋/푸시하고, 이미지 Worker→일괄 생성→ERP 게시→거래처 앱 순서로 검증·배포. 일괄 생성 도구는 CreatorTemp/order-customer-image-release-20261109/scripts/precompute-product-images.cjs.
+
+## 2026-11-09 이미지 사전 최적화 운영 적용 완료 (Asia/Seoul)
+
+- 사용자 추가 명시 배포 승인으로 이전 승인 대기 해소. 소스 00660a6(ERP v3.61/WebP 사전 생성), 최종 이미지 Worker 소스 ed388a0, main 푸시 완료.
+- ERP index.html/optimized-images.js 실제 GitHub Pages 파일이 로컬 소스와 일치 확인. ERP에서 새 사진/라벨 업로드 시 작은 WebP를 먼저 준비하고 이미지 버전 갱신. 실패 시 원본 제공.
+- 이미지 Worker 최종 53f7c756-7e39-41aa-8a1e-a76e7024549e, 기존 R2 BUCKET product-images 연결 동일. /thumb은 원본 ETag별 저장 WebP 및 엣지 캐시 사용, 정확한 Content-Length 제공. 이전 원본 교체/삭제 시 오래된 변환본 미선택. 원본은 그대로 보존.
+- 일괄 처리 원본 3,448개 모두 최적화 준비 완료, 초기 시간 초과 3건 재시도 성공. 작은 WebP만 PC를 거쳐 추가 저장하는 --fetch-webp 사용. 서버 내부 변환은 외부 서비스 403으로 제거했으며 관련 임시 인증값도 삭제. 이후 업로드는 ERP Canvas 변환 사용.
+- Worker/Canvas/교체·삭제/캐시/조건부 요청/HEAD/목록/인라인 JS 구문 테스트 통과. 거래처 앱 e9690cbc-656b-47b3-b449-837e26bde607 배포, 운영 GET 200 및 변경 JS/SW 바이트 일치. 전송 시간은 아직 편차가 있어 일관된 속도 개선은 미확인.
+- 원래 OneDrive ERP 미커밋 index.html 및 다른 작업은 보존. 이 작업 폴더의 r2-optimized-dryrun-20261109는 생성된 로컬 산출물로 미커밋 유지. 비밀값/원본 데이터는 커밋하지 않음.
