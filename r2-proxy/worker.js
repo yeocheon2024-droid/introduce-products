@@ -39,7 +39,7 @@ export default {
           if (await env.BUCKET.head(key)) continue;
           const original = `https://pub-b2fb7e97bfae4e7f96db58f188aa1ce7.r2.dev/${encodeURIComponent(filename)}?source=${source.etag}`;
           const response = await fetch(`https://wsrv.nl/?url=${encodeURIComponent(original)}&w=${width}&h=16000&fit=inside&we&output=webp&q=${label ? 92 : 84}`, { signal: AbortSignal.timeout(25000) });
-          if (!response.ok || !response.headers.get('Content-Type')?.startsWith('image/webp')) return new Response('Conversion unavailable', { status: 502 });
+          if (!response.ok || !response.headers.get('Content-Type')?.startsWith('image/webp')) return new Response('Conversion unavailable: ' + response.status, { status: 502 });
           if ((await env.BUCKET.head(filename))?.etag !== source.etag) return new Response('Source changed', { status: 409 });
           await env.BUCKET.put(key, response.body, { httpMetadata: { contentType: 'image/webp' } });
           created++;
