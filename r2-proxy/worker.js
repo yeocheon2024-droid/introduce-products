@@ -14,8 +14,9 @@ export default {
     // CORS 헤더
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, HEAD, PUT, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Expose-Headers': 'ETag, X-Image-Variant',
     };
 
     // Preflight
@@ -30,7 +31,7 @@ export default {
         const body = await request.arrayBuffer();
         const contentType = request.headers.get('Content-Type') || 'image/png';
 
-        await env.BUCKET.put(filename, body, {
+        const uploaded = await env.BUCKET.put(filename, body, {
           httpMetadata: { contentType },
         });
 
@@ -39,7 +40,7 @@ export default {
         cacheUrl.pathname = '/' + filename;
         await caches.default.delete(new Request(cacheUrl.toString()));
 
-        return new Response(JSON.stringify({ success: true, filename }), {
+        return new Response(JSON.stringify({ success: true, filename, etag: uploaded.etag }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
@@ -96,32 +97,59 @@ export default {
 
       // 목록: GET /list
       if (request.method === 'GET' && path === '/list') {
-        const listed = await env.BUCKET.list({ limit: 1000 });
+        // 최적화 파일은 하위 폴더에 보관하여 ERP 원본 목록을 차지하지 않는다.
+        const listed = await env.BUCKET.list({ limit: 1000, delimiter: '/', cursor: url.searchParams.get('cursor') || undefined });
         const files = listed.objects.map(obj => ({
           key: obj.key,
           size: obj.size,
           uploaded: obj.uploaded,
+          etag: obj.etag,
         }));
 
-        return new Response(JSON.stringify({ files, count: files.length }), {
+        return new Response(JSON.stringify({ files, count: files.length, cursor: listed.truncated ? listed.cursor : null }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
+      // 원본 내용(ETag)으로 미리 만든 WebP를 선택한다. 교체/삭제/코드 변경 시
+      // 이전 원본의 최적화 파일을 잘못 제공하지 않는다. 변환 서버 호출은 없다.
+      if ((request.method === 'GET' || request.method === 'HEAD') && path.startsWith('/thumb/')) {
+        const filename = decodeURIComponent(path.slice('/thumb/'.length));
+        const width = Number(url.searchParams.get('w') || 400);
+        if (![400, 800].includes(width) || !filename || filename.startsWith('_optimized/')) {
+          return new Response('Invalid thumbnail', { status: 400, headers: corsHeaders });
+        }
+        const source = await env.BUCKET.head(filename);
+        if (!source) return new Response('Not Found', { status: 404, headers: { ...corsHeaders, 'Cache-Control': 'no-store' } });
+        const variant = await env.BUCKET.get(`_optimized/v1/${source.etag}/w${width}.webp`);
+        const object = variant || await env.BUCKET.get(filename);
+        if (!object) return new Response('Not Found', { status: 404, headers: { ...corsHeaders, 'Cache-Control': 'no-store' } });
+        const headers = {
+          ...corsHeaders,
+          'Content-Type': variant ? 'image/webp' : object.httpMetadata?.contentType || 'image/png',
+          'Cache-Control': variant && url.searchParams.has('v') ? 'public, max-age=31536000, immutable' : 'no-store',
+          'ETag': object.httpEtag,
+          'X-Image-Variant': variant ? 'webp' : 'original',
+        };
+        if (request.headers.get('If-None-Match') === object.httpEtag) return new Response(null, { status: 304, headers });
+        return new Response(request.method === 'HEAD' ? null : object.body, { headers });
+      }
+
       // 이미지 조회: GET /품목코드.png
-      if (request.method === 'GET' && path !== '/') {
+      if ((request.method === 'GET' || request.method === 'HEAD') && path !== '/') {
         const filename = decodeURIComponent(path.slice(1));
-        const object = await env.BUCKET.get(filename);
+        const object = await env.BUCKET[request.method === 'HEAD' ? 'head' : 'get'](filename);
 
         if (!object) {
           return new Response('Not Found', { status: 404, headers: corsHeaders });
         }
 
-        return new Response(object.body, {
+        return new Response(request.method === 'HEAD' ? null : object.body, {
           headers: {
             ...corsHeaders,
             'Content-Type': object.httpMetadata?.contentType || 'image/png',
             'Cache-Control': 'public, max-age=31536000',
+            'ETag': object.httpEtag,
           },
         });
       }

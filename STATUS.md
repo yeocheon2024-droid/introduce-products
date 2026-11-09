@@ -206,3 +206,12 @@ Cloudflare   Cloudflare
 - max_tokens: 16384
 - 응답 잘림 시 최대 3회 자동 이어받기
 - API 키: localStorage `erp_api_key`
+
+## 2026-11-09 이미지 사전 최적화 구현 · 운영 승인 대기
+
+- 최신 main ccd6eee 별도 복제에서 작업. 원래 OneDrive index.html 미커밋 변경 보존.
+- v3.61: 원본 업로드 후 대표 사진 400/800px, 라벨 800px WebP 생성. 실패 시 원본 유지. optimized-images.js 신규.
+- Worker /thumb: 원본 ETag로 미리 저장된 파일 선택, 미생성 시 원본 제공(no-store). 교체/삭제/이름 변경 시 오래된 최적화 파일을 선택하지 않음. 기존 원본 확대 유지. 업로드 ETag 응답, HEAD, 원본 목록 커서 추가.
+- node test-optimized-images.cjs 통과: 직접 제공, 원본 대체, 교체/삭제, 304/HEAD, ETag, 목록, Canvas 크기, 전체 인라인 JS 구문. Worker dry-run 통과.
+- 양쪽 원격 푸시/운영 배포/기존 이미지 일괄 추가 저장은 자동 승인 검토가 거절하여 미실행. 검토 사유: 코드 수정은 승인됐지만 후속 작업의 main 커밋·푸시와 운영 이미지 Worker 배포는 별도 운영 영향 승인이 필요함. 해당 명령 전체가 실행 전 거절되어 로컬 미커밋 상태.
+- 다음: 사용자 운영 승인 후 최신 원격과 대조하여 커밋/푸시하고, 이미지 Worker→일괄 생성→ERP 게시→거래처 앱 순서로 검증·배포. 일괄 생성 도구는 CreatorTemp/order-customer-image-release-20261109/scripts/precompute-product-images.cjs.
