@@ -25,27 +25,6 @@ export default {
     }
 
     try {
-      // 일괄 준비 전용. 사용자 이미지 조회에서는 실행하지 않는다.
-      if (request.method === 'POST' && path.startsWith('/precompute/')) {
-        if (!env.IMAGE_PRECOMPUTE_TOKEN || request.headers.get('Authorization') !== `Bearer ${env.IMAGE_PRECOMPUTE_TOKEN}`) return new Response('Unauthorized', { status: 401 });
-        const filename = decodeURIComponent(path.slice('/precompute/'.length));
-        if (filename.includes('/') || !/\.(png|jpe?g|webp)$/i.test(filename)) return new Response('Invalid image', { status: 400 });
-        const source = await env.BUCKET.head(filename);
-        if (!source) return new Response('Not Found', { status: 404 });
-        const label = /_label\d*\.png$/i.test(filename);
-        let created = 0;
-        for (const width of label ? [800] : [400, 800]) {
-          const key = `_optimized/v1/${source.etag}/w${width}.webp`;
-          if (await env.BUCKET.head(key)) continue;
-          const original = `https://pub-b2fb7e97bfae4e7f96db58f188aa1ce7.r2.dev/${encodeURIComponent(filename)}?source=${source.etag}`;
-          const response = await fetch(`https://wsrv.nl/?url=${encodeURIComponent(original)}&w=${width}&h=16000&fit=inside&we&output=webp&q=${label ? 92 : 84}`, { signal: AbortSignal.timeout(25000) });
-          if (!response.ok || !response.headers.get('Content-Type')?.startsWith('image/webp')) return new Response('Conversion unavailable: ' + response.status, { status: 502 });
-          if ((await env.BUCKET.head(filename))?.etag !== source.etag) return new Response('Source changed', { status: 409 });
-          await env.BUCKET.put(key, response.body, { httpMetadata: { contentType: 'image/webp' } });
-          created++;
-        }
-        return new Response(JSON.stringify({ key: filename, status: created ? 'created' : 'existing', variants: created }), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
-      }
       // 업로드: PUT /upload/품목코드.png
       if (request.method === 'PUT' && path.startsWith('/upload/')) {
         const filename = decodeURIComponent(path.replace('/upload/', ''));
