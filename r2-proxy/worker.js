@@ -7,7 +7,7 @@
  */
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -121,6 +121,12 @@ export default {
         }
         const source = await env.BUCKET.head(filename);
         if (!source) return new Response('Not Found', { status: 404, headers: { ...corsHeaders, 'Cache-Control': 'no-store' } });
+        const cacheKey = new Request(`${url.origin}/_cached-thumb/v1/${source.etag}/${width}`);
+        const cached = await caches.default.match(cacheKey);
+        if (cached) {
+          if (request.headers.get('If-None-Match') === cached.headers.get('ETag')) return new Response(null, { status: 304, headers: cached.headers });
+          return request.method === 'HEAD' ? new Response(null, { headers: cached.headers }) : cached;
+        }
         const variant = await env.BUCKET.get(`_optimized/v1/${source.etag}/w${width}.webp`);
         const object = variant || await env.BUCKET.get(filename);
         if (!object) return new Response('Not Found', { status: 404, headers: { ...corsHeaders, 'Cache-Control': 'no-store' } });
@@ -132,7 +138,12 @@ export default {
           'X-Image-Variant': variant ? 'webp' : 'original',
         };
         if (request.headers.get('If-None-Match') === object.httpEtag) return new Response(null, { status: 304, headers });
-        return new Response(request.method === 'HEAD' ? null : object.body, { headers });
+        const response = new Response(request.method === 'HEAD' ? null : object.body, { headers });
+        if (variant && request.method === 'GET' && url.searchParams.has('v')) {
+          const save = caches.default.put(cacheKey, response.clone()).catch(() => {});
+          if (ctx) ctx.waitUntil(save); else await save;
+        }
+        return response;
       }
 
       // 이미지 조회: GET /품목코드.png

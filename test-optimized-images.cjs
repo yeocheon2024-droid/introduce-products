@@ -13,7 +13,12 @@ const assert = require('node:assert/strict');
     delete: async key => data.delete(key),
     list: async options => { assert.equal(options.delimiter, '/'); return { objects: [], truncated: true, cursor: 'next' }; },
   } };
-  global.caches = { default: { delete: async () => true } };
+  const edge = new Map();
+  global.caches = { default: {
+    delete: async key => edge.delete(key.url),
+    match: async key => edge.get(key.url)?.clone(),
+    put: async (key, response) => edge.set(key.url, response.clone()),
+  } };
   const call = (path, options) => worker.fetch(new Request('https://images.test' + path, options), env);
   data.set('A.png', object('one', 'original'));
   let r = await call('/thumb/A.png?w=800&v=1');
