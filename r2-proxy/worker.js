@@ -16,7 +16,7 @@ export default {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, HEAD, PUT, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
-      'Access-Control-Expose-Headers': 'ETag, X-Image-Variant',
+      'Access-Control-Expose-Headers': 'ETag, X-Image-Variant, X-Image-Cache',
     };
 
     // Preflight
@@ -119,13 +119,34 @@ export default {
         if (![400, 800].includes(width) || !filename || filename.startsWith('_optimized/')) {
           return new Response('Invalid thumbnail', { status: 400, headers: corsHeaders });
         }
+        // 같은 이미지 버전은 불변이므로 캐시 적중 시 원본 HEAD도 생략한다.
+        // 버전 없는 요청은 매번 원본 확인. 최적화 없는 응답/404는 저장하지 않는다.
+        const version = url.searchParams.get('v');
+        const versionedKey = version && /^direct1-\d+$/.test(version)
+          ? new Request(`${url.origin}/_cached-thumb/v3/${encodeURIComponent(filename)}?w=${width}&v=${version}`)
+          : null;
+        const fromCache = cached => {
+          const headers = new Headers(cached.headers);
+          headers.set('X-Image-Cache', 'HIT');
+          if (request.headers.get('If-None-Match') === headers.get('ETag')) return new Response(null, { status: 304, headers });
+          return new Response(request.method === 'HEAD' ? null : cached.body, { headers });
+        };
+        const saveVersioned = response => {
+          if (!versionedKey || request.method !== 'GET' || response.headers.get('X-Image-Variant') !== 'webp') return;
+          const save = caches.default.put(versionedKey, response.clone()).catch(() => {});
+          if (ctx) ctx.waitUntil(save); else return save;
+        };
+        if (versionedKey) {
+          const cached = await caches.default.match(versionedKey);
+          if (cached) return fromCache(cached);
+        }
         const source = await env.BUCKET.head(filename);
         if (!source) return new Response('Not Found', { status: 404, headers: { ...corsHeaders, 'Cache-Control': 'no-store' } });
         const cacheKey = new Request(`${url.origin}/_cached-thumb/v2/${source.etag}/${width}`);
         const cached = await caches.default.match(cacheKey);
-        if (cached) {
-          if (request.headers.get('If-None-Match') === cached.headers.get('ETag')) return new Response(null, { status: 304, headers: cached.headers });
-          return request.method === 'HEAD' ? new Response(null, { headers: cached.headers }) : cached;
+        if (cached && versionedKey) {
+          await saveVersioned(cached);
+          return fromCache(cached);
         }
         const variant = await env.BUCKET.get(`_optimized/v1/${source.etag}/w${width}.webp`);
         const object = variant || await env.BUCKET.get(filename);
@@ -136,11 +157,13 @@ export default {
           'Cache-Control': variant && url.searchParams.has('v') ? 'public, max-age=31536000, immutable' : 'no-store',
           'ETag': object.httpEtag,
           'X-Image-Variant': variant ? 'webp' : 'original',
+          'X-Image-Cache': 'MISS',
           'Content-Length': String(object.size),
         };
         if (request.headers.get('If-None-Match') === object.httpEtag) return new Response(null, { status: 304, headers });
         const response = new Response(request.method === 'HEAD' ? null : object.body, { headers });
-        if (variant && request.method === 'GET' && url.searchParams.has('v')) {
+        await saveVersioned(response);
+        if (variant && request.method === 'GET' && versionedKey) {
           const save = caches.default.put(cacheKey, response.clone()).catch(() => {});
           if (ctx) ctx.waitUntil(save); else await save;
         }

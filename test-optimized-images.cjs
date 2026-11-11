@@ -6,9 +6,10 @@ const assert = require('node:assert/strict');
   const worker = (await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'))).default;
   const data = new Map();
   const object = (etag, body, type = 'image/png') => ({ etag, httpEtag: `"${etag}"`, body, size: Buffer.byteLength(body), httpMetadata: { contentType: type } });
+  let reads = 0;
   const env = { BUCKET: {
-    head: async key => data.get(key) || null,
-    get: async key => data.get(key) || null,
+    head: async key => { reads++; return data.get(key) || null; },
+    get: async key => { reads++; return data.get(key) || null; },
     put: async (key, body, options) => { const entry = object('uploaded', body, options.httpMetadata.contentType); data.set(key, entry); return entry; },
     delete: async key => data.delete(key),
     list: async options => { assert.equal(options.delimiter, '/'); return { objects: [], truncated: true, cursor: 'next' }; },
@@ -35,6 +36,27 @@ const assert = require('node:assert/strict');
   r = await call('/upload/B.png', { method: 'PUT', body: 'new' }); assert.equal((await r.json()).etag, 'uploaded');
   assert.equal((await (await call('/list')).json()).cursor, 'next');
 
+
+  data.set('C.png', object('c1', 'large'));
+  data.set('_optimized/v1/c1/w400.webp', object('cw1', 'small-one', 'image/webp'));
+  r = await call('/thumb/C.png?w=400&v=direct1-1');
+  assert.equal(await r.text(), 'small-one');
+  const beforeHit = reads;
+  r = await call('/thumb/C.png?w=400&v=direct1-1');
+  assert.equal(r.headers.get('X-Image-Cache'), 'HIT');
+  assert.equal(await r.text(), 'small-one');
+  assert.equal(reads, beforeHit, 'warm versioned thumbnail must perform zero R2 reads');
+  assert.equal((await call('/thumb/C.png?w=400&v=direct1-1', { headers: { 'If-None-Match': '"cw1"' } })).status, 304);
+  assert.equal(await (await call('/thumb/C.png?w=400&v=direct1-1', { method: 'HEAD' })).text(), '');
+  assert.equal(reads, beforeHit, 'warm HEAD/304 must also skip R2');
+  data.set('C.png', object('c2', 'large-two'));
+  data.set('_optimized/v1/c2/w400.webp', object('cw2', 'small-two', 'image/webp'));
+  assert.equal(await (await call('/thumb/C.png?w=400&v=direct1-2')).text(), 'small-two', 'new version must bypass previous cache');
+  r = await call('/thumb/C.png?w=400');
+  assert.equal(await r.text(), 'small-two'); assert.equal(r.headers.get('Cache-Control'), 'no-store');
+  data.delete('C.png');
+  assert.equal((await call('/thumb/C.png?w=400&v=direct1-3')).status, 404);
+  assert.equal((await call('/thumb/C.png?w=400')).status, 404);
 
   const uploads = [], sizes = []; let closed = 0;
   const context = { R2_WORKER_URL: 'https://images.test', console,
