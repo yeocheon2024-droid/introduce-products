@@ -233,3 +233,11 @@ Cloudflare   Cloudflare
 - X-Image-Cache 응답 헤더로 HIT/MISS 확인. 앱 캐시가 WebP 여부를 확인할 수 있도록 CORS 노출 헤더 유지.
 - 모의 검증: warm GET/HEAD/304의 R2 읽기 0회, 버전 교체, 원본 삭제/대체, 버전 없는 요청 신선도, ERP 업로드/크기/구문 통과. 이미지 파일·DB·ERP 화면 변경 없음.
 - 빌드/운영 반영/성능 측정은 후속 기록.
+
+
+### 2026-11-11 운영 반영 결과
+
+- 소스 4dadf567b282aaa997cbd3dc0b44aeadb1b2efa7 main push/원격 SHA 일치 후 dry-run 및 이미지 Worker 배포 완료. Worker 6ed2e16c-2236-4ced-8866-510af176699d, 이전 53f7c756. 기존 product-images 바인딩 보존.
+- 고객 앱 소스 59baae6, Worker 2b384fe0. 앱 전체 빌드 및 회귀 통과. 실제 2개 이미지 각 3회 모두 200/WebP/HIT 확인.
+- 이 실행 환경 전송 지연(전체 2.299~13.203초) 잔존. 서버 캐시 적중과 네트워크 전송 지연을 구분할 것. 고객 실기기 재표시 체감 시간은 미측정.
+- 원본/최적화 파일 및 DB/ERP 화면 변경 없음. r2-optimized-dryrun-20261109 미추적 산출물 보존.
