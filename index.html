@@ -1179,7 +1179,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.63 · 특가쌀</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.64 · 특가쌀 20kg 기준</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1627,7 +1627,7 @@ async function erpLogout() {
                 <option value="hold">보류</option>
             </select>
             <select id="rdSort" onchange="rdRenderOffers()" style="padding:6px 8px;font-weight:700;">
-                <option value="kg">정렬: kg당 싼 순</option>
+                <option value="kg">정렬: 20kg 기준 싼 순</option>
                 <option value="recent">정렬: 최근 올린 순</option>
                 <option value="mill">정렬: 도정일 최근 순</option>
                 <option value="supplier">정렬: 거래처별</option>
@@ -1641,7 +1641,7 @@ async function erpLogout() {
                     <th style="width:140px;">도정일</th>
                     <th class="text-right" style="width:90px;">제안 수량</th>
                     <th class="text-right" style="width:90px;">가격(1포)</th>
-                    <th class="text-right" style="width:80px;">kg당</th>
+                    <th class="text-right" style="width:95px;">20kg 기준</th>
                     <th class="text-right" style="width:110px;">매입 / 남음</th>
                     <th style="width:200px;">관리</th>
                 </tr></thead>
@@ -1652,7 +1652,7 @@ async function erpLogout() {
             도정일 색: <span style="color:#2e7d32;font-weight:700;">30일 이내</span> ·
             <span style="color:#c97a00;font-weight:700;">31~60일</span> ·
             <span style="color:#c23a2b;font-weight:700;">60일 넘음</span> ·
-            초록색 kg당 가격 = 지금 살 수 있는 것 중 가장 싼 것 · 회색 줄 = 전량 매입했거나 보류한 제안
+            초록색 20kg 가격 = 지금 살 수 있는 것 중 가장 싼 것 · 회색 줄 = 전량 매입했거나 보류한 제안
         </p>
     </div>
 
@@ -11499,6 +11499,13 @@ function rdKg(price, weight) {
     price = Number(price); weight = Number(weight);
     return (price > 0 && weight > 0) ? Math.round(price / weight) : null;
 }
+// 20kg 으로 환산한 가격 (1포 가격 ÷ 중량 × 20, 원 단위 반올림).
+// 20kg 기준으로 팔기 때문에 중량이 다른 제안도 이 숫자로 비교한다 (2026-11-17 요청).
+// 싼 순서는 kg당 가격과 똑같으므로 정렬·최저가 판단은 rdKg 를 그대로 쓴다.
+function rd20(price, weight) {
+    price = Number(price); weight = Number(weight);
+    return (price > 0 && weight > 0) ? Math.round(price / weight * 20) : null;
+}
 // 사진 경로는 "거래처번호/파일" 모양만 주소로 바꾼다 (그 밖의 글자는 화면에 주소로 쓰지 않는다)
 function rdPhotoUrl(path) {
     return /^[0-9]+\/[a-f0-9-]{36}\.(jpg|png|webp)$/.test(String(path || '')) ? RD_PHOTO_BASE + path : '';
@@ -11802,7 +11809,7 @@ function rdRenderOffers() {
             '<td>' + (gray ? escapeHtml(o.mill_date || '확인중') : rdMillLabel(o.mill_date)) + '</td>' +
             '<td class="text-right">' + rdNum(o.qty) + '포' + pallet + '</td>' +
             '<td class="text-right">' + rdNum(o.price) + '</td>' +
-            '<td class="text-right" style="font-weight:700;' + (!gray && kg !== null && kg === best ? 'color:#2e7d32;' : '') + '">' + (kg !== null ? rdNum(kg) : '-') + '</td>' +
+            '<td class="text-right" style="font-weight:700;' + (!gray && kg !== null && kg === best ? 'color:#2e7d32;' : '') + '">' + (kg !== null ? rdNum(rd20(o.price, o.weight_kg)) : '-') + '</td>' +
             '<td class="text-right">' + buyCell + '</td>' +
             '<td style="white-space:nowrap;">' + actions + '</td>' +
             '</tr>';
@@ -11847,7 +11854,7 @@ function rdOpenBuy(offerId, purchaseId) {
         '<h2>' + (p ? '매입 고치기' : '매입 잡기') + '</h2>' +
         '<div style="padding:10px 12px;background:#f5f7fa;border:1px solid var(--border-light);border-radius:8px;margin-bottom:14px;font-size:0.88rem;line-height:1.6;">' +
             '<b>' + escapeHtml(o.name) + ' ' + Number(o.weight_kg) + 'kg</b> · ' + escapeHtml(o.supplier_name) + '<br>' +
-            '제안 ' + rdNum(o.qty) + '포 × ' + rdNum(o.price) + '원' + (kg !== null ? ' (kg당 ' + rdNum(kg) + '원)' : '') +
+            '제안 ' + rdNum(o.qty) + '포 × ' + rdNum(o.price) + '원' + (kg !== null ? ' (20kg 기준 ' + rdNum(rd20(o.price, o.weight_kg)) + '원)' : '') +
             ' · <b style="color:#2e7d32;">잡을 수 있는 수량 ' + rdNum(remain) + '포</b>' +
         '</div>' +
         '<div class="form-row">' +
