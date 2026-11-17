@@ -1062,6 +1062,25 @@
         #tab-invoiceImage .iv-price-down { color: #2469a0; }
         #tab-invoiceImage .iv-price-date { color: var(--text-secondary); }
 
+        .purchase-history { margin: 16px 0; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+        .purchase-history > summary { cursor: pointer; font-weight: 600; }
+        .purchase-history h4 { margin: 20px 0 12px; }
+        .purchase-history p { margin: 10px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+        .purchase-history .ph-help { color: var(--text-secondary); font-size: 0.82rem; }
+        .purchase-history .ph-controls { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
+        .purchase-history .ph-controls label { display: flex; flex-direction: column; gap: 6px; }
+        .purchase-history input, .purchase-history select { padding: 7px; border: 1px solid var(--border); border-radius: 4px; font: inherit; max-width: 100%; }
+        .purchase-history .ph-days { display: flex; flex-wrap: wrap; gap: 8px; max-height: 140px; overflow: auto; }
+        .purchase-history .ph-days button[aria-pressed="true"] { background: var(--accent-light); }
+        .purchase-history .ph-records { max-height: 320px; overflow: auto; margin: 12px 0; }
+        .purchase-history .ph-record { padding: 12px 0; border-bottom: 1px solid var(--border); }
+        .purchase-history .ph-record p { margin: 5px 0; }
+        .purchase-history .ph-table-wrap { max-height: 360px; overflow: auto; margin-top: 12px; }
+        .purchase-history table { min-width: 720px; }
+        .purchase-history th, .purchase-history td { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+        .purchase-history .ph-original { display: block; max-width: 100%; height: auto; margin: 12px 0; border: 1px solid var(--border); }
+        .purchase-history .ph-file { margin: 16px 0; padding: 12px 0; border-bottom: 1px solid var(--border); }
+
 </style>
 </head>
 <body>
@@ -1202,7 +1221,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.72 · 원일푸드 전표일자</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.73 · 매입 자료 기록</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -2065,7 +2084,28 @@ async function erpLogout() {
 <!-- 원일푸드 이미지 매입전표 -->
 <div class="tab-content" id="tab-invoiceImage">
     <div class="card">
-        <h3>원일푸드 매입전표</h3>
+        <h3>원일푸드 매입전표</h3>        <details class="purchase-history" id="ph-wonil" ontoggle="if(this.open)purchaseHistoryRefresh('wonil')">
+            <summary>날짜별 기록 · 저장된 기준 단가</summary>
+            <p class="ph-help">원본 파일과 기록은 이 브라우저에 보관됩니다. 파일 기록은 이 기능을 추가한 뒤 업로드한 자료부터 표시됩니다.</p>
+            <p id="ph-wonil-status" role="status" aria-live="polite"></p>
+            <h4>날짜별 자료</h4>
+            <div class="ph-controls">
+                <label>날짜 기준 <select id="ph-wonil-basis" onchange="purchaseRenderRecords('wonil')"><option value="upload">업로드일</option><option value="posting">전표일자</option></select></label>
+                <label>날짜 <input type="date" id="ph-wonil-date" onchange="purchaseRenderRecords('wonil')"></label>
+                <label>요일 <select id="ph-wonil-weekday" onchange="purchaseRenderRecords('wonil')"><option value="">전체 요일</option><option value="1">월요일</option><option value="2">화요일</option><option value="3">수요일</option><option value="4">목요일</option><option value="5">금요일</option><option value="6">토요일</option><option value="0">일요일</option></select></label>
+                <button type="button" class="btn btn-outline btn-sm" onclick="purchaseClearHistoryFilter('wonil')">전체 날짜</button>
+                <button type="button" class="btn btn-outline btn-sm" onclick="purchaseHistoryRefresh('wonil')">새로 불러오기</button>
+            </div>
+            <div class="ph-days" id="ph-wonil-days"></div>
+            <div class="ph-records" id="ph-wonil-records"></div>
+            <div id="ph-wonil-viewer"></div>
+            <h4>저장된 기준 단가</h4>
+            <p class="ph-help">부가세 포함 기준입니다. 이전에 저장한 단가도 표시됩니다.</p>
+            <label>품목 검색 <input type="search" id="ph-wonil-search" placeholder="품목코드 또는 품명" oninput="purchaseRenderPrices('wonil')"></label>
+            <p id="ph-wonil-price-count" class="ph-help"></p>
+            <div class="ph-table-wrap"><table><thead><tr><th>품목코드</th><th>품명</th><th>규격</th><th>기준 단가</th><th>세구분</th><th>기준일</th></tr></thead><tbody id="ph-wonil-prices"></tbody></table></div>
+        </details>
+
         <p style="margin:12px 0;color:var(--text-muted);">거래명세서 이미지를 선택하고 인식 결과와 연결된 품목을 확인하세요. 여러 장으로 나뉜 전표는 전표번호와 작성일로 합칩니다.</p>
         <p style="font-size:0.82rem;color:var(--text-muted);">계정코드 4 · 거래처코드 5901 · 단가와 금액은 부가세 포함 · 세구분은 등록 품목 기준</p>
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:16px 0;">
@@ -2107,11 +2147,32 @@ async function erpLogout() {
 <!-- 사조푸디스트 매입전표 -->
 <div class="tab-content" id="tab-sajo">
     <div class="card">
-        <h3>사조푸디스트 매입전표 변환</h3>
+        <h3>사조푸디스트 매입전표 변환</h3>        <details class="purchase-history" id="ph-sajo" ontoggle="if(this.open)purchaseHistoryRefresh('sajo')">
+            <summary>날짜별 기록 · 저장된 기준 단가</summary>
+            <p class="ph-help">원본 파일과 기록은 이 브라우저에 보관됩니다. 파일 기록은 이 기능을 추가한 뒤 업로드한 자료부터 표시됩니다.</p>
+            <p id="ph-sajo-status" role="status" aria-live="polite"></p>
+            <h4>날짜별 자료</h4>
+            <div class="ph-controls">
+                <label>날짜 기준 <select id="ph-sajo-basis" onchange="purchaseRenderRecords('sajo')"><option value="upload">업로드일</option><option value="posting">전표일자</option></select></label>
+                <label>날짜 <input type="date" id="ph-sajo-date" onchange="purchaseRenderRecords('sajo')"></label>
+                <label>요일 <select id="ph-sajo-weekday" onchange="purchaseRenderRecords('sajo')"><option value="">전체 요일</option><option value="1">월요일</option><option value="2">화요일</option><option value="3">수요일</option><option value="4">목요일</option><option value="5">금요일</option><option value="6">토요일</option><option value="0">일요일</option></select></label>
+                <button type="button" class="btn btn-outline btn-sm" onclick="purchaseClearHistoryFilter('sajo')">전체 날짜</button>
+                <button type="button" class="btn btn-outline btn-sm" onclick="purchaseHistoryRefresh('sajo')">새로 불러오기</button>
+            </div>
+            <div class="ph-days" id="ph-sajo-days"></div>
+            <div class="ph-records" id="ph-sajo-records"></div>
+            <div id="ph-sajo-viewer"></div>
+            <h4>저장된 기준 단가</h4>
+            <p class="ph-help">부가세 별도 기준입니다. 이전에 저장한 단가도 표시됩니다.</p>
+            <label>품목 검색 <input type="search" id="ph-sajo-search" placeholder="품목코드 또는 품명" oninput="purchaseRenderPrices('sajo')"></label>
+            <p id="ph-sajo-price-count" class="ph-help"></p>
+            <div class="ph-table-wrap"><table><thead><tr><th>품목코드</th><th>품명</th><th>규격</th><th>기준 단가</th><th>세구분</th><th>기준일</th></tr></thead><tbody id="ph-sajo-prices"></tbody></table></div>
+        </details>
+
         <p style="color:var(--text-muted);margin:12px 0;">발주내역 엑셀을 업로드하고 ERP 외부전표 불러오기용 파일을 다운로드하세요.</p>
         <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:end;margin:16px 0;">
             <label>발주내역 파일<br><input type="file" id="sajoFile" accept=".xlsx,.xls" onchange="sajoHandleFile(event)" style="margin-top:6px;max-width:100%;"></label>
-            <label>전표일자<br><input type="date" id="sajoDate" onchange="sajoUpdateDownload()" style="margin-top:6px;"></label>
+            <label>전표일자<br><input type="date" id="sajoDate" onchange="sajoUpdateDownload();purchaseArchiveSajoUpdate(false)" style="margin-top:6px;"></label>
             <button type="button" class="btn btn-primary" id="sajoDownload" onclick="sajoExportPurchase()" disabled>매입전표 다운로드 (.xls)</button>
         </div>
         <p style="font-size:0.82rem;color:var(--text-muted);">계정코드 4 · 외상매입 · 거래처코드 6038 · 금액과 부가세는 원본 값 적용</p>
@@ -11518,6 +11579,289 @@ var VM_PURCHASE_VENDOR = {
     '237': { erp: '6065', name: '무 종류' },
     '490': { erp: '6066', name: '나물집' }
 };
+// 원본 파일은 IndexedDB, 기존 기준 단가는 localStorage에서 조회한다.
+var purchaseHistoryDbPromise = null;
+var purchaseArchiveSessions = {sajo:null,wonil:null};
+var purchaseHistoryRecords = {sajo:[],wonil:[]};
+var purchaseHistorySerial = {sajo:0,wonil:0};
+var purchaseHistorySelected = {sajo:null,wonil:null};
+var purchaseHistoryUrls = {sajo:[],wonil:[]};
+var purchaseHistoryBooks = {sajo:null,wonil:null};
+
+function purchaseHistoryStatus(vendor,message) {
+    var target=document.getElementById('ph-'+vendor+'-status');
+    if (target) target.textContent=message;
+}
+
+function purchaseHistoryDb() {
+    if (!purchaseHistoryDbPromise) purchaseHistoryDbPromise=new Promise(function(resolve,reject) {
+        if (typeof indexedDB==='undefined') { reject(new Error('이 브라우저에서는 파일 기록 저장소를 사용할 수 없습니다.')); return; }
+        var request=indexedDB.open('erp_purchase_archive_v1',1);
+        request.onupgradeneeded=function() {
+            request.result.createObjectStore('records',{keyPath:'id'});
+            request.result.createObjectStore('files',{keyPath:'id'});
+        };
+        request.onsuccess=function() {
+            var db=request.result;
+            db.onversionchange=function() { db.close(); purchaseHistoryDbPromise=null; };
+            resolve(db);
+        };
+        request.onerror=function() { reject(request.error); };
+        request.onblocked=function() { reject(new Error('다른 탭의 파일 기록 화면을 닫고 다시 시도해주세요.')); };
+    }).catch(function(error) { purchaseHistoryDbPromise=null; throw error; });
+    return purchaseHistoryDbPromise;
+}
+
+async function purchaseHistoryRead(store,key) {
+    var db=await purchaseHistoryDb();
+    return new Promise(function(resolve,reject) {
+        var transaction=db.transaction(store,'readonly');
+        var request=key===undefined ? transaction.objectStore(store).getAll() : transaction.objectStore(store).get(key);
+        var result;
+        request.onsuccess=function() { result=request.result; };
+        transaction.oncomplete=function() { resolve(result); };
+        transaction.onerror=function() { reject(transaction.error || request.error); };
+        transaction.onabort=function() { reject(transaction.error || new Error('기록 조회가 중단됐습니다.')); };
+    });
+}
+
+async function purchaseHistoryCreate(record,files) {
+    var db=await purchaseHistoryDb();
+    return new Promise(function(resolve,reject) {
+        var transaction=db.transaction(['records','files'],'readwrite');
+        try {
+            transaction.objectStore('records').put(record);
+            files.forEach(function(file,index) {
+                transaction.objectStore('files').put({id:record.files[index].id,blob:file});
+            });
+        } catch (error) { transaction.abort(); reject(error); return; }
+        transaction.oncomplete=function() { resolve(); };
+        transaction.onerror=function() { reject(transaction.error); };
+        transaction.onabort=function() { reject(transaction.error || new Error('파일 기록 저장이 중단됐습니다.')); };
+    });
+}
+
+async function purchaseHistoryPatch(id,patch) {
+    var db=await purchaseHistoryDb();
+    return new Promise(function(resolve,reject) {
+        var transaction=db.transaction('records','readwrite');
+        var store=transaction.objectStore('records');
+        var request=store.get(id);
+        request.onsuccess=function() {
+            if (request.result) {
+                try { store.put(Object.assign(request.result,patch)); }
+                catch (error) { transaction.abort(); reject(error); }
+            }
+            else transaction.abort();
+        };
+        transaction.oncomplete=function() { resolve(); };
+        transaction.onerror=function() { reject(transaction.error || request.error); };
+        transaction.onabort=function() { reject(transaction.error || new Error('저장할 파일 기록을 찾지 못했습니다.')); };
+    });
+}
+
+function purchaseKstDay(value) {
+    return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value));
+}
+
+function purchaseArchiveReset(vendor) { purchaseArchiveSessions[vendor]=null; }
+
+function purchaseArchiveStart(vendor,files,dates,rows) {
+    var id=crypto.randomUUID();
+    var record={id:id,vendor:vendor,uploadedAt:new Date().toISOString(),dates:dates || [],rows:rows || [],stage:'업로드 완료',
+        files:files.map(function(file,index) { return {id:id+':'+index,name:file.name,type:file.type,size:file.size}; })};
+    var session={id:id,failed:false,queue:null};
+    purchaseArchiveSessions[vendor]=session;
+    session.queue=purchaseHistoryCreate(record,files).then(function() {
+        purchaseHistoryStatus(vendor,'원본 파일 '+files.length+'개를 이 브라우저에 저장했습니다.');
+        purchaseRefreshIfOpen(vendor);
+    }).catch(function(error) {
+        session.failed=true;
+        purchaseHistoryStatus(vendor,'원본 파일 기록 저장 실패. '+(error && error.message || '브라우저 저장 공간과 설정을 확인해주세요.'));
+    });
+    return session.queue;
+}
+
+function purchaseArchiveUpdate(vendor,patch) {
+    var session=purchaseArchiveSessions[vendor];
+    if (!session) return Promise.resolve();
+    var snapshot=structuredClone(patch);
+    session.queue=session.queue.then(function() {
+        if (session.failed) return;
+        return purchaseHistoryPatch(session.id,snapshot).then(function() { purchaseRefreshIfOpen(vendor); });
+    }).catch(function(error) {
+        purchaseHistoryStatus(vendor,'파일 기록 갱신 실패. '+(error && error.message || '브라우저 저장 공간을 확인해주세요.'));
+    });
+    return session.queue;
+}
+
+function purchaseSajoRows() {
+    var date=document.getElementById('sajoDate').value;
+    return sajoPurchaseRows.map(function(row) {
+        return {date:date,code:row.code,name:row.name,spec:row.spec,qty:row.qty,price:row.price,total:row.total};
+    });
+}
+
+function purchaseArchiveSajoUpdate(downloaded) {
+    var date=document.getElementById('sajoDate').value;
+    var patch={rows:purchaseSajoRows(),dates:sajoValidDate(date) ? [date] : []};
+    if (downloaded) patch.stage='전표 다운로드';
+    purchaseArchiveUpdate('sajo',patch);
+    purchaseRenderPrices('sajo');
+}
+
+function purchaseArchiveWonilUpdate(downloaded) {
+    var dates=Array.from(new Set(ivInvoices.map(function(invoice) { return invoice.date; }).filter(sajoValidDate)));
+    var rows=[];
+    ivInvoices.forEach(function(invoice) {
+        invoice.items.forEach(function(row) {
+            rows.push({date:invoice.date,code:row.code,name:row.name,spec:row.spec,qty:row.qty,price:row.price,total:row.total,confirmed:row.confirmed});
+        });
+    });
+    purchaseArchiveUpdate('wonil',{dates:dates,rows:rows,stage:downloaded ? '전표 다운로드' : '인식·확인 중'});
+    purchaseRenderPrices('wonil');
+}
+
+function purchaseRefreshIfOpen(vendor) {
+    var panel=document.getElementById('ph-'+vendor);
+    if (panel && panel.open) purchaseHistoryRefresh(vendor);
+}
+
+async function purchaseHistoryRefresh(vendor) {
+    purchaseRenderPrices(vendor);
+    var serial=++purchaseHistorySerial[vendor];
+    try {
+        var records=await purchaseHistoryRead('records');
+        if (serial!==purchaseHistorySerial[vendor]) return;
+        purchaseHistoryRecords[vendor]=records.filter(function(record) { return record.vendor===vendor; });
+        purchaseRenderRecords(vendor);
+    } catch (error) { purchaseHistoryStatus(vendor,'파일 기록을 불러오지 못했습니다. '+error.message); }
+}
+
+function purchaseRecordDates(record,basis) {
+    return basis==='posting' ? record.dates.filter(sajoValidDate) : [purchaseKstDay(record.uploadedAt)];
+}
+
+function purchaseWeekday(date) { return String(new Date(date+'T00:00:00Z').getUTCDay()); }
+
+function purchaseDayLabel(date) { return date+' ('+['일','월','화','수','목','금','토'][Number(purchaseWeekday(date))]+')'; }
+
+function purchaseRenderRecords(vendor) {
+    var prefix='ph-'+vendor+'-';
+    var date=document.getElementById(prefix+'date').value;
+    var weekday=document.getElementById(prefix+'weekday').value;
+    var basis=document.getElementById(prefix+'basis').value;
+    var records=purchaseHistoryRecords[vendor];
+    var dayCounts=new Map();
+    records.forEach(function(record) {
+        new Set(purchaseRecordDates(record,basis)).forEach(function(day) {
+            if (!weekday || purchaseWeekday(day)===weekday) dayCounts.set(day,(dayCounts.get(day)||0)+1);
+        });
+    });
+    document.getElementById(prefix+'days').innerHTML=Array.from(dayCounts.keys()).sort().reverse().map(function(day) {
+        return '<button type="button" class="btn btn-outline btn-sm" data-date="'+day+'" aria-pressed="'+(date===day)+'" onclick="purchaseChooseHistoryDay(\''+vendor+'\',this.dataset.date)">'+purchaseDayLabel(day)+' · '+dayCounts.get(day)+'건</button>';
+    }).join('');
+    var filtered=records.filter(function(record) {
+        return purchaseRecordDates(record,basis).some(function(day) { return (!date || day===date) && (!weekday || purchaseWeekday(day)===weekday); });
+    }).sort(function(a,b) { return b.uploadedAt.localeCompare(a.uploadedAt); });
+    document.getElementById(prefix+'records').innerHTML=filtered.map(function(record) {
+        var uploaded=new Date(record.uploadedAt).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'});
+        return '<div class="ph-record"><button type="button" class="btn btn-outline btn-sm" data-record="'+escapeHtml(record.id)+'" onclick="purchaseOpenRecord(\''+vendor+'\',this.dataset.record)">자료 열기</button> '+
+            escapeHtml(record.files.map(function(file) { return file.name; }).join(' · '))+
+            '<p class="ph-help">업로드 '+escapeHtml(uploaded)+' · 전표일자 '+escapeHtml(record.dates.join(', ') || '미지정')+' · '+escapeHtml(record.stage)+'</p></div>';
+    }).join('') || '<p class="ph-help">선택한 날짜에 저장된 자료가 없습니다.</p>';
+}
+
+function purchaseChooseHistoryDay(vendor,day) {
+    document.getElementById('ph-'+vendor+'-date').value=day;
+    purchaseRenderRecords(vendor);
+}
+
+function purchaseClearHistoryFilter(vendor) {
+    document.getElementById('ph-'+vendor+'-date').value='';
+    document.getElementById('ph-'+vendor+'-weekday').value='';
+    purchaseRenderRecords(vendor);
+}
+
+function purchaseRenderPrices(vendor) {
+    var target=document.getElementById('ph-'+vendor+'-prices');
+    if (!target) return;
+    var prefix=vendor==='sajo' ? SAJO_PRICE_PREFIX : IV_PRICE_PREFIX;
+    var query=document.getElementById('ph-'+vendor+'-search').value.trim().toLowerCase();
+    var rows=[], invalid=0;
+    try {
+        for (var index=0;index<localStorage.length;index++) {
+            var key=localStorage.key(index);
+            if (!key || !key.startsWith(prefix)) continue;
+            try {
+                var record=JSON.parse(localStorage.getItem(key));
+                if (!record || !Number.isFinite(record.price) || !sajoValidDate(record.date)) throw new Error('Invalid price');
+                var code=decodeURIComponent(key.slice(prefix.length));
+                var product=(products || []).find(function(item) { return item.code===code; });
+                var name=record.name || (product && product.name) || '';
+                if (query && ![code,name].join(' ').toLowerCase().includes(query)) continue;
+                rows.push({code:code,name:name,spec:record.spec || '',price:record.price,date:record.date,taxed:record.taxed});
+            } catch (error) { invalid++; }
+        }
+    } catch (error) { purchaseHistoryStatus(vendor,'저장된 단가를 읽지 못했습니다. '+error.message); }
+    rows.sort(function(a,b) { return b.date.localeCompare(a.date) || a.code.localeCompare(b.code); });
+    target.innerHTML=rows.map(function(row) {
+        return '<tr>'+[row.code,row.name || '품명 정보 없음',row.spec,row.price.toLocaleString('ko-KR'),row.taxed ? '과세' : '면세',row.date].map(function(value) { return '<td>'+escapeHtml(value)+'</td>'; }).join('')+'</tr>';
+    }).join('') || '<tr><td colspan="6">저장된 기준 단가가 없습니다.</td></tr>';
+    document.getElementById('ph-'+vendor+'-price-count').textContent=rows.length+'품목'+(invalid ? ' · 읽을 수 없는 기록 '+invalid+'건' : '');
+}
+
+async function purchaseOpenRecord(vendor,id) {
+    purchaseHistorySelected[vendor]=id;
+    var prefix='ph-'+vendor+'-';
+    try {
+        var record=await purchaseHistoryRead('records',id);
+        if (!record || record.vendor!==vendor) throw new Error('자료를 찾지 못했습니다.');
+        var files=await Promise.all(record.files.map(function(file) { return purchaseHistoryRead('files',file.id); }));
+        if (purchaseHistorySelected[vendor]!==id) return;
+        purchaseHistoryUrls[vendor].forEach(function(url) { URL.revokeObjectURL(url); });
+        purchaseHistoryUrls[vendor]=[];
+        purchaseHistoryBooks[vendor]=null;
+        var html='<h4>선택한 자료</h4>';
+        record.files.forEach(function(file,index) {
+            if (!files[index]) { html+='<p>원본 파일을 찾지 못했습니다. '+escapeHtml(file.name)+'</p>'; return; }
+            var url=URL.createObjectURL(files[index].blob);
+            purchaseHistoryUrls[vendor].push(url);
+            html+='<div class="ph-file"><a class="btn btn-outline btn-sm" href="'+url+'" download="'+escapeHtml(file.name)+'">원본 다운로드</a> '+escapeHtml(file.name);
+            if (file.type.startsWith('image/')) html+='<img class="ph-original" src="'+url+'" alt="'+escapeHtml(file.name)+'">';
+            else html+=' <button type="button" class="btn btn-outline btn-sm" data-file="'+escapeHtml(file.id)+'" onclick="purchaseViewExcel(\''+vendor+'\',this.dataset.file)">엑셀 미리보기</button>';
+            html+='</div>';
+        });
+        if (record.rows.length) html+='<h4>해당 기록의 품목·단가</h4><div class="ph-table-wrap"><table><thead><tr><th>전표일자</th><th>품목코드</th><th>당시 품명</th><th>규격</th><th>수량</th><th>단가</th><th>합계</th></tr></thead><tbody>'+record.rows.map(function(row) {
+            return '<tr>'+[row.date || '',row.code || '연결 전',row.name,row.spec,row.qty,row.price,row.total].map(function(value) { return '<td>'+escapeHtml(typeof value==='number' ? value.toLocaleString('ko-KR') : value)+'</td>'; }).join('')+'</tr>';
+        }).join('')+'</tbody></table></div>';
+        document.getElementById(prefix+'viewer').innerHTML=html+'<div id="'+prefix+'excel"></div>';
+    } catch (error) { purchaseHistoryStatus(vendor,'자료를 열지 못했습니다. '+error.message); }
+}
+
+async function purchaseViewExcel(vendor,id) {
+    var selected=purchaseHistorySelected[vendor];
+    try {
+        var file=await purchaseHistoryRead('files',id);
+        if (!file) throw new Error('엑셀 원본을 찾지 못했습니다.');
+        var data=await file.blob.arrayBuffer();
+        if (selected!==purchaseHistorySelected[vendor]) return;
+        var book=XLSX.read(data,{type:'array'});
+        purchaseHistoryBooks[vendor]=book;
+        document.getElementById('ph-'+vendor+'-excel').innerHTML='<h4>엑셀 원본 미리보기</h4><label>시트 <select id="ph-'+vendor+'-sheet" onchange="purchaseRenderExcel(\''+vendor+'\')">'+book.SheetNames.map(function(name) { return '<option>'+escapeHtml(name)+'</option>'; }).join('')+'</select></label><div class="ph-table-wrap" id="ph-'+vendor+'-sheet-table"></div>';
+        purchaseRenderExcel(vendor);
+    } catch (error) { purchaseHistoryStatus(vendor,'엑셀 미리보기 실패. '+error.message); }
+}
+
+function purchaseRenderExcel(vendor) {
+    var book=purchaseHistoryBooks[vendor];
+    var name=document.getElementById('ph-'+vendor+'-sheet').value;
+    var rows=XLSX.utils.sheet_to_json(book.Sheets[name],{header:1,raw:false,defval:''});
+    document.getElementById('ph-'+vendor+'-sheet-table').innerHTML='<table><tbody>'+rows.map(function(row) {
+        return '<tr>'+row.map(function(value) { return '<td>'+escapeHtml(value)+'</td>'; }).join('')+'</tr>';
+    }).join('')+'</tbody></table>';
+}
+
 // 사조 발주내역 → ERP 외부전표 일반양식. 원본의 행 순서와 중복 품목을 유지한다.
 var sajoPurchaseRows = [];
 var sajoUploadSequence = 0;
@@ -11597,7 +11941,7 @@ function sajoRenderPriceComparison() {
 function sajoRememberPrices(date) {
     var grouped = new Map();
     sajoPurchaseRows.forEach(function(row) {
-        var candidate = {price:row.price, spec:row.spec, taxed:row.vat !== 0, date:date};
+        var candidate = {name:row.name, price:row.price, spec:row.spec, taxed:row.vat !== 0, date:date};
         var existing = grouped.get(row.code);
         if (existing && (existing.price !== candidate.price || existing.spec !== candidate.spec || existing.taxed !== candidate.taxed)) {
             existing.conflict = true;
@@ -11684,6 +12028,7 @@ function sajoParseWorkbook(workbook) {
 
 async function sajoHandleFile(event) {
     var sequence = ++sajoUploadSequence;
+    purchaseArchiveReset('sajo');
     sajoPurchaseRows = [];
     sajoComparisonPrices = Object.create(null);
     sajoPriceStorageMessage = '';
@@ -11713,6 +12058,7 @@ async function sajoHandleFile(event) {
         sajoRenderPriceComparison();
         status.textContent = file.name + ' · 확인 완료. ' + (date && sajoValidDate(date) ? '파일명에서 전표일자를 가져왔습니다. 날짜를 확인한 뒤 다운로드하세요.' : '전표일자를 선택해주세요.');
         sajoUpdateDownload();
+        purchaseArchiveStart('sajo',[file],sajoValidDate(date) ? [date] : [],purchaseSajoRows());
     } catch (error) {
         if (sequence !== sajoUploadSequence) return;
         sajoPurchaseRows = [];
@@ -11739,6 +12085,7 @@ function sajoExportPurchase() {
         XLSX.utils.book_append_sheet(workbook, sheet, 'Sheet1');
         XLSX.writeFile(workbook, '사조푸디스트_매입전표_' + date + '.xls', {bookType:'biff8'});
         document.getElementById('sajoPriceNotice').textContent = sajoRememberPrices(date);
+        purchaseArchiveSajoUpdate(true);
     } catch (error) {
         document.getElementById('sajoStatus').textContent = '다운로드 실패. ' + error.message;
     }
@@ -11926,7 +12273,7 @@ function ivRememberUnitPrices() {
     ivInvoices.forEach(function(invoice) {
         invoice.items.forEach(function(row) {
             var product = catalog.find(function(item) { return item.code === row.code; });
-            var candidate = {price:row.price,date:invoice.date,spec:product.spec || '',taxed:product.tax === '과세',basis:'vat-included'};
+            var candidate = {name:product.name,price:row.price,date:invoice.date,spec:product.spec || '',taxed:product.tax === '과세',basis:'vat-included'};
             var previous = candidates.get(row.code);
             if (!previous || previous.date < candidate.date) candidates.set(row.code,candidate);
             else if (previous.date === candidate.date && (previous.price !== candidate.price || previous.spec !== candidate.spec || previous.taxed !== candidate.taxed)) previous.conflict = true;
@@ -12019,6 +12366,7 @@ function initInvoiceImageTab() {
 }
 
 function ivChooseImages(event) {
+    purchaseArchiveReset('wonil');
     ++ivSequence;
     ivBusy = false;
     ivInvoices = [];
@@ -12040,6 +12388,7 @@ function ivChooseImages(event) {
         ivImageUrls.push(url);
         return '<a href="' + url + '" target="_blank" rel="noopener"><img src="' + url + '" alt="' + escapeHtml(file.name) + '" style="height:200px;max-width:360px;object-fit:contain;border:1px solid var(--border);border-radius:6px;"></a>';
     }).join('');
+    if (ivFiles.length) purchaseArchiveStart('wonil',ivFiles.slice(),[],[]);
     ivRenderInvoices();
 }
 
@@ -12206,12 +12555,14 @@ function ivApplySelectedDate() {
         invoice.date=date || invoice.sourceDate;
     });
     ivRenderInvoices();
+    if (ivInvoices.length) purchaseArchiveWonilUpdate(false);
 }
 
 function ivChangeHeader(invoiceIndex,field,value) {
     var invoice = ivInvoices[invoiceIndex];
     invoice[field] = field === 'date' ? value : Number(value === '' ? NaN : value);
     ivRenderInvoices();
+    if (ivInvoices.length) purchaseArchiveWonilUpdate(false);
 }
 
 function ivChangeRow(invoiceIndex,rowIndex,field,value) {
@@ -12230,6 +12581,7 @@ function ivChangeRow(invoiceIndex,rowIndex,field,value) {
         if (field === 'name' || field === 'spec') Object.assign(row,ivSuggestProduct(row));
     }
     ivRenderInvoices();
+    if (ivInvoices.length) purchaseArchiveWonilUpdate(false);
 }
 
 function ivAddRow(invoiceIndex) {
@@ -12237,11 +12589,13 @@ function ivAddRow(invoiceIndex) {
     var lastNumber=invoice.items.reduce(function(max,row) { return Math.max(max,row.lineNumber); },0);
     invoice.items.push({lineNumber:lastNumber+1,name:'',spec:'',qty:1,price:0,total:0,code:'',confirmed:false,remembered:false});
     ivRenderInvoices();
+    if (ivInvoices.length) purchaseArchiveWonilUpdate(false);
 }
 
 function ivRemoveRow(invoiceIndex,rowIndex) {
     ivInvoices[invoiceIndex].items.splice(rowIndex,1);
     ivRenderInvoices();
+    purchaseArchiveWonilUpdate(false);
 }
 
 function ivInput(value,type,handler,extra) {
@@ -12343,6 +12697,7 @@ function ivExportPurchase() {
             } catch (error) { failed++; }
         });
         var priceNotice=ivRememberUnitPrices();
+        purchaseArchiveWonilUpdate(true);
         status.textContent=ivInvoices.length + '개 전표 · ' + (output.length-1) + '개 품목 다운로드 완료. ' + saved + '개 연결을 이 브라우저에 기억했습니다.' + (conflicts.size ? ' 여러 코드로 선택한 동일 표기 '+conflicts.size+'건은 다음에도 품목을 직접 선택합니다.' : '') + (failed ? ' 저장 실패 ' + failed + '건. 다음에 품목 연결을 다시 확인해주세요.' : '') + (ivStorageWarning ? '\n' + ivStorageWarning : '') + '\n' + priceNotice;
     } catch (error) { status.textContent='다운로드할 수 없습니다. ' + error.message; ivRenderInvoices(); }
 }
