@@ -1179,7 +1179,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.62 · 야채·이미지 통합</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.63 · 특가쌀</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1233,6 +1233,9 @@ async function erpLogout() {
             </button>
             <button onclick="switchTab('vegPriceHistory')">
                 <span class="nav-icon">&#128202;</span>야채 시세 이력
+            </button>
+            <button onclick="switchTab('riceDeal')">
+                <span class="nav-icon">&#127806;</span>특가쌀
             </button>
             <button onclick="switchTab('images')">
                 <span class="nav-icon">&#128247;</span>이미지 관리
@@ -1567,6 +1570,121 @@ async function erpLogout() {
             </table>
         </div>
         <p style="color:var(--text-muted);font-size:0.78rem;margin-top:10px;">품목 줄을 누르면 그 품목의 <b>일별 경매가</b>가 펼쳐집니다. 펼친 뒤 <b>날짜를 누르면 그날 경매가를 수기로 고칠 수 있습니다</b> (관리자 전용 · 0을 넣으면 입하없음).</p>
+    </div>
+</div>
+
+<!-- 특가쌀 (2026-11-17) — 쌀 거래처가 전용 링크로 올린 특가 제안 → 매입 잡기 → 외상매입 엑셀 → 받음 체크 -->
+<div class="tab-content" id="tab-riceDeal">
+    <div class="card">
+        <h3>&#127806; 특가쌀 <span id="rdCount" style="font-size:0.8rem;font-weight:400;color:var(--text-muted);"></span></h3>
+        <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:16px;">
+            쌀 거래처가 <b>전용 링크</b>로 올린 특가 제안이 여기에 모입니다.<br>
+            <b>[매입 잡기]</b>(일부 수량 가능) → <b>품목코드 연결</b> → <b>[매입 엑셀]</b> → 물건이 오면 <b>받음 체크</b> 순서로 씁니다.
+        </p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" onclick="rdLoad()">&#8635; 새로고침</button>
+            <button class="btn btn-outline btn-sm" onclick="rdToggleSupplierPanel()">&#128279; 쌀 거래처 · 링크 관리</button>
+            <span id="rdStatus" style="font-size:0.8rem;color:var(--text-muted);"></span>
+        </div>
+
+        <!-- 쌀 거래처 · 링크 관리 (평소엔 접혀 있다) -->
+        <div id="rdSupplierPanel" style="display:none;margin-top:14px;padding:12px;background:#f5f7fa;border:1px solid var(--border-light);border-radius:8px;">
+            <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px;">
+                거래처를 등록하면 전용 링크가 만들어집니다. <b>[복사]</b>해서 카톡으로 보내주세요.
+                <b>경영박사 거래처코드</b>는 매입 엑셀에 들어가므로 꼭 적어주세요.
+                링크가 새어 나갔으면 <b>[새 링크]</b>를 누르세요 — 옛 링크는 그 즉시 못 씁니다.
+            </p>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+                <input type="hidden" id="rdSupEditId" value="">
+                <input type="text" id="rdSupName" placeholder="거래처 이름 (예: 담다)" style="padding:6px 10px;width:180px;">
+                <input type="text" id="rdSupErp" placeholder="경영박사 거래처코드" style="padding:6px 10px;width:160px;">
+                <input type="text" id="rdSupPhone" placeholder="연락처 (선택)" style="padding:6px 10px;width:150px;">
+                <button class="btn btn-primary btn-sm" id="rdSupSaveBtn" onclick="rdSaveSupplier()">+ 거래처 등록</button>
+                <button class="btn btn-outline btn-sm" id="rdSupCancelBtn" style="display:none;" onclick="rdResetSupplierForm()">취소</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr>
+                        <th>거래처</th><th style="width:130px;">경영박사 코드</th><th style="width:130px;">연락처</th>
+                        <th>전용 링크</th><th style="width:70px;">상태</th><th style="width:230px;">관리</th>
+                    </tr></thead>
+                    <tbody id="rdSupplierBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 제안 목록 -->
+    <div class="card">
+        <h3>제안 목록 <span id="rdOfferCount" style="font-size:0.8rem;font-weight:400;color:var(--text-muted);"></span></h3>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+            <select id="rdFilterSupplier" onchange="rdRenderOffers()" style="padding:6px 8px;"><option value="">거래처 전체</option></select>
+            <select id="rdFilterWeight" onchange="rdRenderOffers()" style="padding:6px 8px;"><option value="">중량 전체</option></select>
+            <select id="rdFilterStatus" onchange="rdRenderOffers()" style="padding:6px 8px;">
+                <option value="">상태 전체</option>
+                <option value="open">매입 가능 (남은 수량 있음)</option>
+                <option value="done">전량 매입</option>
+                <option value="hold">보류</option>
+            </select>
+            <select id="rdSort" onchange="rdRenderOffers()" style="padding:6px 8px;font-weight:700;">
+                <option value="kg">정렬: kg당 싼 순</option>
+                <option value="recent">정렬: 최근 올린 순</option>
+                <option value="mill">정렬: 도정일 최근 순</option>
+                <option value="supplier">정렬: 거래처별</option>
+            </select>
+        </div>
+        <div class="table-wrap" style="max-height:560px;overflow-y:auto;">
+            <table>
+                <thead><tr>
+                    <th style="width:60px;">사진</th><th style="width:100px;">거래처</th><th>상품명</th>
+                    <th style="width:60px;">중량</th><th style="width:50px;">등급</th><th style="width:70px;">산년</th>
+                    <th style="width:140px;">도정일</th>
+                    <th class="text-right" style="width:90px;">제안 수량</th>
+                    <th class="text-right" style="width:90px;">가격(1포)</th>
+                    <th class="text-right" style="width:80px;">kg당</th>
+                    <th class="text-right" style="width:110px;">매입 / 남음</th>
+                    <th style="width:200px;">관리</th>
+                </tr></thead>
+                <tbody id="rdOfferBody"></tbody>
+            </table>
+        </div>
+        <p style="color:var(--text-muted);font-size:0.78rem;margin-top:10px;">
+            도정일 색: <span style="color:#2e7d32;font-weight:700;">30일 이내</span> ·
+            <span style="color:#c97a00;font-weight:700;">31~60일</span> ·
+            <span style="color:#c23a2b;font-weight:700;">60일 넘음</span> ·
+            초록색 kg당 가격 = 지금 살 수 있는 것 중 가장 싼 것 · 회색 줄 = 전량 매입했거나 보류한 제안
+        </p>
+    </div>
+
+    <!-- 매입 잡은 것 -->
+    <div class="card">
+        <h3>매입 잡은 것 <span id="rdPurchaseCount" style="font-size:0.8rem;font-weight:400;color:var(--text-muted);"></span></h3>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px;border:1px dashed var(--border);border-radius:8px;margin-bottom:12px;">
+            <strong style="font-size:0.85rem;">&#128228; 매입 엑셀</strong>
+            <label style="font-size:0.78rem;color:var(--text-muted);display:flex;align-items:center;gap:4px;">매입일
+                <input type="date" id="rdXlsDate" style="font-size:0.8rem;padding:4px 6px;border:1px solid var(--border);border-radius:5px;"></label>
+            <button class="btn btn-outline btn-sm" style="border-color:#2e7d32;color:#2e7d32;" onclick="rdExportXls()">&#128228; 매입 엑셀 (외상매입)</button>
+            <span style="font-size:0.72rem;color:var(--text-muted);">고른 날짜에 매입 잡은 쌀이 경영박사 외상매입 양식(.xls)으로 나옵니다</span>
+            <label style="margin-left:auto;font-size:0.8rem;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="rdHideReceived" onchange="rdRenderPurchases()"> 받아온 것 숨기기</label>
+        </div>
+        <div class="table-wrap" style="max-height:560px;overflow-y:auto;">
+            <table>
+                <thead><tr>
+                    <th class="text-center" style="width:56px;">받음</th>
+                    <th style="width:100px;">매입일</th><th style="width:100px;">거래처</th><th>상품명</th>
+                    <th class="text-right" style="width:80px;">수량</th>
+                    <th class="text-right" style="width:90px;">단가</th>
+                    <th class="text-right" style="width:110px;">금액</th>
+                    <th style="width:300px;">품목코드 (경영박사)</th>
+                    <th style="width:130px;">관리</th>
+                </tr></thead>
+                <tbody id="rdPurchaseBody"></tbody>
+            </table>
+        </div>
+        <p style="color:var(--text-muted);font-size:0.78rem;margin-top:10px;">
+            물건을 받아오면 맨 앞 칸을 체크하세요 — 줄이 회색으로 바뀌고 아래로 내려갑니다.
+            품목코드가 없는 줄은 매입 엑셀에서 빠집니다 — <b>[품목 등록]</b>으로 새로 만들거나 <b>[기존 품목]</b>에서 고르세요.
+        </p>
     </div>
 </div>
 
@@ -2578,6 +2696,11 @@ async function erpLogout() {
     </div>
 </div>
 
+<!-- 특가쌀 — 매입 잡기 / 기존 품목 고르기 창 (내용은 rdOpenBuy · rdOpenLink 가 채운다) -->
+<div class="modal-overlay" id="riceModal">
+    <div class="modal" id="riceModalBody"></div>
+</div>
+
 <div class="modal-overlay" id="productModal">
     <div class="modal">
         <h2 id="productModalTitle">품목 추가</h2>
@@ -2846,7 +2969,8 @@ const PAGE_TITLES = {
     sortOrder: '정렬 관리 (카테고리·품목 순서)',
     vegMargin: '야채 마진율 관리',
     vegPriceCompare: '야채 가격비교',
-    vegPriceHistory: '야채 시세 이력'
+    vegPriceHistory: '야채 시세 이력',
+    riceDeal: '특가쌀 (쌀 특가 제안 · 매입)'
 };
 
 function switchTab(tabId) {
@@ -2893,6 +3017,7 @@ function switchTab(tabId) {
     if (tabId === 'priceSchedule') { initPriceScheduleTab(); }
     if (tabId === 'sortOrder') { initSortOrderTab(); }
     if (tabId === 'vegPriceHistory') { initVegPriceHistoryTab(); }
+    if (tabId === 'riceDeal') { initRiceDealTab(); }
 }
 
 // ============================================================
@@ -3273,6 +3398,7 @@ document.addEventListener('click', function(e) {
 
 function openAddProductModal() {
     editingProductCode = null;
+    rdPendingLink = null;     // 특가쌀에서 연 등록 창이 아니면 매입 연결을 하지 않는다
     document.getElementById('productModalTitle').textContent = '품목 추가';
     document.getElementById('pmCode').value = '';
     document.getElementById('pmName').value = '';
@@ -3299,6 +3425,7 @@ function editProduct(code) {
     const p = products.find(x => x.code === code);
     if (!p) return;
     editingProductCode = code;
+    rdPendingLink = null;     // 수정 창은 특가쌀 매입 연결과 무관하다
     document.getElementById('productModalTitle').textContent = '품목 수정';
     populateVendorSelect();
     populateMajorSelect();
@@ -3656,6 +3783,9 @@ async function saveProduct() {
         }
 
         closeModal('productModal');
+
+        // 특가쌀에서 연 등록 창이었으면 방금 만든 코드를 그 매입 기록에 연결한다 (DB 저장이 끝난 뒤)
+        if (!isEditMode && typeof rdAfterProductSaved === 'function') { rdAfterProductSaved(code); }
 
         // 이미지 처리 (비동기) — 실패 시 사용자에게 명확히 통보.
         // 예전엔 console.warn 만 남기고 조용히 넘어가서 사용자가 성공한 줄 알고
@@ -11345,6 +11475,678 @@ async function vmExportPurchaseXls() {
         if (hint) hint.textContent = '';
         alert('매입 엑셀 생성 오류: ' + (e && e.message ? e.message : e));
     }
+}
+
+// ============================================================
+// 🌾 특가쌀 (2026-11-17)
+//   쌀 거래처가 전용 링크(발주앱 /rice/{토큰})로 올린 특가 제안을 모아 보고
+//   → 매입 잡기(일부 수량 가능) → 품목코드 연결 → 외상매입 엑셀 → 받음 체크.
+//
+//   · 테이블(rice_*)은 RLS 로 잠겨 있어 브라우저가 직접 못 읽는다. rice_admin_* RPC 로만 오가고,
+//     그 함수들이 "대표 계정인지"를 서버에서 다시 확인한다 (화면에서 숨기는 것만으로는 막지 않는다).
+//   · 거래처가 적은 글자(상품명·메모 등)는 화면에 넣을 때 반드시 escapeHtml 을 거친다.
+//   · 경영박사 거래처코드는 야채처럼 코드에 박지 않고 rice_suppliers.erp_code 에서 읽는다.
+//   · SQL: 플랫폼부/shared/sql/97_rice_offers.sql
+// ============================================================
+var RD_LINK_BASE = 'https://admin.jiguorder.com/rice/';
+var RD_PHOTO_BASE = SUPABASE_URL + '/storage/v1/object/public/rice-offers/';
+var rdData = { suppliers: [], offers: [], purchases: [], today: '' };
+// 품목 등록 창이 저장되면 이 매입 기록에 새 품목코드를 연결한다 (특가쌀에서 연 등록 창일 때만 값이 있다)
+var rdPendingLink = null;
+
+function rdNum(n) { return (Number(n) || 0).toLocaleString('ko-KR'); }
+function rdKg(price, weight) {
+    price = Number(price); weight = Number(weight);
+    return (price > 0 && weight > 0) ? Math.round(price / weight) : null;
+}
+// 사진 경로는 "거래처번호/파일" 모양만 주소로 바꾼다 (그 밖의 글자는 화면에 주소로 쓰지 않는다)
+function rdPhotoUrl(path) {
+    return /^[0-9]+\/[a-f0-9-]{36}\.(jpg|png|webp)$/.test(String(path || '')) ? RD_PHOTO_BASE + path : '';
+}
+function rdOffer(id) { return rdData.offers.find(function(o) { return Number(o.id) === Number(id); }) || null; }
+function rdPurchase(id) { return rdData.purchases.find(function(p) { return Number(p.id) === Number(id); }) || null; }
+function rdSupplier(id) { return rdData.suppliers.find(function(s) { return Number(s.id) === Number(id); }) || null; }
+function rdToday() {
+    if (rdData.today) return rdData.today;
+    var d = new Date(Date.now() + 9 * 3600 * 1000);
+    return d.toISOString().slice(0, 10);
+}
+function rdStatus(text, isError) {
+    var el = document.getElementById('rdStatus');
+    if (!el) return;
+    el.textContent = text || '';
+    el.style.color = isError ? '#c23a2b' : 'var(--text-muted)';
+}
+// 서버 오류를 알아듣기 쉬운 말로
+function rdErrText(err) {
+    var msg = (err && err.message) ? err.message : String(err || '');
+    if (/PGRST202|schema cache|does not exist|Could not find the function/i.test(msg)) {
+        return '특가쌀 자료 창고가 아직 준비되지 않았습니다.\n(Supabase 에 97번 SQL — 97_rice_offers.sql 을 먼저 실행해주세요)';
+    }
+    if (/active_session_required|JWT|not authenticated/i.test(msg)) {
+        return '로그인이 풀렸습니다. 로그아웃 후 다시 로그인해주세요.';
+    }
+    return msg;
+}
+// RPC 호출 공통 — 실패하면 알리고 null 을 돌려준다
+async function rdCall(fn, args) {
+    if (!db) { alert('Supabase 미연결 — 특가쌀은 온라인 연결이 필요합니다.'); return null; }
+    try {
+        var res = await db.rpc(fn, args || {});
+        if (res.error) { alert(rdErrText(res.error)); return null; }
+        return res.data || {};
+    } catch (e) {
+        alert(rdErrText(e));
+        return null;
+    }
+}
+
+function initRiceDealTab() {
+    var dp = document.getElementById('rdXlsDate');
+    if (dp && !dp.value) dp.value = rdToday();
+    rdLoad();
+}
+
+async function rdLoad() {
+    if (!db) { rdStatus('Supabase 미연결 — 온라인 연결이 필요합니다.', true); return; }
+    rdStatus('불러오는 중...');
+    try {
+        var res = await db.rpc('rice_admin_board', { p_days: 90 });
+        if (res.error) {
+            rdStatus(rdErrText(res.error).split('\n')[0], true);
+            return;
+        }
+        var d = res.data || {};
+        rdData = {
+            suppliers: d.suppliers || [],
+            offers: d.offers || [],
+            purchases: d.purchases || [],
+            today: d.today || ''
+        };
+        var dp = document.getElementById('rdXlsDate');
+        if (dp && !dp.value) dp.value = rdToday();
+        rdRenderAll();
+        var now = new Date();
+        rdStatus('불러옴 ' + String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0'));
+        // 거래처가 하나도 없으면 등록부터 해야 하므로 관리 칸을 펼쳐 둔다
+        if (rdData.suppliers.length === 0) rdToggleSupplierPanel(true);
+    } catch (e) {
+        rdStatus(rdErrText(e).split('\n')[0], true);
+    }
+}
+
+function rdRenderAll() {
+    rdRenderSuppliers();
+    rdFillFilters();
+    rdRenderOffers();
+    rdRenderPurchases();
+    var open = rdData.offers.filter(function(o) { return !o.hold && Number(o.qty) - Number(o.purchased_qty) > 0; }).length;
+    var waiting = rdData.purchases.filter(function(p) { return !p.received; }).length;
+    var el = document.getElementById('rdCount');
+    if (el) el.textContent = '매입 가능 ' + open + '건 · 받을 것 ' + waiting + '건';
+}
+
+// ── 쌀 거래처 · 링크 관리 ─────────────────────────────────────
+function rdToggleSupplierPanel(forceOpen) {
+    var panel = document.getElementById('rdSupplierPanel');
+    if (!panel) return;
+    var show = (forceOpen === true) ? true : panel.style.display === 'none';
+    panel.style.display = show ? 'block' : 'none';
+}
+
+function rdRenderSuppliers() {
+    var body = document.getElementById('rdSupplierBody');
+    if (!body) return;
+    if (rdData.suppliers.length === 0) {
+        body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:18px;">등록된 쌀 거래처가 없습니다. 위에서 이름을 적고 [+ 거래처 등록]을 눌러주세요.</td></tr>';
+        return;
+    }
+    body.innerHTML = rdData.suppliers.map(function(s) {
+        var link = RD_LINK_BASE + s.access_token;
+        var off = !s.active;
+        return '<tr' + (off ? ' style="color:#9a9a9a;background:#f3f3f3;"' : '') + '>' +
+            '<td><b>' + escapeHtml(s.name) + '</b></td>' +
+            '<td>' + (s.erp_code ? escapeHtml(s.erp_code) : '<span style="color:#c23a2b;font-weight:700;">없음</span>') + '</td>' +
+            '<td>' + escapeHtml(s.phone || '') + '</td>' +
+            '<td><input type="text" readonly value="' + escapeHtml(link) + '" onclick="this.select()" style="width:100%;min-width:220px;padding:4px 6px;font-size:0.75rem;color:#555;"></td>' +
+            '<td>' + (off ? '중지' : '<span style="color:#2e7d32;font-weight:700;">사용중</span>') + '</td>' +
+            '<td style="white-space:nowrap;">' +
+                '<button class="btn btn-primary btn-sm" onclick="rdCopyLink(' + s.id + ')">복사</button> ' +
+                '<button class="btn btn-outline btn-sm" onclick="rdEditSupplier(' + s.id + ')">고치기</button> ' +
+                '<button class="btn btn-outline btn-sm" onclick="rdRegenerateLink(' + s.id + ')">새 링크</button> ' +
+                '<button class="btn btn-outline btn-sm" onclick="rdToggleSupplierActive(' + s.id + ')">' + (off ? '다시 사용' : '중지') + '</button>' +
+            '</td></tr>';
+    }).join('');
+}
+
+function rdResetSupplierForm() {
+    document.getElementById('rdSupEditId').value = '';
+    document.getElementById('rdSupName').value = '';
+    document.getElementById('rdSupErp').value = '';
+    document.getElementById('rdSupPhone').value = '';
+    document.getElementById('rdSupSaveBtn').textContent = '+ 거래처 등록';
+    document.getElementById('rdSupCancelBtn').style.display = 'none';
+}
+
+function rdEditSupplier(id) {
+    var s = rdSupplier(id);
+    if (!s) return;
+    document.getElementById('rdSupEditId').value = s.id;
+    document.getElementById('rdSupName').value = s.name || '';
+    document.getElementById('rdSupErp').value = s.erp_code || '';
+    document.getElementById('rdSupPhone').value = s.phone || '';
+    document.getElementById('rdSupSaveBtn').textContent = '고친 내용 저장';
+    document.getElementById('rdSupCancelBtn').style.display = '';
+    document.getElementById('rdSupName').focus();
+}
+
+async function rdSaveSupplier() {
+    var editId = document.getElementById('rdSupEditId').value;
+    var name = document.getElementById('rdSupName').value.trim();
+    if (!name) { alert('거래처 이름을 적어주세요.'); return; }
+    var existing = editId ? rdSupplier(editId) : null;
+    var r = await rdCall('rice_admin_save_supplier', {
+        p_id: editId ? Number(editId) : null,
+        p_name: name,
+        p_erp_code: document.getElementById('rdSupErp').value.trim(),
+        p_phone: document.getElementById('rdSupPhone').value.trim(),
+        p_active: existing ? !!existing.active : true
+    });
+    if (!r) return;
+    rdResetSupplierForm();
+    await rdLoad();
+    showToast(editId ? '거래처 정보를 고쳤습니다' : '거래처를 등록했습니다 — [복사]로 링크를 보내주세요');
+}
+
+async function rdToggleSupplierActive(id) {
+    var s = rdSupplier(id);
+    if (!s) return;
+    if (s.active && !confirm('"' + s.name + '" 의 링크 사용을 중지할까요?\n중지하면 이 거래처는 링크를 열 수 없습니다. (올라온 제안·매입 기록은 그대로 남습니다)')) return;
+    var r = await rdCall('rice_admin_save_supplier', {
+        p_id: s.id, p_name: s.name, p_erp_code: s.erp_code || '', p_phone: s.phone || '', p_active: !s.active
+    });
+    if (!r) return;
+    await rdLoad();
+}
+
+async function rdRegenerateLink(id) {
+    var s = rdSupplier(id);
+    if (!s) return;
+    if (!confirm('"' + s.name + '" 의 링크를 새로 만들까요?\n\n지금 쓰는 링크는 그 즉시 못 쓰게 됩니다.\n새 링크를 다시 보내줘야 합니다.')) return;
+    var r = await rdCall('rice_admin_regenerate_token', { p_id: s.id });
+    if (!r) return;
+    await rdLoad();
+    showToast('새 링크를 만들었습니다 — [복사]해서 다시 보내주세요');
+}
+
+async function rdCopyLink(id) {
+    var s = rdSupplier(id);
+    if (!s) return;
+    var link = RD_LINK_BASE + s.access_token;
+    try {
+        await navigator.clipboard.writeText(link);
+        showToast(s.name + ' 링크를 복사했습니다');
+    } catch (e) {
+        // 클립보드가 막힌 환경 — 직접 복사할 수 있게 보여준다
+        prompt('아래 주소를 복사해서 보내주세요 (Ctrl+C)', link);
+    }
+}
+
+// ── 제안 목록 ────────────────────────────────────────────────
+function rdFillFilters() {
+    var supSel = document.getElementById('rdFilterSupplier');
+    var wSel = document.getElementById('rdFilterWeight');
+    if (!supSel || !wSel) return;
+    var curSup = supSel.value, curW = wSel.value;
+    var names = {};
+    rdData.offers.forEach(function(o) { names[o.supplier_id] = o.supplier_name; });
+    supSel.innerHTML = '<option value="">거래처 전체</option>' + Object.keys(names).map(function(id) {
+        return '<option value="' + Number(id) + '">' + escapeHtml(names[id]) + '</option>';
+    }).join('');
+    var weights = [];
+    rdData.offers.forEach(function(o) { var w = Number(o.weight_kg); if (weights.indexOf(w) === -1) weights.push(w); });
+    weights.sort(function(a, b) { return a - b; });
+    wSel.innerHTML = '<option value="">중량 전체</option>' + weights.map(function(w) {
+        return '<option value="' + w + '">' + w + 'kg</option>';
+    }).join('');
+    // 고른 값 유지 (없어진 값이면 전체로 돌아간다)
+    supSel.value = curSup; if (supSel.value !== curSup) supSel.value = '';
+    wSel.value = curW; if (wSel.value !== curW) wSel.value = '';
+}
+
+// 도정일 → "26.10.03 (45일 전)" + 색
+function rdMillLabel(millDate) {
+    if (!millDate) return '<span style="color:#999;">확인중</span>';
+    var today = new Date(rdToday() + 'T00:00:00');
+    var d = new Date(millDate + 'T00:00:00');
+    var days = Math.round((today - d) / 86400000);
+    var color = days <= 30 ? '#2e7d32' : (days <= 60 ? '#c97a00' : '#c23a2b');
+    return escapeHtml(String(millDate).slice(2).replace(/-/g, '.')) +
+        ' <span style="color:' + color + ';font-weight:700;">(' + days + '일 전)</span>';
+}
+
+function rdFilteredOffers() {
+    var sup = document.getElementById('rdFilterSupplier').value;
+    var w = document.getElementById('rdFilterWeight').value;
+    var st = document.getElementById('rdFilterStatus').value;
+    var sort = document.getElementById('rdSort').value;
+    var list = rdData.offers.filter(function(o) {
+        var remain = Number(o.qty) - Number(o.purchased_qty);
+        if (sup && String(o.supplier_id) !== sup) return false;
+        if (w && String(Number(o.weight_kg)) !== w) return false;
+        if (st === 'open' && (o.hold || remain <= 0)) return false;
+        if (st === 'done' && remain > 0) return false;
+        if (st === 'hold' && !o.hold) return false;
+        return true;
+    });
+    var kgOf = function(o) { var k = rdKg(o.price, o.weight_kg); return k === null ? Infinity : k; };
+    var sorters = {
+        kg: function(a, b) { return kgOf(a) - kgOf(b); },
+        recent: function(a, b) { return String(b.edited_at || b.created_at).localeCompare(String(a.edited_at || a.created_at)); },
+        mill: function(a, b) { return String(b.mill_date || '').localeCompare(String(a.mill_date || '')); },
+        supplier: function(a, b) { return String(a.supplier_name).localeCompare(String(b.supplier_name), 'ko') || (kgOf(a) - kgOf(b)); }
+    };
+    // 전량 매입했거나 보류한 제안은 항상 아래로
+    var sunk = function(o) { return (o.hold || Number(o.qty) - Number(o.purchased_qty) <= 0) ? 1 : 0; };
+    return list.sort(function(a, b) { return (sunk(a) - sunk(b)) || (sorters[sort] || sorters.kg)(a, b); });
+}
+
+function rdRenderOffers() {
+    var body = document.getElementById('rdOfferBody');
+    if (!body) return;
+    var list = rdFilteredOffers();
+    var cnt = document.getElementById('rdOfferCount');
+    if (cnt) cnt.textContent = list.length + '건';
+    if (list.length === 0) {
+        body.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--text-muted);padding:22px;">' +
+            (rdData.offers.length === 0 ? '아직 올라온 제안이 없습니다.' : '조건에 맞는 제안이 없습니다.') + '</td></tr>';
+        return;
+    }
+    // 지금 살 수 있는 것 중 가장 싼 kg당 가격
+    var best = null;
+    list.forEach(function(o) {
+        if (o.hold || Number(o.qty) - Number(o.purchased_qty) <= 0) return;
+        var k = rdKg(o.price, o.weight_kg);
+        if (k !== null && (best === null || k < best)) best = k;
+    });
+
+    body.innerHTML = list.map(function(o) {
+        var bought = Number(o.purchased_qty) || 0;
+        var remain = Number(o.qty) - bought;
+        var gray = o.hold || remain <= 0;
+        var kg = rdKg(o.price, o.weight_kg);
+        var photos = (o.photos || []).map(rdPhotoUrl).filter(Boolean);
+        var thumb = photos.length
+            ? '<img src="' + photos[0] + '" loading="lazy" alt="" onclick="rdZoom(' + o.id + ',0)" style="width:46px;height:46px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:zoom-in;display:block;' + (gray ? 'filter:grayscale(1);opacity:0.6;' : '') + '">' +
+              (photos.length > 1 ? '<div style="font-size:0.68rem;color:var(--text-muted);text-align:center;">+' + (photos.length - 1) + '장</div>' : '')
+            : '<div style="width:46px;height:46px;border-radius:6px;background:#eef0ea;color:#a3aa9c;font-size:0.68rem;display:flex;align-items:center;justify-content:center;">없음</div>';
+        var pallet = o.per_pallet
+            ? '<div style="font-size:0.72rem;color:var(--text-muted);">' + rdNum(o.per_pallet) + '포씩' + (o.pallets ? ' × ' + rdNum(o.pallets) + '판' : '') + '</div>' : '';
+        var badges = (o.edited_at ? ' <span class="badge" style="background:#fff1d9;color:#c97a00;">정정</span>' : '') +
+                     (o.hold ? ' <span class="badge" style="background:#e5e5e5;color:#666;">보류</span>' : '');
+        var buyCell = bought > 0
+            ? '<b style="color:' + (gray ? 'inherit' : '#2e7d32') + ';">' + rdNum(bought) + '</b> / ' + (remain > 0 ? rdNum(remain) : '없음')
+            : '<span style="color:var(--text-muted);">-</span> / ' + rdNum(remain);
+        var actions =
+            (remain > 0 && !o.hold ? '<button class="btn btn-primary btn-sm" onclick="rdOpenBuy(' + o.id + ')">매입 잡기</button> ' : '') +
+            '<button class="btn btn-outline btn-sm" onclick="rdSetHold(' + o.id + ',' + (o.hold ? 'false' : 'true') + ')">' + (o.hold ? '보류 풀기' : '보류') + '</button> ' +
+            (bought === 0 ? '<button class="btn btn-outline btn-sm" onclick="rdDeleteOffer(' + o.id + ')">삭제</button>' : '');
+        return '<tr' + (gray ? ' style="background:#ececec;color:#9a9a9a;"' : '') + '>' +
+            '<td>' + thumb + '</td>' +
+            '<td>' + escapeHtml(o.supplier_name) + '</td>' +
+            '<td><b>' + escapeHtml(o.name) + '</b>' + badges +
+                (o.memo ? '<div style="font-size:0.75rem;color:var(--text-muted);">' + escapeHtml(o.memo) + '</div>' : '') + '</td>' +
+            '<td>' + Number(o.weight_kg) + 'kg</td>' +
+            '<td>' + escapeHtml(o.grade || '-') + '</td>' +
+            '<td>' + escapeHtml(o.crop_year || '-') + '</td>' +
+            '<td>' + (gray ? escapeHtml(o.mill_date || '확인중') : rdMillLabel(o.mill_date)) + '</td>' +
+            '<td class="text-right">' + rdNum(o.qty) + '포' + pallet + '</td>' +
+            '<td class="text-right">' + rdNum(o.price) + '</td>' +
+            '<td class="text-right" style="font-weight:700;' + (!gray && kg !== null && kg === best ? 'color:#2e7d32;' : '') + '">' + (kg !== null ? rdNum(kg) : '-') + '</td>' +
+            '<td class="text-right">' + buyCell + '</td>' +
+            '<td style="white-space:nowrap;">' + actions + '</td>' +
+            '</tr>';
+    }).join('');
+}
+
+function rdZoom(offerId, index) {
+    var o = rdOffer(offerId);
+    if (!o) return;
+    var photos = (o.photos || []).map(rdPhotoUrl).filter(Boolean);
+    if (!photos[index]) return;
+    openImageLightbox(photos[index], o.name, Number(o.weight_kg) + 'kg · ' + o.supplier_name);
+}
+
+async function rdSetHold(offerId, hold) {
+    var r = await rdCall('rice_admin_set_hold', { p_offer_id: Number(offerId), p_hold: !!hold });
+    if (!r) return;
+    await rdLoad();
+}
+
+async function rdDeleteOffer(offerId) {
+    var o = rdOffer(offerId);
+    if (!o) return;
+    if (!confirm('"' + o.name + '" 제안을 목록에서 지울까요?\n(거래처 화면에서도 사라집니다)')) return;
+    var r = await rdCall('rice_admin_delete_offer', { p_offer_id: Number(offerId) });
+    if (!r) return;
+    await rdLoad();
+    showToast('제안을 지웠습니다');
+}
+
+// ── 매입 잡기 / 고치기 ───────────────────────────────────────
+function rdOpenBuy(offerId, purchaseId) {
+    var p = purchaseId ? rdPurchase(purchaseId) : null;
+    var o = rdOffer(p ? p.offer_id : offerId);
+    if (!o) { alert('제안을 찾을 수 없습니다. [새로고침] 후 다시 시도해주세요.'); return; }
+    var others = rdData.purchases.reduce(function(s, x) {
+        return s + ((Number(x.offer_id) === Number(o.id) && (!p || Number(x.id) !== Number(p.id))) ? Number(x.qty) : 0);
+    }, 0);
+    var remain = Number(o.qty) - others;
+    var kg = rdKg(o.price, o.weight_kg);
+    document.getElementById('riceModalBody').innerHTML =
+        '<h2>' + (p ? '매입 고치기' : '매입 잡기') + '</h2>' +
+        '<div style="padding:10px 12px;background:#f5f7fa;border:1px solid var(--border-light);border-radius:8px;margin-bottom:14px;font-size:0.88rem;line-height:1.6;">' +
+            '<b>' + escapeHtml(o.name) + ' ' + Number(o.weight_kg) + 'kg</b> · ' + escapeHtml(o.supplier_name) + '<br>' +
+            '제안 ' + rdNum(o.qty) + '포 × ' + rdNum(o.price) + '원' + (kg !== null ? ' (kg당 ' + rdNum(kg) + '원)' : '') +
+            ' · <b style="color:#2e7d32;">잡을 수 있는 수량 ' + rdNum(remain) + '포</b>' +
+        '</div>' +
+        '<div class="form-row">' +
+            '<div class="form-group" style="flex:1"><label>매입 수량 (포) *</label>' +
+                '<input type="number" id="rdBuyQty" min="1" max="' + remain + '" value="' + (p ? Number(p.qty) : remain) + '"></div>' +
+            '<div class="form-group" style="flex:1"><label>매입 단가 (1포, 원) *</label>' +
+                '<input type="number" id="rdBuyCost" min="1" value="' + (p ? Number(p.unit_cost) : Number(o.price)) + '"></div>' +
+            '<div class="form-group" style="flex:1"><label>매입일 *</label>' +
+                '<input type="date" id="rdBuyDate" value="' + escapeHtml(p ? p.purchase_date : rdToday()) + '"></div>' +
+        '</div>' +
+        '<p style="font-size:0.78rem;color:var(--text-muted);margin:-4px 0 12px;">' +
+            '매입일은 외상매입 엑셀에 찍히는 날짜입니다. 품목코드는 저장한 뒤 아래 표에서 <b>[품목 등록]</b> 또는 <b>[기존 품목]</b>으로 연결합니다.' +
+        '</p>' +
+        '<div class="btn-group">' +
+            '<button class="btn btn-outline" onclick="closeModal(\'riceModal\')">취소</button>' +
+            '<button class="btn btn-primary" id="rdBuySaveBtn" onclick="rdSaveBuy(' + o.id + ',' + (p ? p.id : 'null') + ')">' + (p ? '고친 내용 저장' : '매입 잡기') + '</button>' +
+        '</div>';
+    openModal('riceModal');
+    var q = document.getElementById('rdBuyQty');
+    if (q) { q.focus(); q.select(); }
+}
+
+async function rdSaveBuy(offerId, purchaseId) {
+    var qty = Number(document.getElementById('rdBuyQty').value);
+    var cost = Number(document.getElementById('rdBuyCost').value);
+    var date = document.getElementById('rdBuyDate').value;
+    if (!(qty > 0) || Math.floor(qty) !== qty) { alert('매입 수량을 적어주세요.'); return; }
+    if (!(cost > 0) || Math.floor(cost) !== cost) { alert('매입 단가를 적어주세요.'); return; }
+    if (!date) { alert('매입일을 골라주세요.'); return; }
+    var btn = document.getElementById('rdBuySaveBtn');
+    if (btn) { if (btn.disabled) return; btn.disabled = true; }
+    var existing = purchaseId ? rdPurchase(purchaseId) : null;
+    var r = await rdCall('rice_admin_save_purchase', {
+        p_id: purchaseId ? Number(purchaseId) : null,
+        p_offer_id: Number(offerId),
+        p_qty: qty,
+        p_unit_cost: cost,
+        p_date: date,
+        p_product_code: existing ? (existing.product_code || '') : ''
+    });
+    if (btn) btn.disabled = false;
+    if (!r) return;
+    closeModal('riceModal');
+    // 방금 잡은 날짜로 엑셀 날짜 칸을 맞춰 둔다 (바로 뽑기 쉽게)
+    var dp = document.getElementById('rdXlsDate');
+    if (dp) dp.value = date;
+    await rdLoad();
+    showToast(purchaseId ? '매입 내용을 고쳤습니다' : rdNum(qty) + '포 매입을 잡았습니다');
+}
+
+async function rdDeletePurchase(purchaseId) {
+    var p = rdPurchase(purchaseId);
+    if (!p) return;
+    var o = rdOffer(p.offer_id);
+    if (!confirm('이 매입을 취소할까요?\n' + (o ? o.name + ' ' : '') + rdNum(p.qty) + '포 (' + p.purchase_date + ')\n\n거래처 화면의 "매입 확정" 표시도 같이 줄어듭니다.')) return;
+    var r = await rdCall('rice_admin_delete_purchase', { p_id: Number(purchaseId) });
+    if (!r) return;
+    await rdLoad();
+    showToast('매입을 취소했습니다');
+}
+
+async function rdSetReceived(purchaseId, checked) {
+    var r = await rdCall('rice_admin_set_received', { p_id: Number(purchaseId), p_received: !!checked });
+    await rdLoad();   // 실패해도 체크칸을 서버 상태로 되돌린다
+    if (r) showToast(checked ? '받아온 것으로 표시했습니다' : '받음 표시를 풀었습니다');
+}
+
+// ── 매입 잡은 것 ─────────────────────────────────────────────
+function rdRenderPurchases() {
+    var body = document.getElementById('rdPurchaseBody');
+    if (!body) return;
+    var hide = document.getElementById('rdHideReceived').checked;
+    var list = rdData.purchases.filter(function(p) { return !(hide && p.received); });
+    // 아직 안 받은 것 먼저, 그 안에서는 매입일 최근 순
+    list.sort(function(a, b) {
+        return ((a.received ? 1 : 0) - (b.received ? 1 : 0)) ||
+               String(b.purchase_date).localeCompare(String(a.purchase_date)) || (Number(b.id) - Number(a.id));
+    });
+    var cnt = document.getElementById('rdPurchaseCount');
+    if (cnt) {
+        var waiting = rdData.purchases.filter(function(p) { return !p.received; }).length;
+        cnt.textContent = '전체 ' + rdData.purchases.length + '건 · 아직 안 받은 것 ' + waiting + '건';
+    }
+    if (list.length === 0) {
+        body.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:22px;">' +
+            (rdData.purchases.length === 0 ? '아직 매입 잡은 것이 없습니다. 위 제안 목록에서 [매입 잡기]를 누르세요.' : '보여줄 것이 없습니다.') + '</td></tr>';
+        return;
+    }
+    body.innerHTML = list.map(function(p) {
+        var o = rdOffer(p.offer_id) || {};
+        var prod = p.product_code ? products.find(function(x) { return x.code === p.product_code; }) : null;
+        var gray = !!p.received;
+        var codeCell;
+        if (p.product_code) {
+            codeCell = '<b>' + escapeHtml(p.product_code) + '</b> ' +
+                (prod ? escapeHtml(prod.name) + (prod.spec ? ' <span style="color:var(--text-muted);">' + escapeHtml(prod.spec) + '</span>' : '')
+                      : '<span style="color:#c97a00;">(이 PC 품목 목록에 없음)</span>') +
+                (gray ? '' : ' <button class="btn btn-outline btn-sm" onclick="rdOpenLink(' + p.id + ')">바꾸기</button>');
+        } else {
+            codeCell = '<span style="color:#c23a2b;font-weight:700;">품목코드 없음</span> ' +
+                '<button class="btn btn-primary btn-sm" onclick="rdRegisterProduct(' + p.id + ')">품목 등록</button> ' +
+                '<button class="btn btn-outline btn-sm" onclick="rdOpenLink(' + p.id + ')">기존 품목</button>';
+        }
+        return '<tr' + (gray ? ' style="background:#ececec;color:#9a9a9a;"' : '') + '>' +
+            '<td class="text-center"><input type="checkbox" title="받아왔으면 체크" style="width:22px;height:22px;cursor:pointer;" ' +
+                (p.received ? 'checked ' : '') + 'onchange="rdSetReceived(' + p.id + ',this.checked)"></td>' +
+            '<td>' + escapeHtml(p.purchase_date) + '</td>' +
+            '<td>' + escapeHtml(o.supplier_name || '') + '</td>' +
+            '<td><b>' + escapeHtml(o.name || '(지워진 제안)') + '</b> ' + (o.weight_kg ? Number(o.weight_kg) + 'kg' : '') +
+                (o.grade ? ' <span style="color:var(--text-muted);">' + escapeHtml(o.grade) + '</span>' : '') + '</td>' +
+            '<td class="text-right">' + rdNum(p.qty) + '포</td>' +
+            '<td class="text-right">' + rdNum(p.unit_cost) + '</td>' +
+            '<td class="text-right">' + rdNum(Number(p.qty) * Number(p.unit_cost)) + '</td>' +
+            '<td>' + codeCell + '</td>' +
+            '<td style="white-space:nowrap;">' + (gray ? '' :
+                '<button class="btn btn-outline btn-sm" onclick="rdOpenBuy(null,' + p.id + ')">고치기</button> ' +
+                '<button class="btn btn-outline btn-sm" onclick="rdDeletePurchase(' + p.id + ')">취소</button>') + '</td>' +
+            '</tr>';
+    }).join('');
+}
+
+// 매입 기록에 품목코드 연결 (수량·단가·날짜는 그대로 둔다)
+async function rdSetCode(purchaseId, code) {
+    var p = rdPurchase(purchaseId);
+    if (!p) { alert('매입 기록을 찾을 수 없습니다. [새로고침] 후 다시 시도해주세요.'); return false; }
+    var r = await rdCall('rice_admin_save_purchase', {
+        p_id: Number(p.id), p_offer_id: Number(p.offer_id), p_qty: Number(p.qty),
+        p_unit_cost: Number(p.unit_cost), p_date: p.purchase_date, p_product_code: code
+    });
+    if (!r) return false;
+    await rdLoad();
+    return true;
+}
+
+// ── 기존 품목에서 고르기 ─────────────────────────────────────
+function rdOpenLink(purchaseId) {
+    var p = rdPurchase(purchaseId);
+    if (!p) return;
+    var o = rdOffer(p.offer_id) || {};
+    document.getElementById('riceModalBody').innerHTML =
+        '<h2>기존 품목에서 고르기</h2>' +
+        '<p style="font-size:0.85rem;margin-bottom:10px;"><b>' + escapeHtml(o.name || '') + ' ' + (o.weight_kg ? Number(o.weight_kg) + 'kg' : '') + '</b> 에 연결할 품목을 고르세요.</p>' +
+        '<input type="text" id="rdLinkSearch" placeholder="품목명 · 품목코드 검색" oninput="rdRenderLinkList(' + p.id + ')" style="width:100%;padding:8px 10px;margin-bottom:8px;" autocomplete="off">' +
+        '<div id="rdLinkList" style="max-height:320px;overflow-y:auto;border:1px solid var(--border-light);border-radius:8px;"></div>' +
+        '<div class="btn-group">' +
+            (p.product_code ? '<button class="btn btn-outline" onclick="rdPickCode(' + p.id + ',\'\')">연결 풀기</button>' : '') +
+            '<button class="btn btn-outline" onclick="closeModal(\'riceModal\')">닫기</button>' +
+        '</div>';
+    openModal('riceModal');
+    rdRenderLinkList(p.id);
+    var s = document.getElementById('rdLinkSearch');
+    if (s) s.focus();
+}
+
+function rdRenderLinkList(purchaseId) {
+    var box = document.getElementById('rdLinkList');
+    if (!box) return;
+    var q = (document.getElementById('rdLinkSearch').value || '').trim().toLowerCase();
+    var list;
+    if (q) {
+        list = products.filter(function(x) {
+            return String(x.name || '').toLowerCase().indexOf(q) !== -1 || String(x.code || '').toLowerCase().indexOf(q) !== -1;
+        });
+    } else {
+        // 검색어가 없으면 쌀 품목부터 보여준다
+        list = products.filter(function(x) { return x.minorName === '쌀' || /쌀/.test(String(x.name || '')); });
+    }
+    list = list.slice(0, 40);
+    if (list.length === 0) {
+        box.innerHTML = '<div style="padding:18px;text-align:center;color:var(--text-muted);font-size:0.85rem;">찾는 품목이 없습니다. 닫고 [품목 등록]으로 새로 만들어주세요.</div>';
+        return;
+    }
+    box.innerHTML = list.map(function(x, i) {
+        return '<div onclick="rdPickCodeAt(' + Number(purchaseId) + ',' + i + ')" style="padding:8px 10px;border-bottom:1px solid var(--border-light);cursor:pointer;font-size:0.88rem;" ' +
+            'onmouseover="this.style.background=\'#f0f7f0\'" onmouseout="this.style.background=\'\'">' +
+            '<b>' + escapeHtml(x.code) + '</b> ' + escapeHtml(x.name) +
+            ' <span style="color:var(--text-muted);">' + escapeHtml(x.spec || '') + (x.tax ? ' · ' + escapeHtml(x.tax) : '') + '</span></div>';
+    }).join('');
+    // 코드를 onclick 글자에 직접 넣지 않고 번호로 찾아 쓴다 (코드에 따옴표가 섞여도 안전)
+    box._rdCodes = list.map(function(x) { return x.code; });
+}
+
+function rdPickCodeAt(purchaseId, index) {
+    var box = document.getElementById('rdLinkList');
+    var code = box && box._rdCodes ? box._rdCodes[index] : null;
+    if (code) rdPickCode(purchaseId, code);
+}
+
+async function rdPickCode(purchaseId, code) {
+    var ok = await rdSetCode(purchaseId, code);
+    if (!ok) return;
+    closeModal('riceModal');
+    showToast(code ? '품목코드 ' + code + ' 를 연결했습니다' : '품목코드 연결을 풀었습니다');
+}
+
+// ── 새 품목으로 등록 (품목 추가 창을 제안 내용으로 채워서 연다) ──
+function rdFindRiceCategory() {
+    var found = null;
+    Object.keys(CATEGORY_TREE).forEach(function(major) {
+        var sub = CATEGORY_TREE[major].sub || {};
+        Object.keys(sub).forEach(function(minor) {
+            if (!found && sub[minor] === '쌀') found = { major: major, minor: minor };
+        });
+    });
+    return found;
+}
+
+function rdRegisterProduct(purchaseId) {
+    var p = rdPurchase(purchaseId);
+    if (!p) return;
+    var o = rdOffer(p.offer_id);
+    if (!o) { alert('제안을 찾을 수 없습니다. [새로고침] 후 다시 시도해주세요.'); return; }
+
+    openAddProductModal();                      // 창을 비우고 연다 (이때 rdPendingLink 도 비워진다)
+    rdPendingLink = { purchaseId: Number(p.id) };
+    document.getElementById('productModalTitle').textContent = '품목 추가 — 특가쌀 매입에 연결';
+
+    // 매입처: 자체매입(JG)이 있으면 그것으로
+    var vendorSel = document.getElementById('pmVendor');
+    if (vendors.find(function(v) { return v.code === 'JG'; })) vendorSel.value = 'JG';
+    // 분류: 쌀
+    var cat = rdFindRiceCategory();
+    if (cat) {
+        document.getElementById('pmMajor').value = cat.major;
+        updateMinorOptions();
+        document.getElementById('pmMinor').value = cat.minor;
+    }
+    document.getElementById('pmName').value = o.name;
+    document.getElementById('pmSpec').value = Number(o.weight_kg) + 'kg';
+    document.getElementById('pmUnit').value = '포';
+    document.getElementById('pmTax').value = '면세';
+    document.getElementById('pmCost').value = Number(p.unit_cost);
+    onVendorChange();                           // 판매가 계산 + 품목코드 추천 칩 다시 그리기
+    pmCheckDisplayNameSync();
+    var hint = document.getElementById('pmCodeHint');
+    if (hint) hint.innerHTML = '<span style="color:#2e7d32;">저장하면 이 코드가 특가쌀 매입에 자동 연결됩니다</span>';
+    document.getElementById('pmCode').focus();
+}
+
+// saveProduct 가 저장을 마친 직후 부른다 — 특가쌀에서 연 등록 창이었으면 매입 기록에 코드를 붙인다
+async function rdAfterProductSaved(code) {
+    if (!rdPendingLink) return;
+    var purchaseId = rdPendingLink.purchaseId;
+    rdPendingLink = null;
+    var ok = await rdSetCode(purchaseId, code);
+    if (ok) showToast('품목 ' + code + ' 등록 + 특가쌀 매입에 연결했습니다');
+}
+
+// ── 매입 엑셀(외상매입) — 야채 매입 엑셀과 같은 ERP EDI 일반양식(.xls) ──
+function rdExportXls() {
+    var date = document.getElementById('rdXlsDate').value;
+    if (!date) { alert('매입일을 골라주세요.'); return; }
+    var lines = rdData.purchases.filter(function(p) { return p.purchase_date === date; });
+    if (lines.length === 0) { alert(date + ' 에 매입 잡은 쌀이 없습니다.\n(매입일 칸의 날짜를 확인해주세요)'); return; }
+
+    var HEADERS = ['날짜','전표번호','계정코드','계정','거래처관리코드(필수)','거래처',
+                   '대체_코드','대체_상호','품목코드(필수)','품명','규격','수량',
+                   '단가','금액','부가세','전표적요','사원코드','사원'];
+    var rows = [];
+    var skipped = [];      // 코드가 빠져 엑셀에서 뺀 줄
+    var taxed = [];        // 과세 품목 (부가세 칸 확인 필요)
+    var bySupplier = {};
+    lines.forEach(function(p) {
+        var o = rdOffer(p.offer_id) || {};
+        var s = rdSupplier(o.supplier_id) || {};
+        var label = (o.name || '') + ' ' + rdNum(p.qty) + '포';
+        if (!p.product_code) { skipped.push('· ' + label + ' — 품목코드 없음'); return; }
+        if (!s.erp_code) { skipped.push('· ' + label + ' — ' + (s.name || '거래처') + ' 의 경영박사 거래처코드 없음'); return; }
+        var prod = products.find(function(x) { return x.code === p.product_code; });
+        var qty = Number(p.qty) || 0, cost = Number(p.unit_cost) || 0, amt = qty * cost;
+        if (prod && prod.tax === '과세') taxed.push('· ' + p.product_code + ' ' + prod.name);
+        rows.push({
+            supplier: s.name, erp: String(s.erp_code),
+            row: [date.replace(/-/g, '.'), '', 4, '외상매입', s.erp_code, s.name, '', '',
+                  p.product_code, prod ? prod.name : (o.name || ''), prod && prod.spec ? prod.spec : (o.weight_kg ? Number(o.weight_kg) + 'kg' : ''),
+                  qty, cost, amt, 0, '', '', '']
+        });
+        bySupplier[s.name] = (bySupplier[s.name] || 0) + amt;
+    });
+
+    if (rows.length === 0) {
+        alert('엑셀로 뽑을 수 있는 줄이 없습니다.\n\n' + skipped.join('\n'));
+        return;
+    }
+    // 경영박사는 이어진 줄만 한 전표로 묶으므로 거래처별로 모아서 내보낸다
+    rows.sort(function(a, b) { return a.erp.localeCompare(b.erp) || String(a.row[8]).localeCompare(String(b.row[8])); });
+    var aoa = [HEADERS].concat(rows.map(function(r) { return r.row; }));
+    var ws = XLSX.utils.aoa_to_sheet(aoa);
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+    XLSX.writeFile(wb, '쌀매입_' + date + '.xls', { bookType: 'biff8' });
+
+    var total = rows.reduce(function(s, r) { return s + (Number(r.row[13]) || 0); }, 0);
+    var vsum = Object.keys(bySupplier).map(function(k) { return '· ' + k + ' ' + bySupplier[k].toLocaleString() + '원'; }).join('\n');
+    alert('✅ 쌀 매입 엑셀 생성 완료 (외상매입 · 면세)\n' +
+          date + ' 매입분 · ' + rows.length + '줄 · 총 ' + total.toLocaleString() + '원\n\n' + vsum +
+          (skipped.length ? '\n\n⚠️ 아래 ' + skipped.length + '줄은 빠졌습니다:\n' + skipped.join('\n') : '') +
+          (taxed.length ? '\n\n⚠️ 과세로 등록된 품목이 있습니다 — 부가세 칸이 0 으로 나갔으니 확인해주세요:\n' + taxed.join('\n') : '') +
+          '\n\n다운로드 폴더에 [쌀매입_' + date + '.xls] 저장됨.');
 }
 
 // ============================================================
