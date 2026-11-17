@@ -1179,7 +1179,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.64 · 특가쌀 20kg 기준</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.65 · 사조푸디스트 매입전표</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1212,6 +1212,9 @@ async function erpLogout() {
             </button>
             <button onclick="switchTab('vendorCompare')">
                 <span class="nav-icon">&#128279;</span>매입처 비교
+            </button>
+            <button onclick="switchTab('sajo')">
+                <span class="nav-icon">&#8596;</span>사조푸디스트
             </button>
             <button onclick="switchTab('orderHistory')">
                 <span class="nav-icon">&#128203;</span>발주/견적 기록
@@ -2033,6 +2036,35 @@ async function erpLogout() {
 </div>
 
 <!-- ERP 내보내기 -->
+<!-- 사조푸디스트 매입전표 -->
+<div class="tab-content" id="tab-sajo">
+    <div class="card">
+        <h3>사조푸디스트 매입전표 변환</h3>
+        <p style="color:var(--text-muted);margin:12px 0;">발주내역 엑셀을 업로드하고 ERP 외부전표 불러오기용 파일을 다운로드하세요.</p>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:end;margin:16px 0;">
+            <label>발주내역 파일<br><input type="file" id="sajoFile" accept=".xlsx,.xls" onchange="sajoHandleFile(event)" style="margin-top:6px;max-width:100%;"></label>
+            <label>전표일자<br><input type="date" id="sajoDate" onchange="sajoUpdateDownload()" style="margin-top:6px;"></label>
+            <button type="button" class="btn btn-primary" id="sajoDownload" onclick="sajoExportPurchase()" disabled>매입전표 다운로드 (.xls)</button>
+        </div>
+        <p style="font-size:0.82rem;color:var(--text-muted);">계정코드 4 · 외상매입 · 거래처코드 6038 · 금액과 부가세는 원본 값 적용</p>
+        <p style="font-size:0.82rem;color:var(--text-muted);margin-top:8px;">전표 다운로드 시 품목코드별 단가를 기억합니다. 다음 파일은 직전에 저장한 단가와 비교합니다. 기록은 현재 브라우저에 보관되며, 브라우저 데이터를 삭제하면 함께 삭제됩니다.</p>
+        <p id="sajoStatus" role="status" aria-live="polite" style="margin:14px 0;white-space:pre-wrap;overflow-wrap:anywhere;">파일을 선택해주세요.</p>
+        <div id="sajoSummary" style="margin:14px 0;"></div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin:14px 0;">
+            <label><input type="checkbox" id="sajoChangesOnly" onchange="sajoRenderPriceComparison()"> 변동 품목만 보기</label>
+            <span id="sajoPriceSummary"></span>
+        </div>
+        <p id="sajoPriceNotice" role="status" aria-live="polite" style="margin:12px 0;white-space:pre-wrap;"></p>
+        <div class="table-wrap" style="max-height:520px;overflow:auto;">
+            <table>
+                <thead><tr><th>품목코드</th><th>품명</th><th>규격</th><th>수량(입고량)</th><th>현재 단가</th><th>금액</th><th>부가세</th><th>합계</th><th>세구분</th><th>직전 단가</th><th>증감액</th><th>변동률</th><th>기준일</th><th>변동</th></tr></thead>
+                <tbody id="sajoPreview"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+
 <div class="tab-content" id="tab-export">
     <div class="card">
         <h3>ERP 업로드용 엑셀 다운로드</h3>
@@ -2963,6 +2995,7 @@ const PAGE_TITLES = {
     settings: 'Supabase 설정',
     priceCompare: '가격 비교',
     vendorCompare: '매입처 비교 (동일품목 그룹)',
+    sajo: '사조푸디스트',
     orderHistory: '발주/견적 기록',
     displayName: '표시명 관리',
     priceSchedule: '예약 가격 변경',
@@ -3012,6 +3045,7 @@ function switchTab(tabId) {
     if (tabId === 'settings') { initSupabase(); }
     if (tabId === 'priceCompare') { initPriceCompare(); }
     if (tabId === 'vendorCompare') { renderVendorCompare(); }
+    if (tabId === 'sajo') { initSajoTab(); }
     if (tabId === 'orderHistory') { initOrderHistory(); }
     if (tabId === 'displayName') { initDisplayNameTab(); }
     if (tabId === 'priceSchedule') { initPriceScheduleTab(); }
@@ -11414,6 +11448,232 @@ var VM_PURCHASE_VENDOR = {
     '237': { erp: '6065', name: '무 종류' },
     '490': { erp: '6066', name: '나물집' }
 };
+// 사조 발주내역 → ERP 외부전표 일반양식. 원본의 행 순서와 중복 품목을 유지한다.
+var sajoPurchaseRows = [];
+var sajoUploadSequence = 0;
+var sajoComparisonPrices = Object.create(null);
+var sajoPriceStorageMessage = '';
+var SAJO_PRICE_PREFIX = 'erp_sajo_purchase_price_v1_';
+var SAJO_PURCHASE_HEADERS = ['날짜','전표번호','계정코드','계정','거래처관리코드(필수)','거래처','대체_코드','대체_상호','품목코드(필수)','품명','규격','수량','단가','금액','부가세','전표적요','사원코드','사원'];
+
+function sajoValidDate(value) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    var date = new Date(value + 'T00:00:00Z');
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function initSajoTab() {
+    var input = document.getElementById('sajoDate');
+    if (!input.value) input.value = getKstDate(0);
+    sajoUpdateDownload();
+}
+
+function sajoReadPreviousPrices(rows) {
+    var prices = Object.create(null);
+    sajoPriceStorageMessage = '';
+    try {
+        rows.forEach(function(row) {
+            var stored = localStorage.getItem(SAJO_PRICE_PREFIX + encodeURIComponent(row.code));
+            if (!stored) return;
+            var previous = JSON.parse(stored);
+            if (typeof previous.price !== 'number' || !Number.isFinite(previous.price) || !sajoValidDate(previous.date) || typeof previous.spec !== 'string' || typeof previous.taxed !== 'boolean') {
+                throw new Error('저장된 단가 형식을 확인해주세요.');
+            }
+            prices[row.code] = previous;
+        });
+    } catch (error) {
+        sajoPriceStorageMessage = '이전 단가를 불러오지 못했습니다. ' + error.message;
+    }
+    return prices;
+}
+
+function sajoComparePrice(row) {
+    var previous = sajoComparisonPrices[row.code];
+    if (!previous) return {label:'신규', changed:false, previous:null};
+    var difference = Math.round((row.price - previous.price) * 1000000) / 1000000;
+    var details = [];
+    if (row.spec !== previous.spec) details.push('규격 변경');
+    if ((row.vat !== 0) !== previous.taxed) details.push('세구분 변경');
+    if (difference !== 0) details.push(difference > 0 ? '인상' : '인하');
+    return {label:details.join(' · ') || '동일', changed:details.length > 0, previous:previous, difference:difference,
+        rate:previous.price !== 0 ? difference / previous.price * 100 : null};
+}
+
+function sajoRenderPriceComparison() {
+    var changedOnly = document.getElementById('sajoChangesOnly').checked;
+    var changedCodes = new Set();
+    var newCodes = new Set();
+    var html = [];
+    sajoPurchaseRows.forEach(function(row) {
+        var comparison = sajoComparePrice(row);
+        if (comparison.changed) changedCodes.add(row.code);
+        if (!comparison.previous) newCodes.add(row.code);
+        if (changedOnly && !comparison.changed) return;
+        var previous = comparison.previous;
+        var delta = previous ? (comparison.difference > 0 ? '+' : '') + comparison.difference.toLocaleString('ko-KR') : '—';
+        var rate = previous && comparison.rate !== null ? (comparison.rate > 0 ? '+' : '') + comparison.rate.toFixed(2) + '%' : '—';
+        var values = [row.code,row.name,row.spec,row.qty,row.price,row.amount,row.vat,row.total,row.vat === 0 ? '면세' : '과세',
+            previous ? previous.price : '—',delta,rate,previous ? previous.date : '—',comparison.label];
+        html.push('<tr' + (comparison.changed ? ' style="background:var(--warning-bg, #fff4db);"' : '') + '>' + values.map(function(value, index) {
+            var style = index === 10 && comparison.difference !== 0 && previous ? ' style="font-weight:700;color:' + (comparison.difference > 0 ? 'var(--danger)' : 'var(--primary)') + ';"' : '';
+            return '<td' + style + '>' + escapeHtml(typeof value === 'number' ? value.toLocaleString('ko-KR') : value) + '</td>';
+        }).join('') + '</tr>');
+    });
+    document.getElementById('sajoPreview').innerHTML = html.join('') || (sajoPurchaseRows.length ? '<tr><td colspan="14">가격·규격·세구분이 변경된 품목이 없습니다.</td></tr>' : '');
+    document.getElementById('sajoPriceSummary').textContent = sajoPurchaseRows.length ? '변동 ' + changedCodes.size + '품목 · 신규 ' + newCodes.size + '품목. 비교 단가는 부가세 별도 단가입니다.' : '';
+    document.getElementById('sajoPriceNotice').textContent = sajoPriceStorageMessage;
+}
+
+function sajoRememberPrices(date) {
+    var grouped = new Map();
+    sajoPurchaseRows.forEach(function(row) {
+        var candidate = {price:row.price, spec:row.spec, taxed:row.vat !== 0, date:date};
+        var existing = grouped.get(row.code);
+        if (existing && (existing.price !== candidate.price || existing.spec !== candidate.spec || existing.taxed !== candidate.taxed)) {
+            existing.conflict = true;
+        } else if (!existing) grouped.set(row.code, candidate);
+    });
+    var saved = 0, older = 0, conflicts = 0, failed = 0;
+    grouped.forEach(function(candidate, code) {
+        if (candidate.conflict) { conflicts++; return; }
+        try {
+            var key = SAJO_PRICE_PREFIX + encodeURIComponent(code);
+            var value = localStorage.getItem(key);
+            var previous = value ? JSON.parse(value) : null;
+            if (previous && sajoValidDate(previous.date) && previous.date > date) { older++; return; }
+            localStorage.setItem(key, JSON.stringify(candidate));
+            saved++;
+        } catch (error) { failed++; }
+    });
+    var message = saved + '품목의 단가를 이 브라우저에 저장했습니다.';
+    if (older) message += ' 과거 전표 ' + older + '품목은 최신 기준을 유지했습니다.';
+    if (conflicts) message += ' 같은 코드의 단가·규격·세구분이 다른 ' + conflicts + '품목은 기준 저장에서 제외했습니다.';
+    if (failed) message += ' 저장 실패 ' + failed + '품목. 브라우저 저장 공간과 설정을 확인해주세요.';
+    return message;
+}
+
+function sajoUpdateDownload() {
+    document.getElementById('sajoDownload').disabled = !sajoPurchaseRows.length || !sajoValidDate(document.getElementById('sajoDate').value);
+}
+
+function sajoNumber(value, label, rowNumber) {
+    var normalized = typeof value === 'number' ? value : String(value == null ? '' : value).replace(/,/g, '').trim();
+    if (normalized === '' || typeof value === 'boolean' || !Number.isFinite(Number(normalized))) {
+        throw new Error(rowNumber + '행의 ' + label + ' 값을 확인해주세요.');
+    }
+    return Number(normalized);
+}
+
+function sajoParseWorkbook(workbook) {
+    var required = ['상품코드','상품명','규격','단가','입고량','금액','부가세','합계'];
+    var candidates = [];
+    workbook.SheetNames.forEach(function(name) {
+        var rows = XLSX.utils.sheet_to_json(workbook.Sheets[name], {header:1, defval:null, blankrows:true});
+        var headerIndex = rows.findIndex(function(row) {
+            var labels = row.map(function(v) { return String(v == null ? '' : v).replace(/\s/g, ''); });
+            return required.every(function(label) { return labels.includes(label); });
+        });
+        if (headerIndex >= 0) candidates.push({rows:rows, headerIndex:headerIndex});
+    });
+    if (candidates.length !== 1) throw new Error(candidates.length ? '발주내역 시트가 여러 개입니다. 변환할 시트 하나만 남긴 파일을 선택해주세요.' : '상품코드·상품명·규격·단가·입고량·금액·부가세·합계 열이 있는 발주내역 파일을 선택해주세요.');
+    var source = candidates[0];
+    var headers = source.rows[source.headerIndex].map(function(v) { return String(v == null ? '' : v).replace(/\s/g, ''); });
+    required.forEach(function(label) {
+        if (headers.filter(function(v) { return v === label; }).length !== 1) throw new Error(label + ' 열이 중복되어 있습니다.');
+    });
+    var columns = {};
+    required.forEach(function(label) { columns[label] = headers.indexOf(label); });
+    var result = [];
+    var totals = [];
+    source.rows.slice(source.headerIndex + 1).forEach(function(row, index) {
+        if (row.every(function(v) { return v == null || String(v).trim() === ''; })) return;
+        var rowNumber = source.headerIndex + index + 2;
+        var code = String(row[columns['상품코드']] == null ? '' : row[columns['상품코드']]).trim();
+        if (/^(합계|총합계)$/.test(code.replace(/\s/g, ''))) {
+            totals.push(['금액','부가세','합계'].map(function(label) { return sajoNumber(row[columns[label]], label, rowNumber); }));
+            return;
+        }
+        var name = String(row[columns['상품명']] == null ? '' : row[columns['상품명']]).trim();
+        if (!code || !name) throw new Error(rowNumber + '행의 상품코드와 상품명을 확인해주세요.');
+        var item = {code:code, name:name, spec:String(row[columns['규격']] || '').trim()};
+        [['qty','입고량'],['price','단가'],['amount','금액'],['vat','부가세'],['total','합계']].forEach(function(pair) {
+            item[pair[0]] = sajoNumber(row[columns[pair[1]]], pair[1], rowNumber);
+        });
+        if (Math.abs(item.amount + item.vat - item.total) > 0.01) throw new Error(rowNumber + '행의 금액 + 부가세가 합계와 일치하지 않습니다.');
+        if (Math.abs(item.qty * item.price - item.amount) > 1) throw new Error(rowNumber + '행의 입고량 × 단가가 금액과 일치하지 않습니다.');
+        result.push(item);
+    });
+    if (!result.length) throw new Error('변환할 품목이 없습니다.');
+    if (totals.length > 1) throw new Error('합계 행이 여러 개입니다. 발주내역 범위를 확인해주세요.');
+    if (totals.length) {
+        var sums = ['amount','vat','total'].map(function(key) { return result.reduce(function(sum, row) { return sum + row[key]; }, 0); });
+        if (sums.some(function(sum, index) { return Math.abs(sum - totals[0][index]) > 0.01; })) throw new Error('품목별 금액의 합과 원본 합계 행이 일치하지 않습니다.');
+    }
+    return result;
+}
+
+async function sajoHandleFile(event) {
+    var sequence = ++sajoUploadSequence;
+    sajoPurchaseRows = [];
+    sajoComparisonPrices = Object.create(null);
+    sajoPriceStorageMessage = '';
+    document.getElementById('sajoPreview').replaceChildren();
+    document.getElementById('sajoSummary').textContent = '';
+    document.getElementById('sajoChangesOnly').checked = false;
+    sajoRenderPriceComparison();
+    sajoUpdateDownload();
+    var status = document.getElementById('sajoStatus');
+    status.style.color = '';
+    var file = event.target.files[0];
+    if (!file) { status.textContent = '파일을 선택해주세요.'; return; }
+    status.textContent = '파일을 읽고 있습니다...';
+    try {
+        if (!/\.(xlsx|xls)$/i.test(file.name)) throw new Error('.xlsx 또는 .xls 파일을 선택해주세요.');
+        var buffer = await file.arrayBuffer();
+        if (sequence !== sajoUploadSequence) return;
+        var rows = sajoParseWorkbook(XLSX.read(buffer, {type:'array'}));
+        var match = file.name.match(/(20\d{2})[.\-_](\d{1,2})[.\-_](\d{1,2})(?!\d)/);
+        var date = match ? match[1] + '-' + match[2].padStart(2,'0') + '-' + match[3].padStart(2,'0') : '';
+        document.getElementById('sajoDate').value = sajoValidDate(date) ? date : '';
+        sajoPurchaseRows = rows;
+        sajoComparisonPrices = sajoReadPreviousPrices(rows);
+        var sums = rows.reduce(function(sum, row) { sum.amount += row.amount; sum.vat += row.vat; sum.total += row.total; return sum; }, {amount:0,vat:0,total:0});
+        var exempt = rows.filter(function(row) { return row.vat === 0; }).length;
+        document.getElementById('sajoSummary').textContent = rows.length + '건 · 과세 ' + (rows.length - exempt) + '건 · 면세 ' + exempt + '건 · 공급가액 ' + sums.amount.toLocaleString('ko-KR') + '원 · 부가세 ' + sums.vat.toLocaleString('ko-KR') + '원 · 합계 ' + sums.total.toLocaleString('ko-KR') + '원';
+        sajoRenderPriceComparison();
+        status.textContent = file.name + ' · 확인 완료. ' + (date && sajoValidDate(date) ? '파일명에서 전표일자를 가져왔습니다. 날짜를 확인한 뒤 다운로드하세요.' : '전표일자를 선택해주세요.');
+        sajoUpdateDownload();
+    } catch (error) {
+        if (sequence !== sajoUploadSequence) return;
+        sajoPurchaseRows = [];
+        sajoRenderPriceComparison();
+        status.textContent = '변환할 수 없습니다. ' + error.message;
+        status.style.color = 'var(--danger)';
+        sajoUpdateDownload();
+    }
+}
+
+function sajoBuildPurchaseRows(rows, date) {
+    if (!rows.length || !sajoValidDate(date)) throw new Error('파일과 전표일자를 확인해주세요.');
+    return [SAJO_PURCHASE_HEADERS].concat(rows.map(function(row) {
+        return [date.replace(/-/g,'.'),'',4,'외상매입','6038','사조푸디스트','','',row.code,row.name,row.spec,row.qty,row.price,row.amount,row.vat,'','',''];
+    }));
+}
+
+function sajoExportPurchase() {
+    try {
+        var date = document.getElementById('sajoDate').value;
+        var sheet = XLSX.utils.aoa_to_sheet(sajoBuildPurchaseRows(sajoPurchaseRows, date));
+        sheet['!cols'] = [14,12,10,14,25,18,12,16,22,58,60,12,14,16,14,20,12,14].map(function(width) { return {wch:width}; });
+        var workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, sheet, 'Sheet1');
+        XLSX.writeFile(workbook, '사조푸디스트_매입전표_' + date + '.xls', {bookType:'biff8'});
+        document.getElementById('sajoPriceNotice').textContent = sajoRememberPrices(date);
+    } catch (error) {
+        document.getElementById('sajoStatus').textContent = '다운로드 실패. ' + error.message;
+    }
+}
+
 async function vmExportPurchaseXls() {
     if (!db) { alert('Supabase 미연결 — 매입 엑셀은 온라인 연결이 필요합니다.'); return; }
     if (!vmTargetDate) await vmRefreshTargetDate();
