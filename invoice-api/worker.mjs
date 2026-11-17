@@ -84,7 +84,7 @@ export class InvoiceAccount {
             this.processing=true;
             try {
                 const saved=await this.state.storage.get('openai-key');
-                if (!saved) return json({error:'이미지 매입전표 탭에서 OpenAI API 키를 먼저 등록해주세요.'},428);
+                if (!saved) return json({error:'원일푸드 탭에서 OpenAI API 키를 먼저 등록해주세요.'},428);
                 const body=await request.json();
                 const image=body.image;
                 if (!validImage(image)) {

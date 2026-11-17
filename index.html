@@ -1202,7 +1202,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.71 · 원일푸드 단가 변동</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.72 · 원일푸드 전표일자</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1237,7 +1237,7 @@ async function erpLogout() {
                 <span class="nav-icon">&#128279;</span>매입처 비교
             </button>
             <button onclick="switchTab('invoiceImage')">
-                <span class="nav-icon">&#9639;</span>이미지 매입전표
+                <span class="nav-icon">&#9639;</span>원일푸드
             </button>
             <button onclick="switchTab('sajo')">
                 <span class="nav-icon">&#8596;</span>사조푸디스트
@@ -2065,10 +2065,12 @@ async function erpLogout() {
 <!-- 원일푸드 이미지 매입전표 -->
 <div class="tab-content" id="tab-invoiceImage">
     <div class="card">
-        <h3>원일푸드 이미지 매입전표</h3>
+        <h3>원일푸드 매입전표</h3>
         <p style="margin:12px 0;color:var(--text-muted);">거래명세서 이미지를 선택하고 인식 결과와 연결된 품목을 확인하세요. 여러 장으로 나뉜 전표는 전표번호와 작성일로 합칩니다.</p>
         <p style="font-size:0.82rem;color:var(--text-muted);">계정코드 4 · 거래처코드 5901 · 단가와 금액은 부가세 포함 · 세구분은 등록 품목 기준</p>
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:16px 0;">
+            <label>일괄 적용 전표일자 <input type="date" id="ivPostingDate" onchange="ivApplySelectedDate()"></label>
+            <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('ivPostingDate').value='';ivApplySelectedDate()">명세서 작성일 사용</button>
             <label>전표 이미지 <input type="file" id="ivFiles" accept="image/png,image/jpeg,image/webp" multiple onchange="ivChooseImages(event)"></label>
             <label>인식 모드 <select id="ivRecognitionMode"><option value="accurate" selected>정밀 · GPT-5.4</option><option value="standard">기본 · GPT-5.4 mini</option></select></label>
             <button type="button" class="btn btn-primary" id="ivAnalyze" onclick="ivAnalyzeImages()" disabled>이미지 인식</button>
@@ -3061,7 +3063,7 @@ const PAGE_TITLES = {
     settings: 'Supabase 설정',
     priceCompare: '가격 비교',
     vendorCompare: '매입처 비교 (동일품목 그룹)',
-    invoiceImage: '이미지 매입전표',
+    invoiceImage: '원일푸드',
     sajo: '사조푸디스트',
     orderHistory: '발주/견적 기록',
     displayName: '표시명 관리',
@@ -12076,7 +12078,7 @@ function ivMergePages(pages) {
         var totals = ['net','vat','total'].map(function(field) { return ivNumber(page[field], '전표 ' + number + ' 합계'); });
         if (!totals.every(Number.isInteger) || totals[0] + totals[1] !== totals[2]) throw new Error('전표 ' + number + '의 공급가·부가세·합계를 확인해주세요.');
         if (!invoice) {
-            invoice = {number:number,date:date,net:totals[0],vat:totals[1],total:totals[2],items:[],sourceLines:new Map()};
+            invoice = {number:number,date:date,sourceDate:date,net:totals[0],vat:totals[1],total:totals[2],items:[],sourceLines:new Map()};
             grouped.set(key,invoice);
         } else if (invoice.net !== totals[0] || invoice.vat !== totals[1] || invoice.total !== totals[2]) {
             throw new Error('같은 전표번호의 페이지마다 합계가 다릅니다. ' + number);
@@ -12130,6 +12132,7 @@ async function ivAnalyzeImages() {
             pages = pages.concat(ivParseResponse(response));
         }
         ivInvoices = ivMergePages(pages);
+        ivApplySelectedDate();
         status.textContent = ivInvoices.length + '개 전표 인식 완료. 원본 이미지와 수량·단가·금액을 대조하고 품목 연결을 확인해주세요.';
     } catch (error) {
         if (sequence !== ivSequence) return;
@@ -12189,6 +12192,20 @@ function ivMappingConflicts(invoices) {
     });
     groups.forEach(function(group,key) { if (group.codes.size<2) groups.delete(key); });
     return groups;
+}
+
+function ivApplySelectedDate() {
+    var date=document.getElementById('ivPostingDate').value;
+    if (date && !sajoValidDate(date)) {
+        document.getElementById('ivDownloadHint').textContent='전표일자를 올바르게 선택해주세요.';
+        document.getElementById('ivDownload').disabled=true;
+        return;
+    }
+    ivInvoices.forEach(function(invoice) {
+        if (!invoice.sourceDate) invoice.sourceDate=invoice.date;
+        invoice.date=date || invoice.sourceDate;
+    });
+    ivRenderInvoices();
 }
 
 function ivChangeHeader(invoiceIndex,field,value) {
@@ -12253,6 +12270,7 @@ function ivRenderInvoices() {
             headers += '<label>' + field[1] + ivInput(invoice[field[0]],field[2],'ivChangeHeader(' + invoiceIndex + ',\'' + field[0] + '\',this.value)') + '</label>';
         });
         headers += '</div><p role="status" style="margin:10px 0;color:' + (error ? 'var(--danger)' : 'var(--text-muted)') + ';">' + escapeHtml(error || '품목 연결 및 전표 합계 확인 완료.' + (calculation.rounding ? ' 부가세 원 단위 반올림 차이 ' + calculation.rounding + '원을 과세 행에 배분합니다.' : '')) + '</p>';
+        if (invoice.sourceDate && invoice.sourceDate!==invoice.date) headers += '<p style="margin:8px 0;color:var(--text-secondary);">명세서 작성일 ' + escapeHtml(invoice.sourceDate) + ' · 선택한 전표일자 ' + escapeHtml(invoice.date) + '로 내보냅니다.</p>';
         conflicts.forEach(function(group) {
             var positions=group.positions.filter(function(position) { return position.invoice===invoice.number; });
             if (!positions.length) return;
