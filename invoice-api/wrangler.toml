@@ -1,0 +1,16 @@
+name = "jigu-invoice-openai"
+main = "worker.mjs"
+compatibility_date = "2026-11-17"
+
+[vars]
+ALLOWED_ORIGIN = "https://yeocheon2024-droid.github.io"
+SUPABASE_URL = "https://joqupkcczjebwnomnfbo.supabase.co"
+SUPABASE_PUBLISHABLE_KEY = "sb_publishable_SsIL-yhXCilGv7XZXo963Q_PYpeeG83"
+
+[[durable_objects.bindings]]
+name = "INVOICE_ACCOUNTS"
+class_name = "InvoiceAccount"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["InvoiceAccount"]
