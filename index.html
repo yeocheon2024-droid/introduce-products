@@ -1195,7 +1195,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.69 · 이미지 전표 정밀 인식</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.70 · 이미지 전표 다운로드 개선</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -2067,6 +2067,7 @@ async function erpLogout() {
             <button type="button" class="btn btn-primary" id="ivAnalyze" onclick="ivAnalyzeImages()" disabled>이미지 인식</button>
             <button type="button" class="btn btn-outline" id="ivDownload" onclick="ivExportPurchase()" disabled>ERP 매입전표 다운로드 (.xls)</button>
         </div>
+        <p id="ivDownloadHint" role="status" aria-live="polite" style="margin:12px 0;white-space:pre-wrap;overflow-wrap:anywhere;"></p>
         <details open style="margin:16px 0;padding:14px;border:1px solid var(--border);border-radius:6px;">
             <summary style="cursor:pointer;font-weight:600;">OpenAI 설정</summary>
             <p id="ivOpenAIStatus" role="status" aria-live="polite" style="margin:12px 0;">OpenAI 연결 설정 확인 중...</p>
@@ -12036,7 +12037,6 @@ function ivCalculateInvoice(invoice) {
     if (!sajoValidDate(invoice.date)) throw new Error('전표일자를 확인해주세요.');
     if (!invoice.items.length) throw new Error('품목이 없습니다.');
     var catalog = ivVendorProducts();
-    var usedMappings = new Map();
     var lines = invoice.items.map(function(row) {
         if (!String(row.name || '').trim()) throw new Error(row.lineNumber + '번 전표 품명을 확인해주세요.');
         if (!row.confirmed) throw new Error(row.lineNumber + '번 품목 연결을 확인해주세요.');
@@ -12047,9 +12047,6 @@ function ivCalculateInvoice(invoice) {
         if (!['과세','면세'].includes(product.tax)) throw new Error(product.name + '의 과세·면세 정보를 품목 관리에서 확인해주세요.');
         var qty = ivNumber(row.qty,'수량'), price = ivNumber(row.price,'단가'), total = ivNumber(row.total,'금액');
         if (!qty || price < 0 || !Number.isSafeInteger(total) || Math.abs(qty*price-total)>1) throw new Error(row.lineNumber + '번의 수량 × 단가와 금액을 확인해주세요.');
-        var mapKey = ivMapKey(row);
-        if (usedMappings.has(mapKey) && usedMappings.get(mapKey) !== product.code) throw new Error('같은 전표 표기가 서로 다른 품목에 연결되어 있습니다.');
-        usedMappings.set(mapKey,product.code);
         var vat = product.tax === '면세' ? 0 : Math.round(total/11);
         return {source:row,product:product,qty:qty,total:total,vat:vat};
     });
@@ -12069,6 +12066,22 @@ function ivCalculateInvoice(invoice) {
         line.unitPrice = Math.round(line.amount/line.qty*100000000)/100000000;
     });
     return {lines:lines,rounding:difference};
+}
+
+function ivMappingConflicts(invoices) {
+    var groups=new Map();
+    invoices.forEach(function(invoice) {
+        invoice.items.forEach(function(row) {
+            if (!row.code) return;
+            var key=ivMapKey(row);
+            if (!groups.has(key)) groups.set(key,{codes:new Set(),positions:[]});
+            var group=groups.get(key);
+            group.codes.add(row.code);
+            group.positions.push({invoice:invoice.number,line:row.lineNumber,code:row.code});
+        });
+    });
+    groups.forEach(function(group,key) { if (group.codes.size<2) groups.delete(key); });
+    return groups;
 }
 
 function ivChangeHeader(invoiceIndex,field,value) {
@@ -12115,6 +12128,8 @@ function ivInput(value,type,handler,extra) {
 function ivRenderInvoices() {
     var canExport = ivInvoices.length>0 && !ivBusy;
     var catalog = ivVendorProducts();
+    var conflicts=ivMappingConflicts(ivInvoices);
+    var errors=[];
     var scrollPositions=ivInvoices.map(function(invoice,index) {
         var wrapper=document.getElementById('ivTableWrap'+index);
         return wrapper ? {left:wrapper.scrollLeft,top:wrapper.scrollTop} : null;
@@ -12122,12 +12137,17 @@ function ivRenderInvoices() {
     document.getElementById('ivAnalyze').disabled = ivBusy || !ivFiles.length;
     document.getElementById('ivInvoices').innerHTML = ivInvoices.map(function(invoice,invoiceIndex) {
         var calculation, error='';
-        try { calculation=ivCalculateInvoice(invoice); } catch (failure) { error=failure.message; canExport=false; }
+        try { calculation=ivCalculateInvoice(invoice); } catch (failure) { error=failure.message; canExport=false; errors.push('전표 '+invoice.number+' · '+error); }
         var headers = '<h3 style="margin:24px 0 12px;">전표 ' + escapeHtml(invoice.number) + '</h3><div class="iv-header-fields">';
         [['date','전표일자','date'],['net','공급가','number'],['vat','부가세','number'],['total','합계','number']].forEach(function(field) {
             headers += '<label>' + field[1] + ivInput(invoice[field[0]],field[2],'ivChangeHeader(' + invoiceIndex + ',\'' + field[0] + '\',this.value)') + '</label>';
         });
         headers += '</div><p role="status" style="margin:10px 0;color:' + (error ? 'var(--danger)' : 'var(--text-muted)') + ';">' + escapeHtml(error || '품목 연결 및 전표 합계 확인 완료.' + (calculation.rounding ? ' 부가세 원 단위 반올림 차이 ' + calculation.rounding + '원을 과세 행에 배분합니다.' : '')) + '</p>';
+        conflicts.forEach(function(group) {
+            var positions=group.positions.filter(function(position) { return position.invoice===invoice.number; });
+            if (!positions.length) return;
+            headers += '<p style="margin:10px 0;color:var(--text-secondary);">같은 전표 표기에 서로 다른 코드를 선택했습니다. ' + escapeHtml(positions.map(function(position) { return position.line+'번 '+position.code; }).join(' · ')) + '. 확인하신 행별 코드로 내보내며, 이 표기는 다음에도 품목을 직접 선택합니다.</p>';
+        });
         var missingCount=0;
         var body = invoice.items.map(function(row,rowIndex) {
             var prefix='ivChangeRow(' + invoiceIndex + ',' + rowIndex + ',';
@@ -12151,6 +12171,7 @@ function ivRenderInvoices() {
         return headers + summary + '<div class="table-wrap" id="ivTableWrap' + invoiceIndex + '" style="overflow:auto;"><table class="iv-table"><colgroup>' + columns + '</colgroup><thead><tr><th>순번</th><th>전표 품명</th><th>규격</th><th>수량</th><th>단가(포함)</th><th>금액(포함)</th><th>등록 품목코드</th><th>세구분</th><th>품목 연결</th><th>수정</th></tr></thead><tbody>' + body + '</tbody></table></div><button type="button" class="btn btn-outline btn-sm" style="margin:12px 0;" onclick="ivAddRow(' + invoiceIndex + ')">품목 추가</button>';
     }).join('');
     document.getElementById('ivDownload').disabled = !canExport;
+    document.getElementById('ivDownloadHint').textContent = errors.length ? errors.join('\n') : canExport ? '확인 완료. ERP 매입전표를 다운로드할 수 있습니다.' : '';
     scrollPositions.forEach(function(position,index) {
         var wrapper=document.getElementById('ivTableWrap'+index);
         if (position && wrapper) { wrapper.scrollLeft=position.left; wrapper.scrollTop=position.top; }
@@ -12163,13 +12184,13 @@ function ivExportPurchase() {
     try {
         var output=[SAJO_PURCHASE_HEADERS];
         var mappings=new Map();
+        var conflicts=ivMappingConflicts(ivInvoices);
         ivInvoices.forEach(function(invoice) {
             var calculation=ivCalculateInvoice(invoice);
             calculation.lines.forEach(function(line) {
                 var row=line.source, product=line.product;
                 var key=ivMapKey(row);
                 var mapping={code:product.code,fingerprint:ivProductFingerprint(product)};
-                if (mappings.has(key) && mappings.get(key).code!==mapping.code) throw new Error('같은 전표 표기를 서로 다른 품목에 연결했습니다. 연결을 확인해주세요.');
                 mappings.set(key,mapping);
                 output.push([invoice.date.replace(/-/g,'.'),'',4,'외상매입','5901','원일푸드(주)','','',product.code,product.name,product.spec || '',line.qty,line.unitPrice,line.amount,line.vat,'원일 전표 ' + invoice.number,'','']);
             });
@@ -12179,11 +12200,14 @@ function ivExportPurchase() {
         var workbook=XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook,sheet,'Sheet1');
         XLSX.writeFile(workbook,'원일푸드_이미지매입전표_' + ivInvoices[0].date + '.xls',{bookType:'biff8'});
-        var failed=0;
+        var failed=0, saved=0;
         mappings.forEach(function(mapping,key) {
-            try { localStorage.setItem(key,JSON.stringify(mapping)); } catch (error) { failed++; }
+            try {
+                if (conflicts.has(key)) localStorage.removeItem(key);
+                else { localStorage.setItem(key,JSON.stringify(mapping)); saved++; }
+            } catch (error) { failed++; }
         });
-        status.textContent=ivInvoices.length + '개 전표 · ' + (output.length-1) + '개 품목 다운로드 완료. ' + (mappings.size-failed) + '개 연결을 이 브라우저에 기억했습니다.' + (failed ? ' 저장 실패 ' + failed + '건. 다음에 품목 연결을 다시 확인해주세요.' : '') + (ivStorageWarning ? '\n' + ivStorageWarning : '');
+        status.textContent=ivInvoices.length + '개 전표 · ' + (output.length-1) + '개 품목 다운로드 완료. ' + saved + '개 연결을 이 브라우저에 기억했습니다.' + (conflicts.size ? ' 여러 코드로 선택한 동일 표기 '+conflicts.size+'건은 다음에도 품목을 직접 선택합니다.' : '') + (failed ? ' 저장 실패 ' + failed + '건. 다음에 품목 연결을 다시 확인해주세요.' : '') + (ivStorageWarning ? '\n' + ivStorageWarning : '');
     } catch (error) { status.textContent='다운로드할 수 없습니다. ' + error.message; ivRenderInvoices(); }
 }
 
