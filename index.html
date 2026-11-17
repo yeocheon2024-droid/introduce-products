@@ -1195,7 +1195,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.68 · 이미지 전표 확인표</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.69 · 이미지 전표 정밀 인식</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -2063,6 +2063,7 @@ async function erpLogout() {
         <p style="font-size:0.82rem;color:var(--text-muted);">계정코드 4 · 거래처코드 5901 · 단가와 금액은 부가세 포함 · 세구분은 등록 품목 기준</p>
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:16px 0;">
             <label>전표 이미지 <input type="file" id="ivFiles" accept="image/png,image/jpeg,image/webp" multiple onchange="ivChooseImages(event)"></label>
+            <label>인식 모드 <select id="ivRecognitionMode"><option value="accurate" selected>정밀 · GPT-5.4</option><option value="standard">기본 · GPT-5.4 mini</option></select></label>
             <button type="button" class="btn btn-primary" id="ivAnalyze" onclick="ivAnalyzeImages()" disabled>이미지 인식</button>
             <button type="button" class="btn btn-outline" id="ivDownload" onclick="ivExportPurchase()" disabled>ERP 매입전표 다운로드 (.xls)</button>
         </div>
@@ -2074,9 +2075,10 @@ async function erpLogout() {
                 <button type="button" class="btn btn-outline btn-sm" id="ivOpenAISave" onclick="ivSaveOpenAIKey()">키 등록</button>
                 <button type="button" class="btn btn-outline btn-sm" onclick="ivRemoveOpenAIKey()">등록 해제</button>
             </div>
-            <p style="font-size:0.82rem;color:var(--text-muted);margin-top:10px;">키는 현재 로그인 계정에 연결해 서버에 암호화 보관합니다. 이미지 인식에는 GPT-5.4 mini를 사용하며 OpenAI API 사용량이 발생합니다.</p>
+            <p style="font-size:0.82rem;color:var(--text-muted);margin-top:10px;">키는 현재 로그인 계정에 연결해 서버에 암호화 보관합니다. 선택한 인식 모드에 따라 OpenAI API 사용량이 발생합니다.</p>
         </details>
         <p style="font-size:0.82rem;color:var(--text-muted);">‘이미지 인식’을 누르면 선택한 이미지를 OpenAI로 전송합니다. API 크레딧과 사용 요금은 OpenAI 계정에서 확인하세요.</p>
+        <p style="font-size:0.82rem;color:var(--text-secondary);margin-top:8px;">정밀 모드는 원본과 확대 영역을 함께 검토하며 기본 모드보다 API 크레딧을 더 사용합니다. 작은 글자는 최대 3배 확대해 전달합니다. 선명한 원본 이미지를 페이지별로 올리면 판독에 도움이 됩니다.</p>
         <p style="font-size:0.82rem;color:var(--text-muted);margin-top:8px;">처음 연결하는 품목은 코드·규격을 확인하고 ‘확인’을 체크하세요. 다운로드하면 전표 표기와 품목 연결을 이 브라우저에 기억합니다.</p>
         <div id="ivImages" style="display:flex;gap:12px;overflow-x:auto;margin:16px 0;"></div>
         <p id="ivStatus" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere;margin:14px 0;">이미지를 선택해주세요.</p>
@@ -11752,7 +11754,7 @@ async function ivLoadOpenAISettings() {
     status.textContent='OpenAI 연결 설정 확인 중...';
     try {
         var settings=await ivOpenAIRequest('/settings');
-        status.textContent=settings.configured ? 'OpenAI 키 등록됨 · GPT-5.4 mini · 이미지 인식 시 API 사용량이 발생합니다.' : '발급한 OpenAI API 키를 아래에 입력하고 등록해주세요.';
+        status.textContent=settings.configured ? 'OpenAI 키 등록됨 · 선택한 인식 모드로 이미지 인식을 시작할 수 있습니다.' : '발급한 OpenAI API 키를 아래에 입력하고 등록해주세요.';
     } catch (error) { status.textContent=error.message; }
 }
 
@@ -11794,8 +11796,52 @@ async function ivCheckOpenAIReady() {
     if (!settings.configured) throw new Error('이 탭의 OpenAI 설정에서 API 키를 먼저 등록해주세요.');
 }
 
-async function ivCallOpenAI(image) {
-    var result=await ivOpenAIRequest('/recognize',{method:'POST',body:{image:image}});
+function ivRecognitionMode() {
+    var select=document.getElementById('ivRecognitionMode');
+    return select && select.value==='accurate' ? 'accurate' : 'standard';
+}
+
+function ivImageViewPlan(width,height) {
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width<1 || height<1) throw new Error('이미지 크기를 확인해주세요.');
+    var regions=width/height>=2.2 ? [
+        {x:0,y:0,width:Math.floor(width/2),height:height},
+        {x:Math.floor(width/2),y:0,width:width-Math.floor(width/2),height:height}
+    ] : [{x:0,y:0,width:width,height:height}];
+    return regions.map(function(region) {
+        region.scale=Math.max(1,Math.min(3,2400/region.width,2400/region.height));
+        return region;
+    }).filter(function(region) { return region.scale>1 || regions.length>1; });
+}
+
+async function ivPrepareImageViews(image,mode) {
+    if (mode!=='accurate') return image;
+    var source=await new Promise(function(resolve,reject) {
+        var element=new Image();
+        element.onload=function() { resolve(element); };
+        element.onerror=function() { reject(new Error('이미지 확대 처리를 위해 파일을 다시 선택해주세요.')); };
+        element.src='data:'+image.mediaType+';base64,'+image.base64;
+    });
+    try {
+        var views=ivImageViewPlan(source.naturalWidth,source.naturalHeight).map(function(region) {
+            var canvas=document.createElement('canvas');
+            canvas.width=Math.round(region.width*region.scale);
+            canvas.height=Math.round(region.height*region.scale);
+            var context=canvas.getContext('2d');
+            if (!context) throw new Error('브라우저에서 이미지 확대 처리를 시작할 수 없습니다.');
+            context.fillStyle='#fff';
+            context.fillRect(0,0,canvas.width,canvas.height);
+            context.imageSmoothingEnabled=true;
+            context.imageSmoothingQuality='high';
+            context.drawImage(source,region.x,region.y,region.width,region.height,0,0,canvas.width,canvas.height);
+            return {mediaType:'image/png',base64:canvas.toDataURL('image/png').split(',')[1]};
+        });
+        return {mediaType:image.mediaType,base64:image.base64,views:views};
+    } finally { source.src=''; }
+}
+
+async function ivCallOpenAI(image,mode) {
+    var prepared=await ivPrepareImageViews(image,mode);
+    var result=await ivOpenAIRequest('/recognize',{method:'POST',body:{image:prepared,mode:mode || 'standard'}});
     if (!Array.isArray(result.pages)) throw new Error('이미지 인식 응답 형식을 확인해주세요.');
     return JSON.stringify(result.pages);
 }
@@ -11957,6 +12003,7 @@ async function ivAnalyzeImages() {
     if (!ivVendorProducts().length) { status.textContent = '등록된 원일푸드 품목이 없습니다. 품목 정보를 먼저 불러와주세요.'; return; }
     var sequence = ++ivSequence;
     var files = ivFiles.slice();
+    var recognitionMode=ivRecognitionMode();
     ivBusy = true;
     ivInvoices = [];
     ivStorageWarning = '';
@@ -11967,10 +12014,10 @@ async function ivAnalyzeImages() {
         if (sequence !== ivSequence) return;
         var pages = [];
         for (var i=0;i<files.length;i++) {
-            status.textContent = '이미지 인식 중 (' + (i+1) + '/' + files.length + ') · ' + files[i].name;
+            status.textContent = (recognitionMode==='accurate' ? '정밀 이미지 인식 중 (' : '이미지 인식 중 (') + (i+1) + '/' + files.length + ') · ' + files[i].name;
             var image = await ivReadImage(files[i]);
             if (sequence !== ivSequence) return;
-            var response = await ivCallOpenAI(image);
+            var response = await ivCallOpenAI(image,recognitionMode);
             if (sequence !== ivSequence) return;
             pages = pages.concat(ivParseResponse(response));
         }
