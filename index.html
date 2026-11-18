@@ -1221,7 +1221,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.76 · 특가쌀 검수표 한 장</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.77 · 특가쌀 라벨 인쇄</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1712,6 +1712,7 @@ async function erpLogout() {
         </p>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
             <button class="btn btn-outline btn-sm" onclick="rdPrintInspection()">&#128424; 검수표 인쇄</button>
+            <button class="btn btn-outline btn-sm" onclick="rdPrintLabels('pending')">&#127991; 라벨 인쇄 (A4 한 장에 2개)</button>
             <span style="font-size:0.75rem;color:var(--text-muted);">오늘 들어온 것만 뽑으려면 맨 앞 칸을 체크하세요. 아무것도 체크하지 않으면 전체가 인쇄됩니다. (단가·금액은 인쇄하지 않습니다)</span>
         </div>
         <div class="table-wrap" style="max-height:420px;overflow-y:auto;">
@@ -1738,7 +1739,8 @@ async function erpLogout() {
             <label style="font-size:0.78rem;color:var(--text-muted);display:flex;align-items:center;gap:4px;">입고일
                 <input type="date" id="rdXlsDate" style="font-size:0.8rem;padding:4px 6px;border:1px solid var(--border);border-radius:5px;"></label>
             <button class="btn btn-outline btn-sm" style="border-color:#2e7d32;color:#2e7d32;" onclick="rdExportXls()">&#128228; 매입 엑셀 (외상매입)</button>
-            <span style="font-size:0.72rem;color:var(--text-muted);">고른 날짜에 입고된 쌀이 경영박사 외상매입 양식(.xls)으로 나옵니다</span>
+            <button class="btn btn-outline btn-sm" onclick="rdPrintLabels('done')">&#127991; 이 날짜 입고분 라벨 인쇄</button>
+            <span style="font-size:0.72rem;color:var(--text-muted);">매입 엑셀은 경영박사 외상매입 양식(.xls), 라벨은 실제 받은 수량으로 나옵니다</span>
         </div>
         <div class="table-wrap" style="max-height:560px;overflow-y:auto;">
             <table>
@@ -13313,6 +13315,85 @@ function rdPrintInspection() {
     w.document.close();
     w.focus();
     // 글꼴·표가 그려진 뒤 인쇄 창을 띄운다
+    setTimeout(function() { try { w.print(); } catch (e) { /* 창이 닫혔으면 무시 */ } }, 400);
+}
+
+// ── 라벨 인쇄 (검수 뒤 쌀 더미에 붙이는 종이) ────────────────
+//   A4 세로 한 장을 위아래 반으로 나눠 품목 2개씩 — 가운데 점선을 따라 자른다 (용지 절약, 2026-11-19 요청).
+//   품명·중량·년산·도정일·수량만 크게. 거래처·단가는 넣지 않는다.
+//   source: 'pending' = 입고 대기(체크한 것만, 없으면 전체 · 확정 수량)
+//           'done'    = 입고 완료 중 엑셀 날짜 칸에 고른 입고일 것 (실제 받은 수량)
+function rdPrintLabels(source) {
+    var list, title;
+    if (source === 'done') {
+        var date = document.getElementById('rdXlsDate').value;
+        if (!date) { alert('입고일을 골라주세요.'); return; }
+        list = rdData.purchases.filter(function(p) { return p.received && p.purchase_date === date; });
+        if (list.length === 0) { alert(date + ' 에 입고·매입한 쌀이 없습니다.\n(입고일 칸의 날짜를 확인해주세요)'); return; }
+        title = date + ' 입고분';
+    } else {
+        var pending = rdData.purchases.filter(function(p) { return !p.received; });
+        if (pending.length === 0) { alert('입고를 기다리는 것이 없습니다.'); return; }
+        var picked = pending.filter(function(p) { return rdPicked[p.id]; });
+        list = picked.length ? picked : pending;
+        title = picked.length ? '선택한 것' : '입고 대기 전체';
+    }
+    var items = list.map(function(p) {
+        var o = rdOffer(p.offer_id) || {};
+        return { name: o.name || '', weight: o.weight_kg, crop: o.crop_year || '', mill: o.mill_date || '', qty: p.qty, sup: o.supplier_name || '' };
+    }).sort(function(a, b) {
+        return a.sup.localeCompare(b.sup, 'ko') || a.name.localeCompare(b.name, 'ko') || (Number(a.weight) - Number(b.weight));
+    });
+
+    // 이름이 길수록 글자를 줄여 라벨 안에 들어가게 한다
+    var nameSize = function(name) {
+        var n = String(name).length;
+        return n <= 10 ? 50 : (n <= 16 ? 42 : (n <= 24 ? 34 : (n <= 34 ? 28 : 23)));
+    };
+    var label = function(it) {
+        return '<div class="label">' +
+            '<div class="name" style="font-size:' + nameSize(it.name) + 'pt;">' + escapeHtml(it.name || '(이름 없음)') + '</div>' +
+            '<div class="grid">' +
+                '<div><span>중량</span><b>' + (it.weight ? Number(it.weight) + 'kg' : '-') + '</b></div>' +
+                '<div><span>년산</span><b>' + escapeHtml(it.crop || '-') + '</b></div>' +
+                '<div><span>도정일</span><b>' + escapeHtml(it.mill ? String(it.mill).replace(/-/g, '.') : '-') + '</b></div>' +
+                '<div><span>수량</span><b>' + rdNum(it.qty) + '포</b></div>' +
+            '</div>' +
+        '</div>';
+    };
+    var sheets = '';
+    for (var i = 0; i < items.length; i += 2) {
+        sheets += '<div class="sheet">' + label(items[i]) + (items[i + 1] ? label(items[i + 1]) : '<div class="label empty"></div>') + '</div>';
+    }
+
+    var html = '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>쌀 라벨 ' + escapeHtml(title) + '</title><style>' +
+        '@page{size:A4 portrait;margin:0;}' +
+        'html,body{margin:0;padding:0;}' +
+        'body{font-family:"Malgun Gothic","맑은 고딕",sans-serif;color:#000;}' +
+        '.sheet{width:210mm;height:296mm;page-break-after:always;overflow:hidden;}' +
+        '.sheet:last-child{page-break-after:auto;}' +
+        // 한 장의 위·아래 반쪽. 가운데 점선이 자르는 선이다.
+        '.label{box-sizing:border-box;height:148mm;padding:11mm 14mm;display:flex;flex-direction:column;justify-content:center;gap:7mm;}' +
+        '.label + .label{border-top:1px dashed #888;}' +
+        '.name{font-weight:800;line-height:1.2;text-align:center;word-break:keep-all;overflow-wrap:anywhere;}' +
+        '.grid{display:grid;grid-template-columns:1fr 1fr;border:2px solid #000;}' +
+        '.grid div{padding:4mm 6mm;border:1px solid #000;display:flex;align-items:baseline;gap:5mm;}' +
+        '.grid span{font-size:14pt;white-space:nowrap;min-width:19mm;}' +
+        '.grid b{font-size:32pt;font-weight:800;white-space:nowrap;}' +
+        '.noprint{padding:8px;background:#f3f3f3;border-bottom:1px solid #ccc;font-size:11pt;}@media print{.noprint{display:none;}}' +
+        '</style></head><body>' +
+        '<div class="noprint"><button onclick="window.print()" style="font-size:12pt;padding:6px 16px;">인쇄</button> ' +
+            '<button onclick="window.close()" style="font-size:12pt;padding:6px 16px;">닫기</button> ' +
+            escapeHtml(title) + ' · 라벨 ' + items.length + '개 · A4 ' + Math.ceil(items.length / 2) + '장 (가운데 점선을 따라 자르세요)</div>' +
+        sheets +
+        '</body></html>';
+
+    var w = window.open('', '_blank');
+    if (!w) { alert('새 창이 막혀 있습니다.\n주소창 오른쪽의 팝업 차단을 풀고 다시 눌러주세요.'); return; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    w.focus();
     setTimeout(function() { try { w.print(); } catch (e) { /* 창이 닫혔으면 무시 */ } }, 400);
 }
 
