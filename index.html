@@ -1221,7 +1221,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.74 · 특가쌀 입고·매입 분리</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.75 · 특가쌀 검수표 인쇄</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1710,9 +1710,14 @@ async function erpLogout() {
         <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:12px;">
             구매를 확정하고 물건을 기다리는 것입니다. 물건이 들어와 <b>검수를 마치면 [입고·매입]</b>을 누르세요 — 그때 매입으로 잡힙니다.
         </p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+            <button class="btn btn-outline btn-sm" onclick="rdPrintInspection()">&#128424; 검수표 인쇄</button>
+            <span style="font-size:0.75rem;color:var(--text-muted);">오늘 들어온 것만 뽑으려면 맨 앞 칸을 체크하세요. 아무것도 체크하지 않으면 전체가 인쇄됩니다. (단가·금액은 인쇄하지 않습니다)</span>
+        </div>
         <div class="table-wrap" style="max-height:420px;overflow-y:auto;">
             <table>
                 <thead><tr>
+                    <th class="text-center" style="width:40px;"><input type="checkbox" id="rdPickAll" title="전체 선택" style="width:18px;height:18px;cursor:pointer;" onchange="rdPickAllRows(this.checked)"></th>
                     <th style="width:100px;">확정일</th><th style="width:100px;">거래처</th><th>상품명</th>
                     <th class="text-right" style="width:80px;">수량</th>
                     <th class="text-right" style="width:90px;">단가</th>
@@ -13223,6 +13228,94 @@ async function rdDeletePurchase(purchaseId) {
     showToast('구매 확정을 취소했습니다');
 }
 
+// ── 검수표 인쇄 (입고 대기 목록을 종이로) ────────────────────
+//   물건이 도착하면 이 표를 뽑아 현장에서 수량·상태를 확인하고, 돌아와서 [입고·매입]을 누른다.
+//   현장에서 돌려보는 종이라 단가·금액은 넣지 않는다 (2026-11-19 요청).
+var rdPicked = {};   // 체크한 입고 대기 줄 (새로고침으로 표를 다시 그려도 체크가 유지되게)
+function rdPickRow(id, checked) {
+    if (checked) rdPicked[id] = true; else delete rdPicked[id];
+    var all = document.getElementById('rdPickAll');
+    if (all && !checked) all.checked = false;
+}
+function rdPickAllRows(checked) {
+    rdPicked = {};
+    if (checked) rdData.purchases.forEach(function(p) { if (!p.received) rdPicked[p.id] = true; });
+    rdRenderPurchases();
+}
+
+function rdPrintInspection() {
+    var pending = rdData.purchases.filter(function(p) { return !p.received; });
+    if (pending.length === 0) { alert('입고를 기다리는 것이 없습니다.'); return; }
+    var picked = pending.filter(function(p) { return rdPicked[p.id]; });
+    var list = picked.length ? picked : pending;
+
+    // 거래처별로 묶고, 그 안에서는 상품명 순
+    var groups = {};
+    list.forEach(function(p) {
+        var o = rdOffer(p.offer_id) || {};
+        var key = o.supplier_name || '(거래처 미상)';
+        (groups[key] = groups[key] || []).push({ p: p, o: o });
+    });
+    var today = rdToday();
+    var body = Object.keys(groups).sort(function(a, b) { return a.localeCompare(b, 'ko'); }).map(function(sup) {
+        var rows = groups[sup].sort(function(a, b) {
+            return String(a.o.name || '').localeCompare(String(b.o.name || ''), 'ko') || (Number(a.o.weight_kg) - Number(b.o.weight_kg));
+        });
+        var total = rows.reduce(function(s, r) { return s + Number(r.p.qty); }, 0);
+        return '<h2>' + escapeHtml(sup) + ' <span>' + rows.length + '품목 · 합계 ' + rdNum(total) + '포</span></h2>' +
+            '<table><thead><tr>' +
+                '<th style="width:28px;">No</th><th>상품명</th><th style="width:52px;">중량</th><th style="width:40px;">등급</th>' +
+                '<th style="width:58px;">산년</th><th style="width:72px;">도정일</th><th style="width:62px;">확정 수량</th>' +
+                '<th style="width:70px;">실제 수량</th><th style="width:44px;">확인</th><th style="width:90px;">비고</th>' +
+            '</tr></thead><tbody>' +
+            rows.map(function(r, i) {
+                var o = r.o, p = r.p;
+                return '<tr>' +
+                    '<td class="c">' + (i + 1) + '</td>' +
+                    '<td><b>' + escapeHtml(o.name || '(지워진 제안)') + '</b></td>' +
+                    '<td class="c">' + (o.weight_kg ? Number(o.weight_kg) + 'kg' : '') + '</td>' +
+                    '<td class="c">' + escapeHtml(o.grade || '') + '</td>' +
+                    '<td class="c">' + escapeHtml(o.crop_year || '') + '</td>' +
+                    '<td class="c">' + escapeHtml(o.mill_date ? String(o.mill_date).slice(2).replace(/-/g, '.') : '확인중') + '</td>' +
+                    '<td class="r"><b>' + rdNum(p.qty) + '</b>포</td>' +
+                    '<td></td><td></td><td></td>' +
+                    '</tr>';
+            }).join('') +
+            '</tbody></table>';
+    }).join('');
+
+    var html = '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>쌀 입고 검수표 ' + escapeHtml(today) + '</title><style>' +
+        '@page{size:A4 portrait;margin:14mm 12mm;}' +
+        'body{font-family:"Malgun Gothic","맑은 고딕",sans-serif;font-size:11pt;color:#000;margin:0;}' +
+        'h1{font-size:17pt;margin:0 0 2mm;}' +
+        '.meta{display:flex;justify-content:space-between;font-size:10pt;margin-bottom:5mm;border-bottom:2px solid #000;padding-bottom:2mm;}' +
+        'h2{font-size:12.5pt;margin:6mm 0 2mm;}h2 span{font-size:10pt;font-weight:400;margin-left:6px;}' +
+        'table{width:100%;border-collapse:collapse;page-break-inside:auto;}tr{page-break-inside:avoid;}thead{display:table-header-group;}' +
+        'th,td{border:1px solid #000;padding:2.2mm 1.6mm;font-size:10.5pt;vertical-align:middle;word-break:keep-all;overflow-wrap:anywhere;}' +
+        'th{background:#eee;font-size:9.5pt;-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
+        'td{height:9mm;}.c{text-align:center;}.r{text-align:right;white-space:nowrap;}' +
+        '.sign{margin-top:9mm;display:flex;gap:10mm;font-size:10.5pt;}.sign div{flex:1;border-bottom:1px solid #000;padding-bottom:7mm;}' +
+        '.noprint{margin-bottom:5mm;}@media print{.noprint{display:none;}}' +
+        '</style></head><body>' +
+        '<div class="noprint"><button onclick="window.print()" style="font-size:12pt;padding:6px 16px;">인쇄</button> ' +
+            '<button onclick="window.close()" style="font-size:12pt;padding:6px 16px;">닫기</button></div>' +
+        '<h1>쌀 입고 검수표</h1>' +
+        '<div class="meta"><span>출력일 ' + escapeHtml(today) + '</span><span>' +
+            (picked.length ? '선택한 ' + list.length + '건' : '입고 대기 전체 ' + list.length + '건') + '</span></div>' +
+        body +
+        '<div class="sign"><div>입고일</div><div>검수자</div><div>인수자(기사)</div></div>' +
+        '</body></html>';
+
+    var w = window.open('', '_blank');
+    if (!w) { alert('새 창이 막혀 있습니다.\n주소창 오른쪽의 팝업 차단을 풀고 다시 눌러주세요.'); return; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    // 글꼴·표가 그려진 뒤 인쇄 창을 띄운다
+    setTimeout(function() { try { w.print(); } catch (e) { /* 창이 닫혔으면 무시 */ } }, 400);
+}
+
 // ── 입고·매입 (물건이 들어와 검수를 마친 뒤) ──────────────────
 function rdOpenReceive(purchaseId) {
     var p = rdPurchase(purchaseId);
@@ -13358,10 +13451,12 @@ function rdRenderPurchases() {
     };
 
     pendBody.innerHTML = pending.length === 0
-        ? '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:22px;">입고를 기다리는 것이 없습니다. 위 제안 목록에서 [구매 확정]을 누르면 여기에 나옵니다.</td></tr>'
+        ? '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:22px;">입고를 기다리는 것이 없습니다. 위 제안 목록에서 [구매 확정]을 누르면 여기에 나옵니다.</td></tr>'
         : pending.map(function(p) {
             var o = rdOffer(p.offer_id) || {};
             return '<tr>' +
+                '<td class="text-center"><input type="checkbox" class="rd-pick" value="' + Number(p.id) + '" ' + (rdPicked[p.id] ? 'checked ' : '') +
+                    'style="width:18px;height:18px;cursor:pointer;" onchange="rdPickRow(' + Number(p.id) + ',this.checked)"></td>' +
                 '<td>' + escapeHtml(rdKstDate(p.created_at) || p.purchase_date) + '</td>' +
                 '<td>' + escapeHtml(o.supplier_name || '') + '</td>' +
                 '<td>' + nameCell(o) + '</td>' +
