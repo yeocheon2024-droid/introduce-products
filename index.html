@@ -1221,7 +1221,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.78 · 특가쌀 확정·입고 뒤 고치기</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.79 · 특가쌀 추가 확정은 기존 줄에 합치기</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -13201,8 +13201,18 @@ async function rdDeleteOffer(offerId) {
 // ── 구매 확정 / 고치기 ───────────────────────────────────────
 //   새로 확정: 아직 매입 아님 — "이만큼 사겠다".
 //   고치기: 입고 대기 줄은 수량·단가, 입고가 끝난 줄은 수량·단가·입고일 (2026-11-19, 98번 SQL 적용 뒤).
+var rdBuyMerging = false;   // 지금 열린 확정 창이 "기존 확정 줄에 합치기"인지 (저장 뒤 안내 문구용)
 function rdOpenBuy(offerId, purchaseId) {
     var p = purchaseId ? rdPurchase(purchaseId) : null;
+    // 이미 입고를 기다리는 확정 줄이 있는 제안을 또 확정하면, 줄을 따로 만들지 않고 그 줄에 합친다.
+    // (111포 확정 뒤 거래처가 116포로 올려 5포를 더 확정했더니 111포·5포 두 줄이 돼 헷갈렸다 — 2026-11-19 대표 요청)
+    var merging = false;
+    if (!p && offerId) {
+        var waitingRow = rdData.purchases.filter(function(x) { return Number(x.offer_id) === Number(offerId) && !x.received; })
+            .sort(function(a, b) { return String(a.created_at).localeCompare(String(b.created_at)) || (Number(a.id) - Number(b.id)); })[0];
+        if (waitingRow) { p = waitingRow; merging = true; }
+    }
+    rdBuyMerging = merging;
     var o = rdOffer(p ? p.offer_id : offerId);
     if (!o) { alert('제안을 찾을 수 없습니다. [새로고침] 후 다시 시도해주세요.'); return; }
     var received = !!(p && p.received);
@@ -13213,7 +13223,14 @@ function rdOpenBuy(offerId, purchaseId) {
     var others = rdOthersQty(o.id, p ? p.id : null);
     var remain = Math.max(0, Number(o.qty) - others);
     var kg = rdKg(o.price, o.weight_kg);
-    var title = !p ? '구매 확정' : (received ? '입고 · 매입 고치기' : '확정 고치기');
+    var title = !p ? '구매 확정' : (merging ? '구매 확정 (기존 확정에 합치기)' : (received ? '입고 · 매입 고치기' : '확정 고치기'));
+    // 합칠 때: remain = 이 줄에 담을 수 있는 전체 수량(이미 확정한 것 + 아직 확정 안 한 것)
+    var mergeNote = merging
+        ? '<div style="padding:9px 12px;background:#eef7ee;border:1px solid #cfe6cf;border-radius:8px;margin-bottom:12px;font-size:0.82rem;line-height:1.6;color:#1f5f25;">' +
+            '이미 확정해 둔 <b>' + rdNum(p.qty) + '포</b>가 있어, 따로 잡지 않고 <b>한 줄로 합칩니다</b> — ' +
+            rdNum(p.qty) + '포 + ' + rdNum(Math.max(0, remain - Number(p.qty))) + '포 = <b>' + rdNum(remain) + '포</b>' +
+          '</div>'
+        : '';
     var limitText = received
         ? '실제 받은 수량이 더 많으면 그대로 적으세요'
         : '확정할 수 있는 수량 ' + rdNum(remain) + '포';
@@ -13237,10 +13254,11 @@ function rdOpenBuy(offerId, purchaseId) {
             '거래처가 올린 것 ' + rdNum(o.qty) + '포 × ' + rdNum(o.price) + '원' + (kg !== null ? ' (20kg 기준 ' + rdNum(rd20(o.price, o.weight_kg)) + '원)' : '') +
             ' · <b style="color:#2e7d32;">' + limitText + '</b>' +
         '</div>' +
+        mergeNote +
         warn +
         '<div class="form-row">' +
-            '<div class="form-group" style="flex:1"><label>' + (received ? '받은 수량 (포) *' : '확정 수량 (포) *') + '</label>' +
-                '<input type="number" id="rdBuyQty" min="1" value="' + (p ? Number(p.qty) : remain) + '"></div>' +
+            '<div class="form-group" style="flex:1"><label>' + (received ? '받은 수량 (포) *' : (merging ? '합친 확정 수량 (포) *' : '확정 수량 (포) *')) + '</label>' +
+                '<input type="number" id="rdBuyQty" min="1" value="' + (p && !merging ? Number(p.qty) : remain) + '"></div>' +
             '<div class="form-group" style="flex:1"><label>단가 (1포, 원) *</label>' +
                 '<input type="number" id="rdBuyCost" min="1" value="' + (p ? Number(p.unit_cost) : Number(o.price)) + '"></div>' +
             (received
@@ -13248,10 +13266,12 @@ function rdOpenBuy(offerId, purchaseId) {
                     '<input type="date" id="rdBuyDate" value="' + escapeHtml(p.purchase_date || '') + '"></div>'
                 : '') +
         '</div>' +
-        '<p style="font-size:0.78rem;color:var(--text-muted);margin:-4px 0 12px;line-height:1.6;">' + hint + '</p>' +
+        '<p style="font-size:0.78rem;color:var(--text-muted);margin:-4px 0 12px;line-height:1.6;">' +
+            (merging ? '"확정 · 입고 대기"의 기존 줄 수량이 합친 수량으로 바뀝니다. 한 줄에 단가는 하나라, 합친 전체 수량에 위 단가가 적용됩니다.' : hint) +
+        '</p>' +
         '<div class="btn-group">' +
             '<button class="btn btn-outline" onclick="closeModal(\'riceModal\')">취소</button>' +
-            '<button class="btn btn-primary" id="rdBuySaveBtn" onclick="rdSaveBuy(' + o.id + ',' + (p ? p.id : 'null') + ')">' + (p ? '고친 내용 저장' : '구매 확정') + '</button>' +
+            '<button class="btn btn-primary" id="rdBuySaveBtn" onclick="rdSaveBuy(' + o.id + ',' + (p ? p.id : 'null') + ')">' + (merging ? '합쳐서 확정' : (p ? '고친 내용 저장' : '구매 확정')) + '</button>' +
         '</div>';
     openModal('riceModal');
     var q = document.getElementById('rdBuyQty');
@@ -13308,7 +13328,9 @@ async function rdSaveBuy(offerId, purchaseId) {
     if (!r) return;
     closeModal('riceModal');
     await rdLoad();
-    showToast(purchaseId ? '고친 내용을 저장했습니다' : rdNum(qty) + '포 구매를 확정했습니다 — 거래처 화면에 표시됩니다');
+    showToast(purchaseId && rdBuyMerging ? '기존 확정에 합쳐 ' + rdNum(qty) + '포로 확정했습니다'
+        : (purchaseId ? '고친 내용을 저장했습니다' : rdNum(qty) + '포 구매를 확정했습니다 — 거래처 화면에 표시됩니다'));
+    rdBuyMerging = false;
 }
 
 async function rdDeletePurchase(purchaseId) {
