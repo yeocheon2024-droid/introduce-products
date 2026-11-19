@@ -1221,7 +1221,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.77 · 특가쌀 라벨 인쇄</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.78 · 특가쌀 확정·입고 뒤 고치기</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -1691,7 +1691,7 @@ async function erpLogout() {
                     <th class="text-right" style="width:90px;">가격(1포)</th>
                     <th class="text-right" style="width:95px;">20kg 기준</th>
                     <th class="text-right" style="width:110px;">확정 / 남음</th>
-                    <th style="width:200px;">관리</th>
+                    <th style="width:280px;">관리</th>
                 </tr></thead>
                 <tbody id="rdOfferBody"></tbody>
             </table>
@@ -1750,7 +1750,7 @@ async function erpLogout() {
                     <th class="text-right" style="width:90px;">단가</th>
                     <th class="text-right" style="width:110px;">금액</th>
                     <th style="width:300px;">품목코드 (경영박사)</th>
-                    <th style="width:110px;">관리</th>
+                    <th style="width:170px;">관리</th>
                 </tr></thead>
                 <tbody id="rdPurchaseBody"></tbody>
             </table>
@@ -12842,6 +12842,44 @@ function rdStatus(text, isError) {
     el.textContent = text || '';
     el.style.color = isError ? '#c23a2b' : 'var(--text-muted)';
 }
+// 98번 SQL(확정·입고 뒤 고치기)이 적용됐는지 — 적용 전에는 새 버튼을 숨기고 예전 방식으로 동작한다
+function rdV98() { return Number(rdData.v) >= 98; }
+// 같은 제안의 다른 확정·입고 줄 수량 합계 (exceptId 줄은 뺀다)
+function rdOthersQty(offerId, exceptId) {
+    return rdData.purchases.reduce(function(s, x) {
+        return s + ((Number(x.offer_id) === Number(offerId) && (!exceptId || Number(x.id) !== Number(exceptId))) ? Number(x.qty) : 0);
+    }, 0);
+}
+// 시각 → "11/19" (한국 날짜)
+function rdMonthDay(ts) {
+    var t = Date.parse(ts || '');
+    if (isNaN(t)) return '';
+    var d = new Date(t + 9 * 3600 * 1000);
+    return (d.getUTCMonth() + 1) + '/' + d.getUTCDate();
+}
+// 마지막으로 고친 날짜 하나만 보여준다 ("수정 11/19") — 넘겨받은 시각 중 가장 늦은 것. 기록은 쌓지 않는다.
+function rdModBadge() {
+    var latest = NaN;
+    for (var i = 0; i < arguments.length; i++) {
+        var t = Date.parse(arguments[i] || '');
+        if (!isNaN(t) && (isNaN(latest) || t > latest)) latest = t;
+    }
+    if (isNaN(latest)) return '';
+    return ' <span class="badge" style="background:#fff1d9;color:#c97a00;white-space:nowrap;" title="마지막으로 고친 날짜">수정 ' +
+        rdMonthDay(new Date(latest).toISOString()) + '</span>';
+}
+// 확정 뒤에 거래처가 가격을 고쳤고, 우리가 그 뒤로 이 줄을 다시 저장하지 않았으면 true
+function rdPriceChanged(o, p) {
+    if (!o || !p || !o.price_changed_at || Number(o.price) === Number(p.unit_cost)) return false;
+    var changed = Date.parse(o.price_changed_at);
+    var seen = Date.parse(p.modified_at || p.created_at || '');
+    return !isNaN(changed) && (isNaN(seen) || changed > seen);
+}
+function rdPriceWarn(o, p) {
+    return rdPriceChanged(o, p)
+        ? '<div style="font-size:0.72rem;font-weight:700;color:#c23a2b;white-space:nowrap;" title="확정 뒤에 거래처가 가격을 고쳤습니다. [고치기]에서 단가를 확인해주세요.">&#9888; 거래처 가격 ' + rdNum(o.price) + '</div>'
+        : '';
+}
 // 서버 오류를 알아듣기 쉬운 말로
 function rdErrText(err) {
     var msg = (err && err.message) ? err.message : String(err || '');
@@ -12886,7 +12924,8 @@ async function rdLoad() {
             suppliers: d.suppliers || [],
             offers: d.offers || [],
             purchases: d.purchases || [],
-            today: d.today || ''
+            today: d.today || '',
+            v: Number(d.v) || 0      // 98 이상이면 확정·입고 뒤 고치기 기능이 켜진다
         };
         var dp = document.getElementById('rdXlsDate');
         if (dp && !dp.value) dp.value = rdToday();
@@ -13107,13 +13146,14 @@ function rdRenderOffers() {
             : '<div style="width:46px;height:46px;border-radius:6px;background:#eef0ea;color:#a3aa9c;font-size:0.68rem;display:flex;align-items:center;justify-content:center;">없음</div>';
         var pallet = o.per_pallet
             ? '<div style="font-size:0.72rem;color:var(--text-muted);">' + rdNum(o.per_pallet) + '포씩' + (o.pallets ? ' × ' + rdNum(o.pallets) + '판' : '') + '</div>' : '';
-        var badges = (o.edited_at ? ' <span class="badge" style="background:#fff1d9;color:#c97a00;">정정</span>' : '') +
+        var badges = rdModBadge(o.edited_at) +
                      (o.hold ? ' <span class="badge" style="background:#e5e5e5;color:#666;">보류</span>' : '');
         var buyCell = bought > 0
             ? '<b style="color:' + (gray ? 'inherit' : '#2e7d32') + ';">' + rdNum(bought) + '</b> / ' + (remain > 0 ? rdNum(remain) : '없음')
             : '<span style="color:var(--text-muted);">-</span> / ' + rdNum(remain);
         var actions =
             (remain > 0 && !o.hold ? '<button class="btn btn-primary btn-sm" onclick="rdOpenBuy(' + o.id + ')">구매 확정</button> ' : '') +
+            (rdV98() ? '<button class="btn btn-outline btn-sm" onclick="rdOpenOfferEdit(' + o.id + ')">정보 고치기</button> ' : '') +
             '<button class="btn btn-outline btn-sm" onclick="rdSetHold(' + o.id + ',' + (o.hold ? 'false' : 'true') + ')">' + (o.hold ? '보류 풀기' : '보류') + '</button> ' +
             (bought === 0 ? '<button class="btn btn-outline btn-sm" onclick="rdDeleteOffer(' + o.id + ')">삭제</button>' : '');
         return '<tr' + (gray ? ' style="background:#ececec;color:#9a9a9a;"' : '') + '>' +
@@ -13158,33 +13198,57 @@ async function rdDeleteOffer(offerId) {
     showToast('제안을 지웠습니다');
 }
 
-// ── 구매 확정 / 고치기 (아직 매입 아님 — "이만큼 보내달라") ──
+// ── 구매 확정 / 고치기 ───────────────────────────────────────
+//   새로 확정: 아직 매입 아님 — "이만큼 사겠다".
+//   고치기: 입고 대기 줄은 수량·단가, 입고가 끝난 줄은 수량·단가·입고일 (2026-11-19, 98번 SQL 적용 뒤).
 function rdOpenBuy(offerId, purchaseId) {
     var p = purchaseId ? rdPurchase(purchaseId) : null;
     var o = rdOffer(p ? p.offer_id : offerId);
     if (!o) { alert('제안을 찾을 수 없습니다. [새로고침] 후 다시 시도해주세요.'); return; }
-    var others = rdData.purchases.reduce(function(s, x) {
-        return s + ((Number(x.offer_id) === Number(o.id) && (!p || Number(x.id) !== Number(p.id))) ? Number(x.qty) : 0);
-    }, 0);
+    var received = !!(p && p.received);
+    if (received && !rdV98()) {
+        alert('입고가 끝난 줄을 고치는 기능은 Supabase 에 98번 SQL(98_rice_receive.sql)을 실행한 뒤 켜집니다.');
+        return;
+    }
+    var others = rdOthersQty(o.id, p ? p.id : null);
     var remain = Math.max(0, Number(o.qty) - others);
     var kg = rdKg(o.price, o.weight_kg);
+    var title = !p ? '구매 확정' : (received ? '입고 · 매입 고치기' : '확정 고치기');
+    var limitText = received
+        ? '실제 받은 수량이 더 많으면 그대로 적으세요'
+        : '확정할 수 있는 수량 ' + rdNum(remain) + '포';
+    var warn = (p && rdPriceChanged(o, p))
+        ? '<div style="padding:9px 12px;background:#fdecea;border:1px solid #f5c2bd;border-radius:8px;margin-bottom:12px;font-size:0.82rem;line-height:1.6;color:#8a2a20;">' +
+            '&#9888; 거래처가 가격을 <b>' + rdNum(o.price) + '원</b>으로 고쳤습니다 (' + escapeHtml(rdMonthDay(o.price_changed_at)) + '). ' +
+            '우리 단가는 <b>' + rdNum(p.unit_cost) + '원</b> 그대로입니다.<br>' +
+            '맞는 단가로 고쳐 저장하세요. 그대로 둘 거면 그냥 [고친 내용 저장]을 누르면 이 표시가 사라집니다.' +
+          '</div>'
+        : '';
+    var hint = !p
+        ? '확정하면 거래처 화면에 <b>"○포 확정"</b>으로 보입니다. 아직 매입으로 잡히는 것은 아닙니다 — ' +
+          '물건이 들어와 검수를 마친 뒤 아래 표에서 <b>[입고·매입]</b>을 눌러야 매입(외상매입 엑셀)에 들어갑니다.'
+        : (received
+            ? '고친 수량·단가·입고일이 매입 엑셀에 그대로 나옵니다. 이미 경영박사에 올린 전표가 있으면 그쪽은 따로 고쳐야 합니다.'
+            : '확정한 수량·단가를 고칩니다. <b>검수해 보니 수량이 다르면</b> 여기서 고치지 말고 표의 <b>[입고·매입]</b>을 눌러 실제 받은 수량을 적으세요.');
     document.getElementById('riceModalBody').innerHTML =
-        '<h2>' + (p ? '확정 고치기' : '구매 확정') + '</h2>' +
+        '<h2>' + title + '</h2>' +
         '<div style="padding:10px 12px;background:#f5f7fa;border:1px solid var(--border-light);border-radius:8px;margin-bottom:14px;font-size:0.88rem;line-height:1.6;">' +
             '<b>' + escapeHtml(o.name) + ' ' + Number(o.weight_kg) + 'kg</b> · ' + escapeHtml(o.supplier_name) + '<br>' +
-            '제안 ' + rdNum(o.qty) + '포 × ' + rdNum(o.price) + '원' + (kg !== null ? ' (20kg 기준 ' + rdNum(rd20(o.price, o.weight_kg)) + '원)' : '') +
-            ' · <b style="color:#2e7d32;">확정할 수 있는 수량 ' + rdNum(remain) + '포</b>' +
+            '거래처가 올린 것 ' + rdNum(o.qty) + '포 × ' + rdNum(o.price) + '원' + (kg !== null ? ' (20kg 기준 ' + rdNum(rd20(o.price, o.weight_kg)) + '원)' : '') +
+            ' · <b style="color:#2e7d32;">' + limitText + '</b>' +
         '</div>' +
+        warn +
         '<div class="form-row">' +
-            '<div class="form-group" style="flex:1"><label>확정 수량 (포) *</label>' +
+            '<div class="form-group" style="flex:1"><label>' + (received ? '받은 수량 (포) *' : '확정 수량 (포) *') + '</label>' +
                 '<input type="number" id="rdBuyQty" min="1" value="' + (p ? Number(p.qty) : remain) + '"></div>' +
             '<div class="form-group" style="flex:1"><label>단가 (1포, 원) *</label>' +
                 '<input type="number" id="rdBuyCost" min="1" value="' + (p ? Number(p.unit_cost) : Number(o.price)) + '"></div>' +
+            (received
+                ? '<div class="form-group" style="flex:1"><label>입고일 (매입일) *</label>' +
+                    '<input type="date" id="rdBuyDate" value="' + escapeHtml(p.purchase_date || '') + '"></div>'
+                : '') +
         '</div>' +
-        '<p style="font-size:0.78rem;color:var(--text-muted);margin:-4px 0 12px;">' +
-            '확정하면 거래처 화면에 <b>"○포 확정 · 보내주세요"</b>로 보입니다. 아직 매입으로 잡히는 것은 아닙니다 — ' +
-            '물건이 들어와 검수를 마친 뒤 아래 표에서 <b>[입고·매입]</b>을 눌러야 매입(외상매입 엑셀)에 들어갑니다.' +
-        '</p>' +
+        '<p style="font-size:0.78rem;color:var(--text-muted);margin:-4px 0 12px;line-height:1.6;">' + hint + '</p>' +
         '<div class="btn-group">' +
             '<button class="btn btn-outline" onclick="closeModal(\'riceModal\')">취소</button>' +
             '<button class="btn btn-primary" id="rdBuySaveBtn" onclick="rdSaveBuy(' + o.id + ',' + (p ? p.id : 'null') + ')">' + (p ? '고친 내용 저장' : '구매 확정') + '</button>' +
@@ -13197,26 +13261,54 @@ function rdOpenBuy(offerId, purchaseId) {
 async function rdSaveBuy(offerId, purchaseId) {
     var qty = Number(document.getElementById('rdBuyQty').value);
     var cost = Number(document.getElementById('rdBuyCost').value);
-    if (!(qty > 0) || Math.floor(qty) !== qty) { alert('확정 수량을 적어주세요.'); return; }
+    if (!(qty > 0) || Math.floor(qty) !== qty) { alert('수량을 적어주세요.'); return; }
     if (!(cost > 0) || Math.floor(cost) !== cost) { alert('단가를 적어주세요.'); return; }
+    var existing = purchaseId ? rdPurchase(purchaseId) : null;
+    var received = !!(existing && existing.received);
+    var o = rdOffer(existing ? existing.offer_id : offerId);
+    var date = null;
+    if (received) {
+        var de = document.getElementById('rdBuyDate');
+        date = de ? de.value : '';
+        if (!date) { alert('입고일을 골라주세요.'); return; }
+    }
+    if (o) {
+        var others = rdOthersQty(o.id, existing ? existing.id : null);
+        var remain = Math.max(0, Number(o.qty) - others);
+        if (!received && qty > remain) {
+            // 확정 단계에서는 거래처가 올린 수량까지만. 실제로 더 들어온 것은 [입고·매입]에서 받는다.
+            alert('거래처가 올린 수량을 넘습니다. 확정할 수 있는 수량은 ' + rdNum(remain) + '포입니다.\n\n' +
+                '검수해 보니 더 들어온 것이면 여기서 고치지 말고,\n표의 [입고·매입]을 눌러 실제 받은 수량을 적어주세요.');
+            return;
+        }
+        if (received && qty > remain &&
+            !confirm('거래처가 올린 수량(' + rdNum(o.qty) + '포)보다 많습니다.\n받은 수량을 ' + rdNum(qty) + '포로 고치면 거래처 화면의 수량도 ' + rdNum(others + qty) + '포로 늘어납니다.\n\n계속할까요?')) return;
+    }
     var btn = document.getElementById('rdBuySaveBtn');
     if (btn) { if (btn.disabled) return; btn.disabled = true; }
-    var existing = purchaseId ? rdPurchase(purchaseId) : null;
-    var r = await rdCall('rice_admin_save_purchase', {
-        p_id: purchaseId ? Number(purchaseId) : null,
-        p_offer_id: Number(offerId),
-        p_qty: qty,
-        p_unit_cost: cost,
-        // 확정 단계에서는 매입일을 묻지 않는다. 이 칸에는 확정한 날을 넣어 두고,
-        // 실제 매입일(입고일)은 [입고·매입] 때 rice_admin_receive 가 바꿔 넣는다.
-        p_date: existing ? existing.purchase_date : rdToday(),
-        p_product_code: existing ? (existing.product_code || '') : ''
-    });
+    var r;
+    if (existing && rdV98()) {
+        // 고치기 — 마지막 수정 날짜가 남는다. 입고가 끝난 줄은 입고일도 같이 고친다.
+        r = await rdCall('rice_admin_edit_purchase', {
+            p_id: Number(existing.id), p_qty: qty, p_unit_cost: cost, p_date: date
+        });
+    } else {
+        r = await rdCall('rice_admin_save_purchase', {
+            p_id: purchaseId ? Number(purchaseId) : null,
+            p_offer_id: Number(offerId),
+            p_qty: qty,
+            p_unit_cost: cost,
+            // 확정 단계에서는 매입일을 묻지 않는다. 이 칸에는 확정한 날을 넣어 두고,
+            // 실제 매입일(입고일)은 [입고·매입] 때 바꿔 넣는다.
+            p_date: existing ? existing.purchase_date : rdToday(),
+            p_product_code: existing ? (existing.product_code || '') : ''
+        });
+    }
     if (btn) btn.disabled = false;
     if (!r) return;
     closeModal('riceModal');
     await rdLoad();
-    showToast(purchaseId ? '확정 내용을 고쳤습니다' : rdNum(qty) + '포 구매를 확정했습니다 — 거래처 화면에 표시됩니다');
+    showToast(purchaseId ? '고친 내용을 저장했습니다' : rdNum(qty) + '포 구매를 확정했습니다 — 거래처 화면에 표시됩니다');
 }
 
 async function rdDeletePurchase(purchaseId) {
@@ -13397,11 +13489,75 @@ function rdPrintLabels(source) {
     setTimeout(function() { try { w.print(); } catch (e) { /* 창이 닫혔으면 무시 */ } }, 400);
 }
 
+// ── 상품 정보 고치기 (거래처가 올린 상품명·중량·등급·산년·도정일을 우리가 고친다) ──
+//   검수해 보니 포대의 도정일·중량이 올라온 내용과 다를 때. 확정·입고 뒤에도 고칠 수 있다 (2026-11-19).
+//   수량·가격은 여기서 바꾸지 않는다.
+function rdOpenOfferEdit(offerId) {
+    var o = rdOffer(offerId);
+    if (!o) { alert('제안을 찾을 수 없습니다. [새로고침] 후 다시 시도해주세요.'); return; }
+    var gradeOpts = ['', '특', '상', '보통'].map(function(g) {
+        return '<option value="' + g + '"' + ((o.grade || '') === g ? ' selected' : '') + '>' + (g || '(없음)') + '</option>';
+    }).join('');
+    document.getElementById('riceModalBody').innerHTML =
+        '<h2>상품 정보 고치기</h2>' +
+        '<div style="padding:10px 12px;background:#f5f7fa;border:1px solid var(--border-light);border-radius:8px;margin-bottom:14px;font-size:0.85rem;line-height:1.6;">' +
+            '<b>' + escapeHtml(o.supplier_name || '') + '</b> 이(가) 올린 내용을 실제 물건에 맞게 고칩니다.<br>' +
+            '고친 내용은 거래처 화면 · 검수표 · 라벨에 그대로 나옵니다.' +
+        '</div>' +
+        '<div class="form-group"><label>상품명 *</label>' +
+            '<input type="text" id="rdOeName" maxlength="80" value="' + escapeHtml(o.name || '') + '"></div>' +
+        '<div class="form-row">' +
+            '<div class="form-group" style="flex:1"><label>중량 (1포, kg) *</label>' +
+                '<input type="number" id="rdOeWeight" min="0.1" step="any" value="' + Number(o.weight_kg) + '"></div>' +
+            '<div class="form-group" style="flex:1"><label>등급</label>' +
+                '<select id="rdOeGrade">' + gradeOpts + '</select></div>' +
+        '</div>' +
+        '<div class="form-row">' +
+            '<div class="form-group" style="flex:1"><label>산년 (예: 26년산)</label>' +
+                '<input type="text" id="rdOeCrop" maxlength="10" value="' + escapeHtml(o.crop_year || '') + '"></div>' +
+            '<div class="form-group" style="flex:1"><label>도정일 (비우면 "확인중")</label>' +
+                '<input type="date" id="rdOeMill" value="' + escapeHtml(o.mill_date || '') + '"></div>' +
+        '</div>' +
+        '<p style="font-size:0.78rem;color:var(--text-muted);margin:-4px 0 12px;line-height:1.6;">' +
+            '· 수량은 [입고·매입], 단가는 [고치기]에서 고칩니다.<br>' +
+            '· 이미 품목코드를 연결했다면, 품목 관리에 등록된 이름·규격은 따로 고쳐주세요.' +
+        '</p>' +
+        '<div class="btn-group">' +
+            '<button class="btn btn-outline" onclick="closeModal(\'riceModal\')">취소</button>' +
+            '<button class="btn btn-primary" id="rdOeSaveBtn" onclick="rdSaveOfferEdit(' + Number(o.id) + ')">고친 내용 저장</button>' +
+        '</div>';
+    openModal('riceModal');
+}
+
+async function rdSaveOfferEdit(offerId) {
+    var name = String(document.getElementById('rdOeName').value || '').replace(/\s+/g, ' ').trim();
+    var weight = Number(document.getElementById('rdOeWeight').value);
+    var grade = document.getElementById('rdOeGrade').value || '';
+    var crop = String(document.getElementById('rdOeCrop').value || '').trim();
+    var mill = document.getElementById('rdOeMill').value || null;
+    if (!name) { alert('상품명을 적어주세요.'); return; }
+    if (!(weight > 0)) { alert('중량을 적어주세요.'); return; }
+    // 숫자만 적었으면 "26년산" 모양으로 맞춘다 (2026 → 26년산)
+    if (/^[0-9]{2,4}$/.test(crop)) crop = crop.slice(-2) + '년산';
+    var btn = document.getElementById('rdOeSaveBtn');
+    if (btn) { if (btn.disabled) return; btn.disabled = true; }
+    var r = await rdCall('rice_admin_update_offer', {
+        p_offer_id: Number(offerId), p_name: name, p_weight_kg: weight,
+        p_grade: grade, p_crop_year: crop, p_mill_date: mill
+    });
+    if (btn) btn.disabled = false;
+    if (!r) return;
+    closeModal('riceModal');
+    await rdLoad();
+    showToast('상품 정보를 고쳤습니다 — 거래처 화면에도 반영됩니다');
+}
+
 // ── 입고·매입 (물건이 들어와 검수를 마친 뒤) ──────────────────
 function rdOpenReceive(purchaseId) {
     var p = rdPurchase(purchaseId);
     if (!p) { alert('확정 기록을 찾을 수 없습니다. [새로고침] 후 다시 시도해주세요.'); return; }
     var o = rdOffer(p.offer_id) || {};
+    var v98 = rdV98();
     document.getElementById('riceModalBody').innerHTML =
         '<h2>입고 · 매입</h2>' +
         '<div style="padding:10px 12px;background:#f5f7fa;border:1px solid var(--border-light);border-radius:8px;margin-bottom:14px;font-size:0.88rem;line-height:1.6;">' +
@@ -13412,11 +13568,13 @@ function rdOpenReceive(purchaseId) {
             '<div class="form-group" style="flex:1"><label>입고일 (매입일) *</label>' +
                 '<input type="date" id="rdRecvDate" value="' + escapeHtml(rdToday()) + '"></div>' +
             '<div class="form-group" style="flex:1"><label>검수한 수량 (실제 받은 포) *</label>' +
-                '<input type="number" id="rdRecvQty" min="1" max="' + Number(p.qty) + '" value="' + Number(p.qty) + '"></div>' +
+                '<input type="number" id="rdRecvQty" min="1"' + (v98 ? '' : ' max="' + Number(p.qty) + '"') + ' value="' + Number(p.qty) + '"></div>' +
         '</div>' +
         '<p style="font-size:0.78rem;color:var(--text-muted);margin:-4px 0 12px;line-height:1.6;">' +
             '· 확정보다 <b>적게</b> 들어왔으면 받은 만큼만 적으세요 — 남은 수량은 "입고 대기"에 그대로 남습니다.<br>' +
-            '· 확정보다 <b>많이</b> 들어왔으면: 거래처가 [고치기]로 수량을 늘린 뒤, 제안 목록에서 늘어난 만큼 [구매 확정]을 더 해주세요.<br>' +
+            (v98
+                ? '· 확정보다 <b>많이</b> 들어왔으면 받은 만큼 그대로 적으세요 — 거래처 화면의 수량도 같이 맞춰집니다.<br>'
+                : '· 확정보다 <b>많이</b> 들어온 수량을 바로 넣는 기능은 98번 SQL 을 실행한 뒤 켜집니다.<br>') +
             '· 입고일이 외상매입 엑셀에 찍히는 날짜입니다.' +
         '</p>' +
         '<div class="btn-group">' +
@@ -13436,14 +13594,41 @@ async function rdSaveReceive(purchaseId) {
     if (!date) { alert('입고일을 골라주세요.'); return; }
     if (!(qty > 0) || Math.floor(qty) !== qty) { alert('검수한 수량을 적어주세요.'); return; }
     var confirmed = Number(p.qty);
-    // 더 들어온 경우는 거래처가 수량을 늘리고 우리가 추가 확정하는 순서로 맞춘다 (2026-11-18 대표 결정)
-    if (qty > confirmed) {
-        alert('확정한 수량(' + rdNum(confirmed) + '포)보다 많습니다.\n\n더 들어온 만큼은 거래처가 [고치기]로 수량을 늘린 뒤,\n제안 목록에서 [구매 확정]을 추가로 해주세요.\n지금은 ' + rdNum(confirmed) + '포까지만 입고로 잡을 수 있습니다.');
+    var rest = confirmed - qty;
+    var btn = document.getElementById('rdRecvSaveBtn');
+    var dp;
+
+    // ── 98번 SQL 적용 뒤: 한 번에 저장한다. 더 들어온 수량도 그대로 받는다 (2026-11-19 대표 결정) ──
+    if (rdV98()) {
+        if (qty > confirmed) {
+            var o = rdOffer(p.offer_id);
+            var others = rdOthersQty(p.offer_id, p.id);
+            var raised = !!o && (others + qty > Number(o.qty));
+            // 오타(111 → 1116)를 한 번 걸러 준다
+            if (!confirm('확정한 ' + rdNum(confirmed) + '포보다 ' + rdNum(qty - confirmed) + '포 많은 ' + rdNum(qty) + '포로 입고·매입합니다.' +
+                (raised ? '\n거래처 화면의 수량도 ' + rdNum(others + qty) + '포로 늘어납니다.' : '') + '\n\n맞습니까?')) return;
+        } else if (rest > 0 && !confirm(rdNum(qty) + '포만 입고·매입으로 잡고,\n남은 ' + rdNum(rest) + '포는 "입고 대기"에 남겨둘까요?')) {
+            return;
+        }
+        if (btn) { if (btn.disabled) return; btn.disabled = true; }
+        var r = await rdCall('rice_admin_receive', { p_id: Number(p.id), p_qty: qty, p_date: date });
+        if (btn) btn.disabled = false;
+        if (!r) return;
+        closeModal('riceModal');
+        // 방금 입고한 날짜로 엑셀 날짜 칸을 맞춰 둔다 (바로 뽑기 쉽게)
+        dp = document.getElementById('rdXlsDate');
+        if (dp) dp.value = date;
+        await rdLoad();
+        showToast(rdNum(qty) + '포 입고 · 매입 완료' + (rest > 0 ? ' — 남은 ' + rdNum(rest) + '포는 입고 대기' : ''));
         return;
     }
-    var rest = confirmed - qty;
+
+    // ── 98번 SQL 적용 전: 예전 방식 (세 번에 나눠 저장, 확정 수량까지만) ──
+    if (qty > confirmed) {
+        alert('확정한 수량(' + rdNum(confirmed) + '포)보다 많습니다.\n\n더 들어온 수량을 바로 넣는 기능은 Supabase 에 98번 SQL(98_rice_receive.sql)을 실행한 뒤 켜집니다.\n지금은 ' + rdNum(confirmed) + '포까지만 입고로 잡을 수 있습니다.');
+        return;
+    }
     if (rest > 0 && !confirm(rdNum(qty) + '포만 입고·매입으로 잡고,\n남은 ' + rdNum(rest) + '포는 "입고 대기"에 남겨둘까요?')) return;
-    var btn = document.getElementById('rdRecvSaveBtn');
     if (btn) { if (btn.disabled) return; btn.disabled = true; }
     var code = p.product_code || '';
     // ① 이 줄을 받은 수량·입고일로 맞춘다 (매입일 = 입고일)
@@ -13466,8 +13651,7 @@ async function rdSaveReceive(purchaseId) {
     }
     if (btn) btn.disabled = false;
     closeModal('riceModal');
-    // 방금 입고한 날짜로 엑셀 날짜 칸을 맞춰 둔다 (바로 뽑기 쉽게)
-    var dp = document.getElementById('rdXlsDate');
+    dp = document.getElementById('rdXlsDate');
     if (dp) dp.value = date;
     await rdLoad();
     if (!restKept) {
@@ -13526,9 +13710,11 @@ function rdRenderPurchases() {
     var dc = document.getElementById('rdPurchaseCount');
     if (dc) dc.textContent = done.length + '건';
 
-    var nameCell = function(o) {
+    var nameCell = function(o, p) {
         return '<b>' + escapeHtml(o.name || '(지워진 제안)') + '</b> ' + (o.weight_kg ? Number(o.weight_kg) + 'kg' : '') +
-            (o.grade ? ' <span style="color:var(--text-muted);">' + escapeHtml(o.grade) + '</span>' : '');
+            (o.grade ? ' <span style="color:var(--text-muted);">' + escapeHtml(o.grade) + '</span>' : '') +
+            (rdV98() && o.id ? ' <button class="btn btn-outline btn-sm" title="상품 정보 고치기 (상품명·중량·등급·산년·도정일)" style="padding:1px 7px;" onclick="rdOpenOfferEdit(' + Number(o.id) + ')">&#9998;</button>' : '') +
+            rdModBadge(o.edited_at, p.modified_at);
     };
 
     pendBody.innerHTML = pending.length === 0
@@ -13540,9 +13726,9 @@ function rdRenderPurchases() {
                     'style="width:18px;height:18px;cursor:pointer;" onchange="rdPickRow(' + Number(p.id) + ',this.checked)"></td>' +
                 '<td>' + escapeHtml(rdKstDate(p.created_at) || p.purchase_date) + '</td>' +
                 '<td>' + escapeHtml(o.supplier_name || '') + '</td>' +
-                '<td>' + nameCell(o) + '</td>' +
+                '<td>' + nameCell(o, p) + '</td>' +
                 '<td class="text-right">' + rdNum(p.qty) + '포</td>' +
-                '<td class="text-right">' + rdNum(p.unit_cost) + '</td>' +
+                '<td class="text-right">' + rdNum(p.unit_cost) + rdPriceWarn(o, p) + '</td>' +
                 '<td class="text-right">' + rdNum(Number(p.qty) * Number(p.unit_cost)) + '</td>' +
                 '<td>' + rdCodeCell(p) + '</td>' +
                 '<td style="white-space:nowrap;">' +
@@ -13559,12 +13745,14 @@ function rdRenderPurchases() {
             return '<tr style="background:#ececec;color:#777;">' +
                 '<td>' + escapeHtml(p.purchase_date) + '</td>' +
                 '<td>' + escapeHtml(o.supplier_name || '') + '</td>' +
-                '<td>' + nameCell(o) + '</td>' +
+                '<td>' + nameCell(o, p) + '</td>' +
                 '<td class="text-right">' + rdNum(p.qty) + '포</td>' +
-                '<td class="text-right">' + rdNum(p.unit_cost) + '</td>' +
+                '<td class="text-right">' + rdNum(p.unit_cost) + rdPriceWarn(o, p) + '</td>' +
                 '<td class="text-right">' + rdNum(Number(p.qty) * Number(p.unit_cost)) + '</td>' +
                 '<td>' + rdCodeCell(p) + '</td>' +
-                '<td style="white-space:nowrap;"><button class="btn btn-outline btn-sm" onclick="rdUndoReceive(' + p.id + ')">입고 취소</button></td>' +
+                '<td style="white-space:nowrap;">' +
+                    (rdV98() ? '<button class="btn btn-outline btn-sm" onclick="rdOpenBuy(null,' + p.id + ')">고치기</button> ' : '') +
+                    '<button class="btn btn-outline btn-sm" onclick="rdUndoReceive(' + p.id + ')">입고 취소</button></td>' +
                 '</tr>';
         }).join('');
 }
