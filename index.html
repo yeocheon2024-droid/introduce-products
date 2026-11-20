@@ -1221,7 +1221,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.82 · 특가쌀 라벨에 상품명 칸 추가 (품종은 손으로 적는 빈칸)</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.83 · 원일 원본 단가·반품 검증</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -2133,7 +2133,7 @@ async function erpLogout() {
         </details>
 
         <p style="margin:12px 0;color:var(--text-muted);">거래명세서 이미지를 선택하고 인식 결과와 연결된 품목을 확인하세요. 여러 장으로 나뉜 전표는 전표번호와 작성일로 합칩니다.</p>
-        <p style="font-size:0.82rem;color:var(--text-muted);">계정코드 4 · 거래처코드 5901 · 단가와 금액은 부가세 포함 · 세구분은 등록 품목 기준</p>
+        <p style="font-size:0.82rem;color:var(--text-muted);">계정코드 4 · 거래처코드 5901 · 단가는 원본 부가세 포함값 유지 · 엑셀 금액은 공급가액, 부가세는 별도 열 · 세구분은 등록 품목 기준</p>
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:16px 0;">
             <label>일괄 적용 전표일자 <input type="date" id="ivPostingDate" onchange="ivApplySelectedDate()"></label>
             <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('ivPostingDate').value='';ivApplySelectedDate()">명세서 작성일 사용</button>
@@ -12458,6 +12458,12 @@ function ivMergePages(pages) {
         } else if (invoice.net !== totals[0] || invoice.vat !== totals[1] || invoice.total !== totals[2]) {
             throw new Error('같은 전표번호의 페이지마다 합계가 다릅니다. ' + number);
         }
+        ['shippedQty','returnedQty'].forEach(function(field) {
+            if (page[field] === undefined || page[field] === null) return;
+            var value=ivNumber(page[field],'원본 출고·반입 수량');
+            if (value<0 || (invoice[field] !== undefined && invoice[field] !== value)) throw new Error('페이지별 출고·반입 수량을 확인해주세요.');
+            invoice[field]=value;
+        });
         if (!Array.isArray(page.items) || !page.items.length) throw new Error('전표 ' + number + '에서 품목을 읽지 못했습니다.');
         page.items.forEach(function(item) {
             var line = ivNumber(item.lineNumber,'순번');
@@ -12531,9 +12537,12 @@ function ivCalculateInvoice(invoice) {
         if (row.fingerprint !== ivProductFingerprint(product)) throw new Error(product.name + '의 등록 정보가 변경되었습니다. 품목 연결 확인을 다시 체크해주세요.');
         if (!['과세','면세'].includes(product.tax)) throw new Error(product.name + '의 과세·면세 정보를 품목 관리에서 확인해주세요.');
         var qty = ivNumber(row.qty,'수량'), price = ivNumber(row.price,'단가'), total = ivNumber(row.total,'금액');
-        if (!qty || price < 0 || !Number.isSafeInteger(total) || Math.abs(qty*price-total)>1) throw new Error(row.lineNumber + '번의 수량 × 단가와 금액을 확인해주세요.');
+        if (!qty || price < 0 || !Number.isSafeInteger(total) || (total !== 0 && Math.sign(qty) !== Math.sign(total)) || Math.abs(qty*price-total)>1) throw new Error(row.lineNumber + '번의 수량 × 단가와 금액을 확인해주세요.');
         var vat = product.tax === '면세' ? 0 : Math.round(total/11);
         return {source:row,product:product,qty:qty,total:total,vat:vat};
+    });
+    invoice.items.forEach(function(row,index) {
+        if (!Number.isInteger(row.lineNumber) || row.lineNumber !== index+1) throw new Error('품목 순번이 누락되거나 중복됐습니다. 원본의 모든 페이지와 반품 행을 확인해주세요.');
     });
     var gross = lines.reduce(function(sum,line) { return sum+line.total; },0);
     if (![invoice.net,invoice.vat,invoice.total].every(Number.isSafeInteger) || invoice.net+invoice.vat !== invoice.total) throw new Error('전표의 공급가·부가세·합계를 확인해주세요.');
@@ -12548,9 +12557,15 @@ function ivCalculateInvoice(invoice) {
     for (var i=0;i<Math.abs(difference);i++) taxable[i].vat += sign;
     lines.forEach(function(line) {
         line.amount = line.total-line.vat;
-        line.unitPrice = Math.round(line.amount/line.qty*100000000)/100000000;
+        // Preserve the printed VAT-inclusive price independently of net amount.
+        line.unitPrice = ivNumber(line.source.price,'원본 단가');
     });
-    return {lines:lines,rounding:difference};
+    var shipped=lines.reduce(function(sum,line) { return sum+Math.max(0,line.qty); },0);
+    var returned=lines.reduce(function(sum,line) { return sum+Math.max(0,-line.qty); },0);
+    ['shippedQty','returnedQty'].forEach(function(field) {
+        if (invoice[field] !== undefined && invoice[field] !== null && Math.abs(ivNumber(invoice[field],'원본 수량 합계')-(field==='shippedQty' ? shipped : returned))>0.00000001) throw new Error('원본 출고·반입 수량과 품목 수량이 다릅니다. 반품 행과 수량을 확인해주세요.');
+    });
+    return {lines:lines,rounding:difference,shipped:shipped,returned:returned};
 }
 
 function ivMappingConflicts(invoices) {
@@ -12649,7 +12664,7 @@ function ivRenderInvoices() {
         [['date','전표일자','date'],['net','공급가','number'],['vat','부가세','number'],['total','합계','number']].forEach(function(field) {
             headers += '<label>' + field[1] + ivInput(invoice[field[0]],field[2],'ivChangeHeader(' + invoiceIndex + ',\'' + field[0] + '\',this.value)') + '</label>';
         });
-        headers += '</div><p role="status" style="margin:10px 0;color:' + (error ? 'var(--danger)' : 'var(--text-muted)') + ';">' + escapeHtml(error || '품목 연결 및 전표 합계 확인 완료.' + (calculation.rounding ? ' 부가세 원 단위 반올림 차이 ' + calculation.rounding + '원을 과세 행에 배분합니다.' : '')) + '</p>';
+        headers += '</div><p role="status" style="margin:10px 0;color:' + (error ? 'var(--danger)' : 'var(--text-muted)') + ';">' + escapeHtml(error || '원본 단가 유지 · 공급가·부가세·합계 확인 완료. 출고 ' + calculation.shipped + ' · 반입 ' + calculation.returned + ' · 순수량 ' + (calculation.shipped-calculation.returned) + '.' + (calculation.rounding ? ' 부가세 원 단위 반올림 차이 ' + calculation.rounding + '원을 과세 행에 배분합니다.' : '')) + '</p>';
         if (invoice.sourceDate && invoice.sourceDate!==invoice.date) headers += '<p style="margin:8px 0;color:var(--text-secondary);">명세서 작성일 ' + escapeHtml(invoice.sourceDate) + ' · 선택한 전표일자 ' + escapeHtml(invoice.date) + '로 내보냅니다.</p>';
         conflicts.forEach(function(group) {
             var positions=group.positions.filter(function(position) { return position.invoice===invoice.number; });
