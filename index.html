@@ -1221,7 +1221,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.81 · 특가쌀 라벨을 창고 양식(입고일자·품종·생산년도·도정일자·kg·수량·정미소)으로</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.82 · 특가쌀 라벨에 상품명 칸 추가 (품종은 손으로 적는 빈칸)</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -13435,7 +13435,8 @@ function rdPrintInspection() {
 // ── 라벨 인쇄 (검수 뒤 쌀 더미에 붙이는 종이) ────────────────
 //   A4 세로 한 장을 위아래 반으로 나눠 품목 2개씩 — 가운데 점선을 따라 자른다 (용지 절약, 2026-11-19 요청).
 //   양식은 창고에서 손으로 써 붙이던 표 그대로 (2026-11-20 요청):
-//     입고일자 / 품종 / 생산년도 / 도정일자 / kg / 수량 / 정미소 — 정미소 칸은 늘 비워 둔다(손으로 적는 칸).
+//     입고일자 / 상품명 / 품종 / 생산년도 / 도정일자 / kg / 수량 / 정미소 (8줄)
+//     — 상품명 칸에 올라온 이름을 찍고, 품종·정미소 칸은 늘 비워 둔다(손으로 적는 칸).
 //   거래처·단가는 넣지 않는다. 값이 없는 칸은 "년 월 일" 처럼 빈 양식으로 남겨 손으로 적게 한다.
 //   source: 'pending' = 입고 대기(체크한 것만, 없으면 전체 · 확정 수량 · 입고일자는 빈칸)
 //           'done'    = 입고 완료 중 엑셀 날짜 칸에 고른 입고일 것 (실제 받은 수량 · 입고일자 채움)
@@ -13462,10 +13463,10 @@ function rdPrintLabels(source) {
         return a.sup.localeCompare(b.sup, 'ko') || a.name.localeCompare(b.name, 'ko') || (Number(a.weight) - Number(b.weight));
     });
 
-    // 이름이 길수록 글자를 줄여 품종 칸(두세 줄) 안에 들어가게 한다
+    // 이름이 길수록 글자를 줄여 상품명 칸(두세 줄) 안에 들어가게 한다
     var nameSize = function(name) {
         var n = String(name).length;
-        return n <= 12 ? 32 : (n <= 24 ? 27 : (n <= 34 ? 22 : 18));
+        return n <= 12 ? 30 : (n <= 24 ? 25 : (n <= 34 ? 21 : 17));
     };
     // 'YYYY-MM-DD' → [ 2026년  11월  19일 ]. 날짜가 없으면 숫자 자리를 비워 손으로 적게 한다.
     var ymdCell = function(d) {
@@ -13486,7 +13487,8 @@ function rdPrintLabels(source) {
     var label = function(it) {
         return '<div class="label"><table class="form">' +
             '<tr><th>입고일자</th><td>' + ymdCell(it.date) + '</td></tr>' +
-            '<tr class="kind"><th>품종</th><td><b class="name" style="font-size:' + nameSize(it.name) + 'pt;">' + escapeHtml(it.name || '') + '</b></td></tr>' +
+            '<tr class="kind"><th>상품명</th><td><b class="name" style="font-size:' + nameSize(it.name) + 'pt;">' + escapeHtml(it.name || '') + '</b></td></tr>' +
+            '<tr><th>품종</th><td></td></tr>' +
             '<tr><th>생산년도</th><td>' + cropCell(it.crop) + '</td></tr>' +
             '<tr><th>도정일자</th><td>' + ymdCell(it.mill) + '</td></tr>' +
             '<tr><th>kg</th><td>' + (it.weight ? '<b>' + Number(it.weight) + '</b>' : '<span class="blank"></span>') + 'kg</td></tr>' +
@@ -13506,15 +13508,15 @@ function rdPrintLabels(source) {
         '.sheet{width:210mm;height:296mm;page-break-after:always;overflow:hidden;}' +
         '.sheet:last-child{page-break-after:auto;}' +
         // 한 장의 위·아래 반쪽. 가운데 점선이 자르는 선이다.
-        '.label{box-sizing:border-box;height:148mm;padding:9mm 13mm;display:flex;align-items:center;}' +
+        '.label{box-sizing:border-box;height:148mm;padding:8mm 13mm;display:flex;align-items:center;}' +
         '.label + .label{border-top:1px dashed #888;}' +
-        // 손으로 쓰던 양식 그대로 — 왼쪽 칸은 항목 이름, 오른쪽 칸은 값 (7줄)
+        // 손으로 쓰던 양식 그대로 — 왼쪽 칸은 항목 이름, 오른쪽 칸은 값 (8줄 — A4 반쪽 148mm 안에 들어가게 줄 높이를 잡았다)
         '.form{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #000;}' +
-        '.form tr{height:17mm;}.form tr.kind{height:28mm;}' +
-        '.form th,.form td{border:1px solid #000;padding:0 4mm;vertical-align:middle;font-size:22pt;font-weight:400;}' +
+        '.form tr{height:14.5mm;}.form tr.kind{height:26mm;}' +
+        '.form th,.form td{border:1px solid #000;padding:0 4mm;vertical-align:middle;font-size:21pt;font-weight:400;line-height:1.1;}' +
         '.form th{width:42mm;text-align:left;white-space:nowrap;}' +
         '.form td{text-align:center;white-space:nowrap;}' +
-        '.form td b{font-size:30pt;font-weight:800;margin-right:1.5mm;}' +
+        '.form td b{font-size:28pt;font-weight:800;margin-right:1.5mm;}' +
         '.form td b.name{display:block;margin:0;line-height:1.15;white-space:normal;word-break:keep-all;overflow-wrap:anywhere;}' +
         '.ymd{display:flex;justify-content:space-evenly;align-items:baseline;}' +
         '.ymd span{display:inline-block;min-width:30mm;text-align:right;}' +
