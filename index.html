@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
@@ -1221,7 +1221,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.84 · 원일 품목 연결 열 순서 변경</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.85 · 원일 전표 전체 매입처 품목 검색</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -12341,9 +12341,12 @@ function ivNormalize(text) {
 }
 
 function ivVendorProducts() {
-    var vendorCodes = new Set(vendors.filter(function(v) { return ivNormalize(v.name).includes('원일푸드'); }).map(function(v) { return v.code; }));
-    vendorCodes.add('WI');
-    return products.filter(function(p) { return vendorCodes.has(p.vendorCode); });
+    return products.filter(function(p) { return p.code; });
+}
+
+function ivProductVendorName(product) {
+    var vendor=vendors.find(function(v) { return v.code===product.vendorCode; });
+    return vendor ? vendor.name : product.vendorCode || '매입처 미등록';
 }
 
 function ivProductFingerprint(product) {
@@ -12385,7 +12388,7 @@ function ivSuggestProduct(row) {
 
 function initInvoiceImageTab() {
     document.getElementById('ivProductOptions').innerHTML = ivVendorProducts().map(function(p) {
-        return '<option value="' + escapeHtml(p.code) + '">' + escapeHtml(p.name + ' · ' + (p.spec || '') + ' · ' + (p.tax || '세구분 미등록')) + '</option>';
+        return '<option value="' + escapeHtml(p.code) + '">' + escapeHtml(p.name + ' · ' + (p.spec || '') + ' · ' + ivProductVendorName(p) + ' · ' + (p.tax || '세구분 미등록')) + '</option>';
     }).join('');
     ivRenderInvoices();
     ivLoadOpenAISettings();
@@ -12490,7 +12493,7 @@ function ivMergePages(pages) {
 async function ivAnalyzeImages() {
     if (ivBusy || !ivFiles.length) return;
     var status = document.getElementById('ivStatus');
-    if (!ivVendorProducts().length) { status.textContent = '등록된 원일푸드 품목이 없습니다. 품목 정보를 먼저 불러와주세요.'; return; }
+    if (!ivVendorProducts().length) { status.textContent = '등록된 품목이 없습니다. 품목 정보를 먼저 불러와주세요.'; return; }
     var sequence = ++ivSequence;
     var files = ivFiles.slice();
     var recognitionMode=ivRecognitionMode();
@@ -12532,7 +12535,7 @@ function ivCalculateInvoice(invoice) {
         if (!String(row.name || '').trim()) throw new Error(row.lineNumber + '번 전표 품명을 확인해주세요.');
         if (!row.confirmed) throw new Error(row.lineNumber + '번 품목 연결을 확인해주세요.');
         var matches = catalog.filter(function(p) { return p.code === row.code; });
-        if (matches.length !== 1) throw new Error(row.lineNumber + '번의 원일푸드 등록 품목을 선택해주세요.');
+        if (matches.length !== 1) throw new Error(row.lineNumber + '번의 등록 품목을 선택해주세요.');
         var product = matches[0];
         if (row.fingerprint !== ivProductFingerprint(product)) throw new Error(product.name + '의 등록 정보가 변경되었습니다. 품목 연결 확인을 다시 체크해주세요.');
         if (!['과세','면세'].includes(product.tax)) throw new Error(product.name + '의 과세·면세 정보를 품목 관리에서 확인해주세요.');
@@ -12685,7 +12688,7 @@ function ivRenderInvoices() {
             [['name','text']].forEach(function(field) {
                 cells += '<td>' + ivInput(row[field[0]],field[1],prefix+'\'' + field[0] + '\',this.value)',field[1]==='number' ? 'step="any"' : '') + (field[0]==='price' ? ivUnitPriceMarkup(comparison) : '') + '</td>';
             });
-            cells += '<td>' + ivInput(row.code,'text',prefix+'\'code\',this.value)','list="ivProductOptions" placeholder="품명 또는 코드로 검색"') + '<small class="iv-product-help">' + escapeHtml(product ? product.name + ' · ' + (product.spec || '규격 미등록') : '품명으로 검색해 등록된 품목을 선택해주세요.') + '</small>';
+            cells += '<td>' + ivInput(row.code,'text',prefix+'\'code\',this.value)','list="ivProductOptions" placeholder="전체 매입처 품명 또는 코드로 검색"') + '<small class="iv-product-help">' + escapeHtml(product ? product.name + ' · ' + (product.spec || '규격 미등록') + ' · ' + ivProductVendorName(product) : '전체 매입처에서 품명으로 검색해 등록된 품목을 선택해주세요.') + '</small>';
             if (product && ivNormalize(row.spec)!==ivNormalize(product.spec)) cells += '<span class="iv-spec-notice">규격 확인 · 전표 ' + escapeHtml(row.spec || '표기 없음') + ' / 등록 ' + escapeHtml(product.spec || '표기 없음') + '</span>';
             cells += '</td>';
             cells += '<td><label class="iv-confirm"><input type="checkbox" ' + (row.confirmed ? 'checked ' : '') + 'onchange="' + prefix + '\'confirmed\',this.checked)"> 확인</label><small class="iv-confirm-help">' + (row.remembered ? '기억한 연결' : row.confirmed ? '확인한 연결' : '처음 연결 · 확인 필요') + '</small></td>';
