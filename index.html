@@ -1221,7 +1221,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.85 · 원일 전표 전체 매입처 품목 검색</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.86 · 원일 전표 부가세 차액 안내·세구분 확인</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -2133,7 +2133,7 @@ async function erpLogout() {
         </details>
 
         <p style="margin:12px 0;color:var(--text-muted);">거래명세서 이미지를 선택하고 인식 결과와 연결된 품목을 확인하세요. 여러 장으로 나뉜 전표는 전표번호와 작성일로 합칩니다.</p>
-        <p style="font-size:0.82rem;color:var(--text-muted);">계정코드 4 · 거래처코드 5901 · 단가는 원본 부가세 포함값 유지 · 엑셀 금액은 공급가액, 부가세는 별도 열 · 세구분은 등록 품목 기준</p>
+        <p style="font-size:0.82rem;color:var(--text-muted);">계정코드 4 · 거래처코드 5901 · 단가는 원본 부가세 포함값 유지 · 엑셀 금액은 공급가액, 부가세는 별도 열 · 세구분은 등록값 기본, 원본과 다르면 각 행에서 선택 후 재확인</p>
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:16px 0;">
             <label>일괄 적용 전표일자 <input type="date" id="ivPostingDate" onchange="ivApplySelectedDate()"></label>
             <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('ivPostingDate').value='';ivApplySelectedDate()">명세서 작성일 사용</button>
@@ -11741,7 +11741,7 @@ function purchaseArchiveWonilUpdate(downloaded) {
     var rows=[];
     ivInvoices.forEach(function(invoice) {
         invoice.items.forEach(function(row) {
-            rows.push({date:invoice.date,code:row.code,name:row.name,spec:row.spec,qty:row.qty,price:row.price,total:row.total,confirmed:row.confirmed});
+            rows.push({date:invoice.date,code:row.code,name:row.name,spec:row.spec,qty:row.qty,price:row.price,total:row.total,confirmed:row.confirmed,taxOverride:row.taxOverride || ''});
         });
     });
     purchaseArchiveUpdate('wonil',{dates:dates,rows:rows,stage:downloaded ? '전표 다운로드' : '인식·확인 중'});
@@ -12538,11 +12538,12 @@ function ivCalculateInvoice(invoice) {
         if (matches.length !== 1) throw new Error(row.lineNumber + '번의 등록 품목을 선택해주세요.');
         var product = matches[0];
         if (row.fingerprint !== ivProductFingerprint(product)) throw new Error(product.name + '의 등록 정보가 변경되었습니다. 품목 연결 확인을 다시 체크해주세요.');
-        if (!['과세','면세'].includes(product.tax)) throw new Error(product.name + '의 과세·면세 정보를 품목 관리에서 확인해주세요.');
+        var tax = row.taxOverride || product.tax;
+        if (!['과세','면세'].includes(tax)) throw new Error(product.name + '의 과세·면세 정보를 확인해주세요.');
         var qty = ivNumber(row.qty,'수량'), price = ivNumber(row.price,'단가'), total = ivNumber(row.total,'금액');
         if (!qty || price < 0 || !Number.isSafeInteger(total) || (total !== 0 && Math.sign(qty) !== Math.sign(total)) || Math.abs(qty*price-total)>1) throw new Error(row.lineNumber + '번의 수량 × 단가와 금액을 확인해주세요.');
-        var vat = product.tax === '면세' ? 0 : Math.round(total/11);
-        return {source:row,product:product,qty:qty,total:total,vat:vat};
+        var vat = tax === '면세' ? 0 : Math.round(total/11);
+        return {source:row,product:product,tax:tax,qty:qty,total:total,vat:vat};
     });
     invoice.items.forEach(function(row,index) {
         if (!Number.isInteger(row.lineNumber) || row.lineNumber !== index+1) throw new Error('품목 순번이 누락되거나 중복됐습니다. 원본의 모든 페이지와 반품 행을 확인해주세요.');
@@ -12550,10 +12551,10 @@ function ivCalculateInvoice(invoice) {
     var gross = lines.reduce(function(sum,line) { return sum+line.total; },0);
     if (![invoice.net,invoice.vat,invoice.total].every(Number.isSafeInteger) || invoice.net+invoice.vat !== invoice.total) throw new Error('전표의 공급가·부가세·합계를 확인해주세요.');
     if (gross !== invoice.total) throw new Error('품목 합계 ' + gross.toLocaleString('ko-KR') + '원과 전표 합계 ' + invoice.total.toLocaleString('ko-KR') + '원이 다릅니다. 누락된 페이지와 인식 금액을 확인해주세요.');
-    var taxable = lines.filter(function(line) { return line.product.tax === '과세'; });
+    var taxable = lines.filter(function(line) { return line.tax === '과세'; });
     var vatSum = lines.reduce(function(sum,line) { return sum+line.vat; },0);
     var difference = invoice.vat-vatSum;
-    if (Math.abs(difference)>taxable.length) throw new Error('등록 품목의 세구분으로 계산한 부가세가 전표와 다릅니다. 품목 연결·세구분·인식 금액을 확인해주세요.');
+    if (Math.abs(difference)>taxable.length) throw new Error('부가세 불일치: 품목 계산 ' + vatSum.toLocaleString('ko-KR') + '원 / 전표 ' + invoice.vat.toLocaleString('ko-KR') + '원 / 차액 ' + difference.toLocaleString('ko-KR') + '원. 각 행의 세구분(등록값 기본)과 원본 금액을 대조해주세요. 세구분 변경은 이 전표에만 적용됩니다.');
     // 전표별 부가세 합계에 맞춰 과세 행의 원 단위 반올림 차이만 배분한다.
     var sign = Math.sign(difference);
     taxable.sort(function(a,b) { return sign*((b.total/11-b.vat)-(a.total/11-a.vat)); });
@@ -12617,9 +12618,16 @@ function ivChangeRow(invoiceIndex,rowIndex,field,value) {
         row.fingerprint = row.confirmed ? ivProductFingerprint(matches[0]) : null;
         row.remembered = false;
     }
+    else if (field === 'taxOverride') {
+        if (!['','과세','면세'].includes(value)) return;
+        row.taxOverride = value;
+        row.confirmed = false;
+        row.remembered = false;
+    }
     else if (['qty','price','total'].includes(field)) row[field] = value === '' ? NaN : Number(value);
     else {
         row[field] = value.trim();
+        delete row.taxOverride;
         row.confirmed = false;
         row.remembered = false;
         if (field === 'name' || field === 'spec') Object.assign(row,ivSuggestProduct(row));
@@ -12695,13 +12703,16 @@ function ivRenderInvoices() {
             [['spec','text'],['qty','number'],['price','number'],['total','number']].forEach(function(field) {
                 cells += '<td>' + ivInput(row[field[0]],field[1],prefix+'\'' + field[0] + '\',this.value)',field[1]==='number' ? 'step="any"' : '') + (field[0]==='price' ? ivUnitPriceMarkup(comparison) : '') + '</td>';
             });
-            cells += '<td>' + escapeHtml(product ? product.tax || '미등록' : '—') + '</td>';
+            var taxOptions=[['','등록값 (' + (product ? product.tax || '미등록' : '—') + ')'],['과세','과세'],['면세','면세']].map(function(option) {
+                return '<option value="' + option[0] + '"' + ((row.taxOverride || '')===option[0] ? ' selected' : '') + '>' + escapeHtml(option[1]) + '</option>';
+            }).join('');
+            cells += '<td><select class="iv-input" title="원본과 대조해 선택합니다. 변경은 이 전표에만 적용됩니다." onchange="' + prefix + '\'taxOverride\',this.value)">' + taxOptions + '</select></td>';
             cells += '<td><button type="button" class="btn btn-outline btn-sm" onclick="ivRemoveRow(' + invoiceIndex + ',' + rowIndex + ')">행 삭제</button></td>';
             return '<tr' + (comparison.changed ? ' class="iv-price-changed"' : '') + '>' + cells + '</tr>';
         }).join('');
         var confirmedCount=invoice.items.filter(function(row) { return row.confirmed; }).length;
         var summary='<p class="iv-link-summary">품목 연결 확인 ' + confirmedCount + '/' + invoice.items.length + '건' + (missingCount ? ' · 등록 품목 선택 필요 ' + missingCount + '건' : '') + '</p>';
-        var columns=[52,220,340,150,140,80,180,116,70,90].map(function(width) { return '<col style="width:'+width+'px;">'; }).join('');
+        var columns=[52,220,340,150,140,80,180,116,155,90].map(function(width) { return '<col style="width:'+width+'px;">'; }).join('');
         if (!body && invoice.items.length) body='<tr><td colspan="10">변동된 품목이 없습니다. 전체 품목은 필터를 해제하면 확인할 수 있습니다.</td></tr>';
         return headers + summary + '<div class="table-wrap" id="ivTableWrap' + invoiceIndex + '" style="overflow:auto;"><table class="iv-table"><colgroup>' + columns + '</colgroup><thead><tr><th>순번</th><th>전표 품명</th><th>등록 품목코드</th><th>품목 연결</th><th>규격</th><th>수량</th><th>단가(포함)</th><th>금액(포함)</th><th>세구분</th><th>수정</th></tr></thead><tbody>' + body + '</tbody></table></div><button type="button" class="btn btn-outline btn-sm" style="margin:12px 0;" onclick="ivAddRow(' + invoiceIndex + ')">품목 추가</button>';
     }).join('');
