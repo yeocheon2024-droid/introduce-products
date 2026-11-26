@@ -1221,7 +1221,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.86 · 원일 전표 부가세 차액 안내·세구분 확인</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.87 · 특가쌀 라벨을 파레트당 포수로 나눠 인쇄</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -13471,29 +13471,142 @@ function rdPrintInspection() {
 //     입고일자 / 상품명 / 품종 / 생산년도 / 도정일자 / kg / 수량 / 정미소 (8줄)
 //     — 상품명 칸에 올라온 이름을 찍고, 품종·정미소 칸은 늘 비워 둔다(손으로 적는 칸).
 //   거래처·단가는 넣지 않는다. 값이 없는 칸은 "년 월 일" 처럼 빈 양식으로 남겨 손으로 적게 한다.
+//   (인쇄할 줄 고르기는 아래 rdLabelSource, 파레트당 포수로 나눠 인쇄하는 것은 rdDoPrintLabels)
+
+// ── 파레트마다 라벨 한 장씩 (2026-11-27 요청) ────────────────
+//   한 품목이 여러 파레트로 들어오면(예: 연천쌀 762포) 라벨도 파레트 수만큼 있어야 파레트별로 검수하고 붙일 수 있다.
+//   [라벨 인쇄]를 누르면 품목별로 "파레트당 몇 포"를 적는 창이 먼저 뜬다.
+//     적으면 → 그 포수씩 나눠 여러 장 (남는 수량은 마지막 한 장), 수량 칸에 "60포 (3/13 · 전체 762포)"
+//     비우면 → 예전처럼 한 장에 전체 수량
+//   적은 값은 이 PC 에 기억해 둔다 (입고 대기 때 적은 값이 입고 완료 라벨에도 그대로 뜬다).
+var rdLabelPer = null;   // { 확정 줄 id: 파레트당 포수 }
+function rdLabelPerLoad() {
+    if (rdLabelPer) return rdLabelPer;
+    rdLabelPer = {};
+    try { rdLabelPer = JSON.parse(localStorage.getItem('rd_label_per') || '{}') || {}; } catch (e) { rdLabelPer = {}; }
+    return rdLabelPer;
+}
+function rdLabelPerSave() {
+    try { localStorage.setItem('rd_label_per', JSON.stringify(rdLabelPer || {})); } catch (e) { /* 기억을 못 해도 인쇄는 된다 */ }
+}
+
+// 인쇄할 줄 고르기 — 없으면 안내하고 null.
 //   source: 'pending' = 입고 대기(체크한 것만, 없으면 전체 · 확정 수량 · 입고일자는 빈칸)
 //           'done'    = 입고 완료 중 엑셀 날짜 칸에 고른 입고일 것 (실제 받은 수량 · 입고일자 채움)
-function rdPrintLabels(source) {
+function rdLabelSource(source) {
     var list, title;
     if (source === 'done') {
         var date = document.getElementById('rdXlsDate').value;
-        if (!date) { alert('입고일을 골라주세요.'); return; }
+        if (!date) { alert('입고일을 골라주세요.'); return null; }
         list = rdData.purchases.filter(function(p) { return p.received && p.purchase_date === date; });
-        if (list.length === 0) { alert(date + ' 에 입고·매입한 쌀이 없습니다.\n(입고일 칸의 날짜를 확인해주세요)'); return; }
+        if (list.length === 0) { alert(date + ' 에 입고·매입한 쌀이 없습니다.\n(입고일 칸의 날짜를 확인해주세요)'); return null; }
         title = date + ' 입고분';
     } else {
         var pending = rdData.purchases.filter(function(p) { return !p.received; });
-        if (pending.length === 0) { alert('입고를 기다리는 것이 없습니다.'); return; }
+        if (pending.length === 0) { alert('입고를 기다리는 것이 없습니다.'); return null; }
         var picked = pending.filter(function(p) { return rdPicked[p.id]; });
         list = picked.length ? picked : pending;
         title = picked.length ? '선택한 것' : '입고 대기 전체';
     }
-    var items = list.map(function(p) {
-        var o = rdOffer(p.offer_id) || {};
-        return { name: o.name || '', weight: o.weight_kg, crop: o.crop_year || '', mill: o.mill_date || '', qty: p.qty, sup: o.supplier_name || '',
-                 date: source === 'done' ? (p.purchase_date || '') : '' };
-    }).sort(function(a, b) {
-        return a.sup.localeCompare(b.sup, 'ko') || a.name.localeCompare(b.name, 'ko') || (Number(a.weight) - Number(b.weight));
+    // 거래처 → 상품명 → 중량 순 (창과 인쇄물의 순서가 같게)
+    var rows = list.map(function(p) { return { p: p, o: rdOffer(p.offer_id) || {} }; }).sort(function(a, b) {
+        return String(a.o.supplier_name || '').localeCompare(String(b.o.supplier_name || ''), 'ko') ||
+            String(a.o.name || '').localeCompare(String(b.o.name || ''), 'ko') || (Number(a.o.weight_kg) - Number(b.o.weight_kg));
+    });
+    return { rows: rows, title: title };
+}
+
+// 수량 q 를 파레트당 per 포씩 나눈 라벨 수량 목록. per 가 없거나 q 이상이면 한 장.
+function rdLabelSplit(q, per) {
+    q = Number(q) || 0; per = Math.floor(Number(per) || 0);
+    if (!(per > 0) || per >= q) return [q];
+    var out = [];
+    for (var left = q; left > 0; left -= per) out.push(Math.min(per, left));
+    return out;
+}
+function rdLabelSplitText(q, per) {
+    var parts = rdLabelSplit(q, per);
+    if (parts.length <= 1) return '<span style="color:var(--text-muted);">1장 (한 장에 전체 ' + rdNum(q) + '포)</span>';
+    var last = parts[parts.length - 1], full = last === parts[0] ? parts.length : parts.length - 1;
+    return '<b>' + parts.length + '장</b> (' + rdNum(parts[0]) + '포 ' + full + '장' + (full < parts.length ? ' + ' + rdNum(last) + '포 1장' : '') + ')';
+}
+
+// [라벨 인쇄] — 먼저 파레트당 포수를 묻는 창을 띄운다.
+function rdPrintLabels(source) {
+    var src = rdLabelSource(source);
+    if (!src) return;
+    var saved = rdLabelPerLoad();
+    var body = src.rows.map(function(r) {
+        var p = r.p, o = r.o, id = Number(p.id);
+        var per = Number(saved[id]) || Number(o.per_pallet) || 0;
+        return '<tr>' +
+            '<td style="padding:7px 8px;"><b>' + escapeHtml(o.name || '(지워진 제안)') + '</b> ' + (o.weight_kg ? Number(o.weight_kg) + 'kg' : '') + '</td>' +
+            '<td style="padding:7px 8px;text-align:right;white-space:nowrap;">' + rdNum(p.qty) + '포</td>' +
+            '<td style="padding:7px 8px;white-space:nowrap;"><input type="number" id="rdLblPer_' + id + '" min="1" step="1" inputmode="numeric" ' +
+                'value="' + (per || '') + '" placeholder="비움" style="width:74px;text-align:right;padding:5px 6px;" oninput="rdLabelPerChanged(' + id + ')"> 포</td>' +
+            '<td id="rdLblN_' + id + '" style="padding:7px 8px;font-size:0.82rem;white-space:nowrap;">' + rdLabelSplitText(p.qty, per) + '</td>' +
+            '</tr>';
+    }).join('');
+    document.getElementById('riceModalBody').innerHTML =
+        '<h2>라벨 인쇄 — 파레트당 포수</h2>' +
+        '<div style="padding:10px 12px;background:#f5f7fa;border:1px solid var(--border-light);border-radius:8px;margin-bottom:12px;font-size:0.85rem;line-height:1.6;">' +
+            '<b>' + escapeHtml(src.title) + '</b> · ' + src.rows.length + '품목<br>' +
+            '파레트마다 라벨을 붙이려면 <b>파레트 하나에 몇 포씩</b> 쌓여 오는지 적어주세요. 그 포수씩 나눠 여러 장이 나오고, 남는 수량은 마지막 한 장으로 나옵니다.<br>' +
+            '칸을 비워 두면 한 장에 전체 수량이 찍힙니다.' +
+        '</div>' +
+        '<div style="max-height:52vh;overflow:auto;border:1px solid var(--border-light);border-radius:8px;">' +
+        '<table style="width:100%;border-collapse:collapse;font-size:0.86rem;">' +
+            '<thead><tr style="background:#f5f7fa;text-align:left;">' +
+                '<th style="padding:7px 8px;">상품명</th><th style="padding:7px 8px;text-align:right;">전체</th>' +
+                '<th style="padding:7px 8px;">파레트당</th><th style="padding:7px 8px;">라벨</th>' +
+            '</tr></thead><tbody>' + body + '</tbody></table></div>' +
+        '<div class="btn-group" style="margin-top:14px;">' +
+            '<button class="btn btn-outline" onclick="closeModal(\'riceModal\')">취소</button>' +
+            '<button class="btn btn-primary" onclick="rdDoPrintLabels(\'' + (source === 'done' ? 'done' : 'pending') + '\')">라벨 인쇄</button>' +
+        '</div>';
+    openModal('riceModal');
+}
+
+// 파레트당 포수를 고치면 옆의 "라벨 몇 장"을 바로 다시 보여준다
+function rdLabelPerChanged(id) {
+    var p = rdPurchase(id), inp = document.getElementById('rdLblPer_' + id), out = document.getElementById('rdLblN_' + id);
+    if (!p || !inp || !out) return;
+    out.innerHTML = rdLabelSplitText(p.qty, Number(inp.value) || 0);
+}
+
+// 창에서 [라벨 인쇄] — 적힌 파레트당 포수대로 나눠 인쇄 창을 연다
+function rdDoPrintLabels(source) {
+    var src = rdLabelSource(source);
+    if (!src) return;
+    var title = src.title, pers = {}, total = 0, wrong = false;
+    src.rows.forEach(function(r) {
+        var inp = document.getElementById('rdLblPer_' + r.p.id);
+        var raw = inp ? String(inp.value == null ? '' : inp.value).trim() : '';
+        var per = raw === '' ? 0 : Number(raw);
+        if (raw !== '' && !(per >= 1 && Math.floor(per) === per)) wrong = true;
+        pers[r.p.id] = per;
+        total += rdLabelSplit(r.p.qty, per).length;
+    });
+    if (wrong) { alert('파레트당 포수는 1 이상의 숫자로 적어주세요.\n(나누지 않으려면 칸을 비워 두세요)'); return; }
+    if (total > 60 && !confirm('라벨이 ' + total + '장 나옵니다 (A4 ' + Math.ceil(total / 2) + '장).\n이대로 인쇄할까요?')) return;
+
+    // 적은 값 기억 (비운 것은 잊는다). 이미 없어진 줄의 기억은 지운다.
+    var saved = rdLabelPerLoad(), alive = {};
+    src.rows.forEach(function(r) { if (pers[r.p.id]) saved[r.p.id] = pers[r.p.id]; else delete saved[r.p.id]; });
+    rdData.purchases.forEach(function(p) { alive[p.id] = true; });
+    Object.keys(saved).forEach(function(k) { if (!alive[k]) delete saved[k]; });
+    rdLabelPerSave();
+    closeModal('riceModal');
+
+    var items = [];
+    src.rows.forEach(function(r) {
+        var p = r.p, o = r.o, parts = rdLabelSplit(p.qty, pers[p.id]);
+        parts.forEach(function(q, i) {
+            items.push({ name: o.name || '', weight: o.weight_kg, crop: o.crop_year || '', mill: o.mill_date || '', qty: q,
+                         date: source === 'done' ? (p.purchase_date || '') : '',
+                         // 여러 장으로 나뉜 것만: "3/13 · 전체 762포"
+                         part: parts.length > 1 ? (i + 1) + '/' + parts.length + ' · 전체 ' + rdNum(p.qty) + '포' : '' });
+        });
     });
 
     // 이름이 길수록 글자를 줄여 상품명 칸(두세 줄) 안에 들어가게 한다
@@ -13525,7 +13638,7 @@ function rdPrintLabels(source) {
             '<tr><th>생산년도</th><td>' + cropCell(it.crop) + '</td></tr>' +
             '<tr><th>도정일자</th><td>' + ymdCell(it.mill) + '</td></tr>' +
             '<tr><th>kg</th><td>' + (it.weight ? '<b>' + Number(it.weight) + '</b>' : '<span class="blank"></span>') + 'kg</td></tr>' +
-            '<tr><th>수량</th><td><b>' + rdNum(it.qty) + '</b>포</td></tr>' +
+            '<tr><th>수량</th><td><b>' + rdNum(it.qty) + '</b>포' + (it.part ? '<span class="part">(' + escapeHtml(it.part) + ')</span>' : '') + '</td></tr>' +
             '<tr><th>정미소</th><td></td></tr>' +
         '</table></div>';
     };
@@ -13554,6 +13667,7 @@ function rdPrintLabels(source) {
         '.ymd{display:flex;justify-content:space-evenly;align-items:baseline;}' +
         '.ymd span{display:inline-block;min-width:30mm;text-align:right;}' +
         '.blank{display:inline-block;width:26mm;}' +
+        '.part{font-size:13pt;margin-left:5mm;white-space:nowrap;}' +
         '.noprint{padding:8px;background:#f3f3f3;border-bottom:1px solid #ccc;font-size:11pt;}@media print{.noprint{display:none;}}' +
         '</style></head><body>' +
         '<div class="noprint"><button onclick="window.print()" style="font-size:12pt;padding:6px 16px;">인쇄</button> ' +
