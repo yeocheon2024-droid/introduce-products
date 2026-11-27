@@ -1221,7 +1221,7 @@ async function erpLogout() {
 <!-- 사이드바 -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.87 · 특가쌀 라벨을 파레트당 포수로 나눠 인쇄</span></h1>
+        <h1>ERP 품목관리 <span id="appVersionLabel" style="font-size:0.5em;color:var(--text-muted);font-weight:400;">v3.88 · 직원용 품목 조회 연결</span></h1>
         <p>견적서 분석 & 동기화</p>
     </div>
 
@@ -6007,8 +6007,9 @@ async function downloadFromSupabase() {
         // 2) 품목 다운로드
         syncLog('품목 다운로드 중...');
         const { data: productData, error: productErr } = await db
-            .from('products').select('*').order('code');
+            .from('products_internal').select('*').order('code');
         if (productErr) throw productErr;
+        if (!productData?.length) throw new Error('직원용 품목 조회 결과가 비어 있습니다. 직원 로그인 상태를 확인해 주세요.');
 
         products = productData.map(p => ({
             code: p.code,
@@ -8427,7 +8428,7 @@ async function autoSyncOnLoad() {
 
         // 1) 품목 양방향 병합 — cloud fetch 먼저, 실패 시 로컬 데이터 손대지 않음
         const { data: productData, error: productErr } = await db
-            .from('products').select('*').order('code');
+            .from('products_internal').select('*').order('code');
         if (productErr || !productData) {
             console.warn('[동기화] products fetch 실패 — 로컬 데이터 유지:',
                 productErr && productErr.message);
